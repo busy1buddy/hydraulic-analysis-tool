@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
 
         # --- Bottom: Results ---
         self.results_dock = QDockWidget("Results", self)
-        self.results_dock.setMinimumHeight(180)
+        self.results_dock.setMinimumHeight(300)
         results_widget = QWidget()
         results_layout = QVBoxLayout(results_widget)
         results_layout.setContentsMargins(4, 4, 4, 4)
@@ -209,6 +209,8 @@ class MainWindow(QMainWindow):
         )
         self.node_results_table.horizontalHeader().setStretchLastSection(True)
         self.node_results_table.setFont(QFont("Consolas", 9))
+        self.node_results_table.setMinimumHeight(120)
+        self.node_results_table.verticalHeader().setVisible(False)
 
         self.pipe_results_table = QTableWidget(0, 5)
         self.pipe_results_table.setHorizontalHeaderLabels(
@@ -216,6 +218,8 @@ class MainWindow(QMainWindow):
         )
         self.pipe_results_table.horizontalHeader().setStretchLastSection(True)
         self.pipe_results_table.setFont(QFont("Consolas", 9))
+        self.pipe_results_table.setMinimumHeight(120)
+        self.pipe_results_table.verticalHeader().setVisible(False)
 
         self.pipe_stress_panel = PipeStressPanel()
 
@@ -223,6 +227,8 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.node_results_table)
         splitter.addWidget(self.pipe_results_table)
         splitter.addWidget(self.pipe_stress_panel)
+        # Give each panel roughly equal initial space
+        splitter.setSizes([200, 200, 200])
         results_layout.addWidget(splitter)
 
         self.results_dock.setWidget(results_widget)
@@ -450,15 +456,30 @@ class MainWindow(QMainWindow):
         """Handle element selection from the canvas."""
         self.properties_table.setRowCount(0)
         try:
-            if element_type in ('junction', 'reservoir', 'tank'):
+            if element_type == 'junction':
                 node = self.api.get_node(element_id)
-                if element_type == 'junction':
-                    self._show_node_properties(element_id, node)
-                else:
-                    self._show_reservoir_properties(element_id, node)
+                self._show_node_properties(element_id, node)
+                # Show analysis results if available
+                if self._last_results:
+                    pdata = self._last_results.get('pressures', {}).get(element_id)
+                    if pdata:
+                        self._add_property_row("--- Results ---", "")
+                        self._add_property_row("Min Pressure", f"{pdata['min_m']:.1f} m")
+                        self._add_property_row("Avg Pressure", f"{pdata['avg_m']:.1f} m")
+                        self._add_property_row("Max Pressure", f"{pdata['max_m']:.1f} m")
+            elif element_type in ('reservoir', 'tank'):
+                node = self.api.get_node(element_id)
+                self._show_reservoir_properties(element_id, node)
             elif element_type == 'pipe':
                 link = self.api.get_link(element_id)
                 self._show_pipe_properties(element_id, link)
+                # Show analysis results if available
+                if self._last_results:
+                    fdata = self._last_results.get('flows', {}).get(element_id)
+                    if fdata:
+                        self._add_property_row("--- Results ---", "")
+                        self._add_property_row("Avg Flow", f"{fdata['avg_lps']:.2f} LPS")
+                        self._add_property_row("Max Velocity", f"{fdata['max_velocity_ms']:.2f} m/s")
         except Exception:
             pass
 

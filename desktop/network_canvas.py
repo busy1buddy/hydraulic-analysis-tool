@@ -49,6 +49,18 @@ SHAPE_TANK = 's'       # square
 SHAPE_PUMP = 't'       # triangle
 
 
+def _point_to_segment_distance(px, py, x0, y0, x1, y1):
+    """Shortest distance from point (px,py) to line segment (x0,y0)-(x1,y1)."""
+    dx, dy = x1 - x0, y1 - y0
+    length_sq = dx * dx + dy * dy
+    if length_sq == 0:
+        return ((px - x0)**2 + (py - y0)**2) ** 0.5
+    t = max(0, min(1, ((px - x0) * dx + (py - y0) * dy) / length_sq))
+    proj_x = x0 + t * dx
+    proj_y = y0 + t * dy
+    return ((px - proj_x)**2 + (py - proj_y)**2) ** 0.5
+
+
 def _interpolate_color(value, color_map):
     """Interpolate color from a value-color map."""
     if value <= color_map[0][0]:
@@ -178,6 +190,8 @@ class NetworkCanvas(QWidget):
         self.plot_widget.showGrid(x=False, y=False)
         self.plot_widget.hideAxis('left')
         self.plot_widget.hideAxis('bottom')
+        # Enable mouse click events on the plot for pipe hit-testing
+        self.plot_widget.scene().sigMouseClicked.connect(self._on_scene_clicked)
         layout.addWidget(self.plot_widget)
 
         # Legend
@@ -442,8 +456,8 @@ class NetworkCanvas(QWidget):
         self._apply_colors()
 
     def _fit_view(self):
-        """Auto-fit to show all elements."""
-        self.plot_widget.autoRange()
+        """Auto-fit to show all elements with padding."""
+        self.plot_widget.autoRange(padding=0.15)
 
     def _toggle_labels(self, show):
         """Toggle node/pipe labels."""
@@ -471,8 +485,8 @@ class NetworkCanvas(QWidget):
             self.plot_widget.removeItem(item)
         self._label_items.clear()
 
-    def _on_node_clicked(self, scatter, points, ev=None):
-        """Handle click on a node."""
+    def _on_node_clicked(self, scatter, points, *args):
+        """Handle click on a node scatter point."""
         if not points:
             return
         pt = points[0]
@@ -492,3 +506,45 @@ class NetworkCanvas(QWidget):
         else:
             etype = 'node'
         self.element_selected.emit(nid, etype)
+
+    def _on_scene_clicked(self, event):
+        """Handle click on the plot scene — used for pipe hit-testing."""
+        if self.api is None or self.api.wn is None:
+            return
+        # Map scene position to data coordinates
+        pos = event.scenePos()
+        vb = self.plot_widget.plotItem.vb
+        mouse_point = vb.mapSceneToView(pos)
+        mx, my = mouse_point.x(), mouse_point.y()
+
+        # Check if click is near any pipe (line segment)
+        best_pid = None
+        best_dist = float('inf')
+        hit_threshold = self._click_threshold()
+
+        for i, pid in enumerate(self._pipe_ids):
+            pipe = self.api.wn.get_link(pid)
+            sn = pipe.start_node_name
+            en = pipe.end_node_name
+            if sn not in self._node_positions or en not in self._node_positions:
+                continue
+            x0, y0 = self._node_positions[sn]
+            x1, y1 = self._node_positions[en]
+
+            dist = _point_to_segment_distance(mx, my, x0, y0, x1, y1)
+            if dist < best_dist:
+                best_dist = dist
+                best_pid = pid
+
+        if best_pid is not None and best_dist < hit_threshold:
+            self._selected_id = best_pid
+            self.element_selected.emit(best_pid, 'pipe')
+
+    def _click_threshold(self):
+        """Compute a reasonable click threshold in data coordinates."""
+        # Use ~2% of the visible range as the hit distance
+        vb = self.plot_widget.plotItem.vb
+        view_range = vb.viewRange()
+        x_range = view_range[0][1] - view_range[0][0]
+        y_range = view_range[1][1] - view_range[1][0]
+        return max(x_range, y_range) * 0.02
