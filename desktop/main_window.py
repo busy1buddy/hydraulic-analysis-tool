@@ -179,6 +179,7 @@ class MainWindow(QMainWindow):
 
         # --- Left: Project Explorer ---
         self.explorer_dock = QDockWidget("Project Explorer", self)
+        self.explorer_dock.setObjectName("explorer_dock")
         self.explorer_dock.setFeatures(_dock_features)
         self.explorer_dock.setMinimumWidth(220)
         self.explorer_tree = QTreeWidget()
@@ -191,6 +192,7 @@ class MainWindow(QMainWindow):
 
         # --- Right: Properties ---
         self.properties_dock = QDockWidget("Properties", self)
+        self.properties_dock.setObjectName("properties_dock")
         self.properties_dock.setFeatures(_dock_features)
         self.properties_dock.setMinimumWidth(220)
         self.properties_table = QTableWidget(0, 2)
@@ -207,6 +209,7 @@ class MainWindow(QMainWindow):
 
         # --- Bottom: Results ---
         self.results_dock = QDockWidget("Results", self)
+        self.results_dock.setObjectName("results_dock")
         self.results_dock.setFeatures(_dock_features)
         self.results_dock.setMinimumHeight(300)
         results_widget = QWidget()
@@ -248,6 +251,7 @@ class MainWindow(QMainWindow):
 
         # --- Scenario Panel (tabbed with explorer on left) ---
         self.scenario_dock = QDockWidget("Scenarios", self)
+        self.scenario_dock.setObjectName("scenario_dock")
         self.scenario_dock.setFeatures(_dock_features)
         self.scenario_dock.setMinimumWidth(250)
         self.scenario_panel = ScenarioPanel()
