@@ -1,0 +1,494 @@
+"""
+Network Canvas — PyQtGraph Interactive 2D View
+================================================
+Renders the water network as an interactive 2D graph.
+Nodes as circles, pipes as lines, tanks as squares, pumps as triangles.
+Color overlays for pressure, velocity, headloss, and WSAA compliance.
+"""
+
+import numpy as np
+import pyqtgraph as pg
+from pyqtgraph import PlotWidget, ScatterPlotItem, PlotDataItem
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLabel,
+    QToolBar, QPushButton,
+)
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QFont, QColor, QAction
+
+
+# WSAA compliance thresholds
+WSAA_MIN_PRESSURE_M = 20.0  # WSAA WSA 03-2011 Table 3.1
+WSAA_MAX_PRESSURE_M = 50.0
+WSAA_MAX_VELOCITY_MS = 2.0
+WSAA_WARN_PRESSURE_LOW = 15.0
+WSAA_WARN_VELOCITY = 1.5
+
+# Color maps
+PRESSURE_COLORS = [
+    (0, QColor(220, 50, 50)),     # red (< 15 m)
+    (15, QColor(255, 165, 0)),    # orange (15-20 m)
+    (20, QColor(80, 200, 80)),    # green (20-50 m)
+    (50, QColor(80, 200, 80)),    # green
+    (60, QColor(255, 165, 0)),    # orange (> 50 m)
+    (80, QColor(220, 50, 50)),    # red (> 80 m)
+]
+
+VELOCITY_COLORS = [
+    (0, QColor(80, 200, 80)),     # green (< 1.5 m/s)
+    (1.5, QColor(255, 165, 0)),   # orange (1.5-2.0 m/s)
+    (2.0, QColor(220, 50, 50)),   # red (> 2.0 m/s)
+    (3.0, QColor(180, 0, 0)),     # dark red
+]
+
+# Node shapes
+SHAPE_JUNCTION = 'o'   # circle
+SHAPE_RESERVOIR = 's'  # square
+SHAPE_TANK = 's'       # square
+SHAPE_PUMP = 't'       # triangle
+
+
+def _interpolate_color(value, color_map):
+    """Interpolate color from a value-color map."""
+    if value <= color_map[0][0]:
+        return color_map[0][1]
+    if value >= color_map[-1][0]:
+        return color_map[-1][1]
+
+    for i in range(len(color_map) - 1):
+        v0, c0 = color_map[i]
+        v1, c1 = color_map[i + 1]
+        if v0 <= value <= v1:
+            t = (value - v0) / (v1 - v0) if v1 != v0 else 0
+            r = int(c0.red() + t * (c1.red() - c0.red()))
+            g = int(c0.green() + t * (c1.green() - c0.green()))
+            b = int(c0.blue() + t * (c1.blue() - c0.blue()))
+            return QColor(r, g, b)
+
+    return color_map[-1][1]
+
+
+def _wsaa_node_color(pressure_m):
+    """WSAA compliance color for a junction pressure."""
+    if pressure_m is None:
+        return QColor(108, 112, 134)  # grey — no results
+    if pressure_m < WSAA_WARN_PRESSURE_LOW:
+        return QColor(220, 50, 50)    # red — fail
+    if pressure_m < WSAA_MIN_PRESSURE_M:
+        return QColor(255, 165, 0)    # orange — warning
+    if pressure_m > WSAA_MAX_PRESSURE_M:
+        return QColor(220, 50, 50)    # red — fail
+    return QColor(80, 200, 80)        # green — pass
+
+
+def _wsaa_pipe_color(velocity_ms):
+    """WSAA compliance color for a pipe velocity."""
+    if velocity_ms is None:
+        return QColor(108, 112, 134)  # grey
+    if velocity_ms > WSAA_MAX_VELOCITY_MS:
+        return QColor(220, 50, 50)    # red
+    if velocity_ms > WSAA_WARN_VELOCITY:
+        return QColor(255, 165, 0)    # orange
+    return QColor(80, 200, 80)        # green
+
+
+class ColorLegend(QWidget):
+    """Compact color scale legend."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(4, 4, 4, 4)
+        self.labels = []
+
+    def set_scale(self, title, entries):
+        """Set legend entries: list of (label, QColor)."""
+        # Clear old
+        for lbl in self.labels:
+            self.layout.removeWidget(lbl)
+            lbl.deleteLater()
+        self.labels.clear()
+
+        title_lbl = QLabel(f"<b>{title}</b>")
+        title_lbl.setFont(QFont("Consolas", 9))
+        title_lbl.setStyleSheet("color: #cdd6f4;")
+        self.layout.addWidget(title_lbl)
+        self.labels.append(title_lbl)
+
+        for text, color in entries:
+            lbl = QLabel(f'<span style="color: {color.name()};">&#9632;</span> {text}')
+            lbl.setFont(QFont("Consolas", 8))
+            lbl.setStyleSheet("color: #a6adc8;")
+            self.layout.addWidget(lbl)
+            self.labels.append(lbl)
+
+
+class NetworkCanvas(QWidget):
+    """Interactive 2D network canvas using PyQtGraph."""
+
+    element_selected = pyqtSignal(str, str)  # (element_id, element_type)
+
+    COLOR_MODES = ["WSAA Compliance", "Pressure", "Velocity", "Headloss", "Status"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.api = None
+        self.results = None
+        self._node_positions = {}  # {id: (x, y)}
+        self._node_ids = []
+        self._pipe_ids = []
+        self._selected_id = None
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Toolbar
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(4, 4, 4, 0)
+
+        self.color_mode_combo = QComboBox()
+        self.color_mode_combo.addItems(self.COLOR_MODES)
+        self.color_mode_combo.setFont(QFont("Consolas", 9))
+        self.color_mode_combo.currentTextChanged.connect(self._on_color_mode_changed)
+        toolbar.addWidget(QLabel("Color:"))
+        toolbar.addWidget(self.color_mode_combo)
+
+        self.fit_btn = QPushButton("Fit")
+        self.fit_btn.setFont(QFont("Consolas", 9))
+        self.fit_btn.clicked.connect(self._fit_view)
+        toolbar.addWidget(self.fit_btn)
+
+        self.labels_btn = QPushButton("Labels")
+        self.labels_btn.setCheckable(True)
+        self.labels_btn.setFont(QFont("Consolas", 9))
+        self.labels_btn.toggled.connect(self._toggle_labels)
+        toolbar.addWidget(self.labels_btn)
+
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        # Plot widget
+        self.plot_widget = PlotWidget()
+        self.plot_widget.setBackground('#1e1e2e')
+        self.plot_widget.setAspectLocked(True)
+        self.plot_widget.showGrid(x=False, y=False)
+        self.plot_widget.hideAxis('left')
+        self.plot_widget.hideAxis('bottom')
+        layout.addWidget(self.plot_widget)
+
+        # Legend
+        self.legend = ColorLegend(self)
+        self.legend.setStyleSheet("background-color: rgba(30,30,46,200); border-radius: 4px;")
+        self.legend.setFixedWidth(160)
+
+        # Scatter items
+        self.node_scatter = ScatterPlotItem(size=12, pen=pg.mkPen(None))
+        self.node_scatter.sigClicked.connect(self._on_node_clicked)
+        self.plot_widget.addItem(self.node_scatter)
+
+        self._pipe_lines = []
+        self._label_items = []
+        self._show_labels = False
+
+    def set_api(self, api):
+        """Set the HydraulicAPI instance and render the network."""
+        self.api = api
+        self.render()
+
+    def set_results(self, results):
+        """Set analysis results and re-color the network."""
+        self.results = results
+        self._apply_colors()
+
+    def render(self):
+        """Full re-render of the network from API data."""
+        if self.api is None or self.api.wn is None:
+            return
+
+        self.plot_widget.clear()
+        self._pipe_lines.clear()
+        self._label_items.clear()
+        self._node_positions.clear()
+        self._node_ids.clear()
+        self._pipe_ids.clear()
+
+        wn = self.api.wn
+
+        # Collect node positions
+        for nid in list(wn.junction_name_list) + list(wn.reservoir_name_list) + list(wn.tank_name_list):
+            node = wn.get_node(nid)
+            x, y = node.coordinates
+            self._node_positions[nid] = (x, y)
+
+        # Draw pipes as lines
+        for pid in wn.pipe_name_list:
+            pipe = wn.get_link(pid)
+            sn = pipe.start_node_name
+            en = pipe.end_node_name
+            if sn in self._node_positions and en in self._node_positions:
+                x0, y0 = self._node_positions[sn]
+                x1, y1 = self._node_positions[en]
+                line = self.plot_widget.plot(
+                    [x0, x1], [y0, y1],
+                    pen=pg.mkPen(color='#6c7086', width=2),
+                )
+                line.pipe_id = pid
+                self._pipe_lines.append(line)
+                self._pipe_ids.append(pid)
+
+        # Draw pumps as lines too
+        for pid in wn.pump_name_list:
+            pump = wn.get_link(pid)
+            sn = pump.start_node_name
+            en = pump.end_node_name
+            if sn in self._node_positions and en in self._node_positions:
+                x0, y0 = self._node_positions[sn]
+                x1, y1 = self._node_positions[en]
+                line = self.plot_widget.plot(
+                    [x0, x1], [y0, y1],
+                    pen=pg.mkPen(color='#22c55e', width=3, style=Qt.PenStyle.DashLine),
+                )
+                self._pipe_lines.append(line)
+
+        # Draw valves as lines
+        for vid in wn.valve_name_list:
+            valve = wn.get_link(vid)
+            sn = valve.start_node_name
+            en = valve.end_node_name
+            if sn in self._node_positions and en in self._node_positions:
+                x0, y0 = self._node_positions[sn]
+                x1, y1 = self._node_positions[en]
+                line = self.plot_widget.plot(
+                    [x0, x1], [y0, y1],
+                    pen=pg.mkPen(color='#f9e2af', width=3),
+                )
+                self._pipe_lines.append(line)
+
+        # Build node scatter data
+        spots = []
+        for jid in wn.junction_name_list:
+            x, y = self._node_positions[jid]
+            spots.append({
+                'pos': (x, y), 'size': 10, 'symbol': SHAPE_JUNCTION,
+                'brush': pg.mkBrush('#89b4fa'), 'pen': pg.mkPen('#313244', width=1),
+                'data': jid,
+            })
+            self._node_ids.append(jid)
+
+        for rid in wn.reservoir_name_list:
+            x, y = self._node_positions[rid]
+            spots.append({
+                'pos': (x, y), 'size': 16, 'symbol': SHAPE_RESERVOIR,
+                'brush': pg.mkBrush('#f38ba8'), 'pen': pg.mkPen('#313244', width=1),
+                'data': rid,
+            })
+            self._node_ids.append(rid)
+
+        for tid in wn.tank_name_list:
+            x, y = self._node_positions[tid]
+            spots.append({
+                'pos': (x, y), 'size': 14, 'symbol': SHAPE_TANK,
+                'brush': pg.mkBrush('#94e2d5'), 'pen': pg.mkPen('#313244', width=1),
+                'data': tid,
+            })
+            self._node_ids.append(tid)
+
+        self.node_scatter = ScatterPlotItem(size=12, pen=pg.mkPen(None))
+        self.node_scatter.setData(spots)
+        self.node_scatter.sigClicked.connect(self._on_node_clicked)
+        self.plot_widget.addItem(self.node_scatter)
+
+        self._apply_colors()
+        self._fit_view()
+
+        # Update legend
+        self._update_legend()
+
+    def _apply_colors(self):
+        """Apply color overlay based on current mode and results."""
+        mode = self.color_mode_combo.currentText()
+
+        if self.results is None:
+            # Grey everything — no results
+            self._color_pipes_grey()
+            self._update_legend()
+            return
+
+        pressures = self.results.get('pressures', {})
+        flows = self.results.get('flows', {})
+
+        # Color nodes
+        spots = self.node_scatter.data
+        if spots is not None and len(spots) > 0:
+            new_brushes = []
+            for spot in spots:
+                nid = spot['data'] if isinstance(spot, dict) else spot[3]  # data field
+                p = pressures.get(str(nid), {})
+                avg_p = p.get('avg_m')
+
+                if mode == "WSAA Compliance":
+                    color = _wsaa_node_color(avg_p)
+                elif mode == "Pressure":
+                    color = _interpolate_color(avg_p, PRESSURE_COLORS) if avg_p is not None else QColor(108, 112, 134)
+                else:
+                    color = QColor(137, 180, 250)  # default blue
+
+                new_brushes.append(pg.mkBrush(color))
+
+            # Can't easily update individual spots — re-set data
+            self._recolor_nodes(new_brushes)
+
+        # Color pipes
+        if mode in ("WSAA Compliance", "Velocity"):
+            for i, pid in enumerate(self._pipe_ids):
+                f = flows.get(pid, {})
+                v = f.get('max_velocity_ms')
+                if mode == "WSAA Compliance":
+                    color = _wsaa_pipe_color(v)
+                else:
+                    color = _interpolate_color(v, VELOCITY_COLORS) if v is not None else QColor(108, 112, 134)
+                if i < len(self._pipe_lines):
+                    self._pipe_lines[i].setPen(pg.mkPen(color=color, width=2))
+        elif mode == "Pressure":
+            # Color pipes by average of endpoint pressures
+            for i, pid in enumerate(self._pipe_ids):
+                if i < len(self._pipe_lines) and self.api and self.api.wn:
+                    pipe = self.api.wn.get_link(pid)
+                    p1 = pressures.get(pipe.start_node_name, {}).get('avg_m')
+                    p2 = pressures.get(pipe.end_node_name, {}).get('avg_m')
+                    if p1 is not None and p2 is not None:
+                        avg = (p1 + p2) / 2
+                        color = _interpolate_color(avg, PRESSURE_COLORS)
+                    else:
+                        color = QColor(108, 112, 134)
+                    self._pipe_lines[i].setPen(pg.mkPen(color=color, width=2))
+        else:
+            self._color_pipes_grey()
+
+        self._update_legend()
+
+    def _recolor_nodes(self, brushes):
+        """Re-color node scatter with new brushes."""
+        if self.api is None or self.api.wn is None:
+            return
+        wn = self.api.wn
+        spots = []
+        idx = 0
+        for jid in wn.junction_name_list:
+            x, y = self._node_positions.get(jid, (0, 0))
+            brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
+            spots.append({
+                'pos': (x, y), 'size': 10, 'symbol': SHAPE_JUNCTION,
+                'brush': brush, 'pen': pg.mkPen('#313244', width=1),
+                'data': jid,
+            })
+            idx += 1
+        for rid in wn.reservoir_name_list:
+            x, y = self._node_positions.get(rid, (0, 0))
+            brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
+            spots.append({
+                'pos': (x, y), 'size': 16, 'symbol': SHAPE_RESERVOIR,
+                'brush': brush, 'pen': pg.mkPen('#313244', width=1),
+                'data': rid,
+            })
+            idx += 1
+        for tid in wn.tank_name_list:
+            x, y = self._node_positions.get(tid, (0, 0))
+            brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
+            spots.append({
+                'pos': (x, y), 'size': 14, 'symbol': SHAPE_TANK,
+                'brush': brush, 'pen': pg.mkPen('#313244', width=1),
+                'data': tid,
+            })
+            idx += 1
+        self.node_scatter.setData(spots)
+
+    def _color_pipes_grey(self):
+        """Reset all pipes to grey (no results)."""
+        for line in self._pipe_lines:
+            line.setPen(pg.mkPen(color='#6c7086', width=2))
+
+    def _update_legend(self):
+        mode = self.color_mode_combo.currentText()
+        if mode == "WSAA Compliance":
+            self.legend.set_scale("WSAA Compliance", [
+                ("Pass (20-50 m, <2.0 m/s)", QColor(80, 200, 80)),
+                ("Warning (15-20 m, 1.5-2.0 m/s)", QColor(255, 165, 0)),
+                ("Fail (<15 m, >50 m, >2.0 m/s)", QColor(220, 50, 50)),
+                ("No results", QColor(108, 112, 134)),
+            ])
+        elif mode == "Pressure":
+            self.legend.set_scale("Pressure (m head)", [
+                ("<15 m", QColor(220, 50, 50)),
+                ("15-20 m", QColor(255, 165, 0)),
+                ("20-50 m", QColor(80, 200, 80)),
+                (">50 m", QColor(255, 165, 0)),
+                (">80 m", QColor(220, 50, 50)),
+            ])
+        elif mode == "Velocity":
+            self.legend.set_scale("Velocity (m/s)", [
+                ("<1.5 m/s", QColor(80, 200, 80)),
+                ("1.5-2.0 m/s", QColor(255, 165, 0)),
+                (">2.0 m/s", QColor(220, 50, 50)),
+            ])
+        else:
+            self.legend.set_scale(mode, [("No data", QColor(108, 112, 134))])
+
+    def _on_color_mode_changed(self, mode):
+        self._apply_colors()
+
+    def _fit_view(self):
+        """Auto-fit to show all elements."""
+        self.plot_widget.autoRange()
+
+    def _toggle_labels(self, show):
+        """Toggle node/pipe labels."""
+        self._show_labels = show
+        if show:
+            self._add_labels()
+        else:
+            self._remove_labels()
+
+    def _add_labels(self):
+        """Add text labels for all nodes and pipes."""
+        self._remove_labels()
+        if self.api is None or self.api.wn is None:
+            return
+
+        for nid, (x, y) in self._node_positions.items():
+            text = pg.TextItem(nid, color='#a6adc8', anchor=(0, 1))
+            text.setPos(x, y)
+            text.setFont(QFont("Consolas", 7))
+            self.plot_widget.addItem(text)
+            self._label_items.append(text)
+
+    def _remove_labels(self):
+        for item in self._label_items:
+            self.plot_widget.removeItem(item)
+        self._label_items.clear()
+
+    def _on_node_clicked(self, scatter, points, ev=None):
+        """Handle click on a node."""
+        if not points:
+            return
+        pt = points[0]
+        nid = pt.data()
+        if nid is None:
+            return
+
+        self._selected_id = nid
+        # Determine type
+        wn = self.api.wn
+        if nid in wn.junction_name_list:
+            etype = 'junction'
+        elif nid in wn.reservoir_name_list:
+            etype = 'reservoir'
+        elif nid in wn.tank_name_list:
+            etype = 'tank'
+        else:
+            etype = 'node'
+        self.element_selected.emit(nid, etype)

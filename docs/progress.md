@@ -28,3 +28,13 @@
 - Entry point: main_app.py (accepts .inp as CLI argument)
 - Created requirements_desktop.txt
 - All 185 tests pass
+
+## Phase 2 — Interactive Network Canvas (2026-04-04)
+- Created desktop/network_canvas.py: PyQtGraph-based 2D network view
+- Nodes as circles (junctions), squares (reservoirs/tanks), with click selection
+- Pipes as lines with color overlays
+- 5 color modes: WSAA Compliance, Pressure, Velocity, Headloss, Status
+- WSAA compliance overlay: green/orange/red based on pressure and velocity thresholds
+- Color legend widget, zoom/pan/fit, labels toggle
+- Canvas element selection updates Properties panel
+- All 185 tests pass

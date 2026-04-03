@@ -99,6 +99,7 @@ def main():
             window.api._inp_file = filepath
             window._populate_explorer()
             window._update_status_bar()
+            window.canvas.set_api(window.api)
             window.setWindowTitle(
                 f"Hydraulic Analysis Tool — {os.path.basename(filepath)}"
             )

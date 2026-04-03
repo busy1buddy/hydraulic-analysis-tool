@@ -18,6 +18,7 @@ from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QFont
 
 from epanet_api import HydraulicAPI
+from desktop.network_canvas import NetworkCanvas
 
 
 class MainWindow(QMainWindow):
@@ -155,14 +156,10 @@ class MainWindow(QMainWindow):
     # =====================================================================
 
     def _setup_central_widget(self):
-        """Placeholder for the network canvas (replaced in Phase 2)."""
-        self.central_label = QLabel("Network View")
-        self.central_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.central_label.setFont(QFont("Arial", 24))
-        self.central_label.setStyleSheet(
-            "background-color: #1e1e2e; color: #6c7086; border: 1px solid #313244;"
-        )
-        self.setCentralWidget(self.central_label)
+        """Network canvas with PyQtGraph 2D view."""
+        self.canvas = NetworkCanvas()
+        self.canvas.element_selected.connect(self._on_canvas_element_selected)
+        self.setCentralWidget(self.canvas)
 
     # =====================================================================
     # DOCK PANELS
@@ -270,7 +267,7 @@ class MainWindow(QMainWindow):
         self.properties_table.setRowCount(0)
         self.node_results_table.setRowCount(0)
         self.pipe_results_table.setRowCount(0)
-        self.central_label.setText("Network View")
+        self.canvas.set_api(None)  # clear canvas
         self._update_status_bar()
         self.setWindowTitle("Hydraulic Analysis Tool")
 
@@ -292,7 +289,7 @@ class MainWindow(QMainWindow):
             self._populate_explorer()
             self._update_status_bar()
             self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
-            self.central_label.setText(f"Loaded: {os.path.basename(path)}")
+            self.canvas.set_api(self.api)
         except Exception as e:
             QMessageBox.critical(self, "Load Error",
                                 f"Could not load network file.\n\n{type(e).__name__}: {e}")
@@ -420,6 +417,22 @@ class MainWindow(QMainWindow):
             elif parent_text.startswith("Valves"):
                 link = self.api.get_link(element_id)
                 self._show_valve_properties(element_id, link)
+        except Exception:
+            pass
+
+    def _on_canvas_element_selected(self, element_id, element_type):
+        """Handle element selection from the canvas."""
+        self.properties_table.setRowCount(0)
+        try:
+            if element_type in ('junction', 'reservoir', 'tank'):
+                node = self.api.get_node(element_id)
+                if element_type == 'junction':
+                    self._show_node_properties(element_id, node)
+                else:
+                    self._show_reservoir_properties(element_id, node)
+            elif element_type == 'pipe':
+                link = self.api.get_link(element_id)
+                self._show_pipe_properties(element_id, link)
         except Exception:
             pass
 
