@@ -20,6 +20,7 @@ from PyQt6.QtGui import QAction, QFont, QColor
 from epanet_api import HydraulicAPI
 from desktop.network_canvas import NetworkCanvas
 from desktop.analysis_worker import AnalysisWorker
+from desktop.scenario_panel import ScenarioPanel, ScenarioData
 
 
 class MainWindow(QMainWindow):
@@ -220,6 +221,16 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.results_dock)
         self.toggle_results_act.toggled.connect(self.results_dock.setVisible)
         self.results_dock.visibilityChanged.connect(self.toggle_results_act.setChecked)
+
+        # --- Scenario Panel (tabbed with explorer on left) ---
+        self.scenario_dock = QDockWidget("Scenarios", self)
+        self.scenario_dock.setMinimumWidth(300)
+        self.scenario_panel = ScenarioPanel()
+        self.scenario_panel.run_all.connect(self._on_run_all_scenarios)
+        self.scenario_dock.setWidget(self.scenario_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.scenario_dock)
+        self.tabifyDockWidget(self.explorer_dock, self.scenario_dock)
+        self.explorer_dock.raise_()
 
         # Wire tree selection
         self.explorer_tree.itemClicked.connect(self._on_tree_item_clicked)
@@ -560,6 +571,54 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "Analysis Error", msg)
         self.status_bar.showMessage("Analysis failed.", 5000)
+
+    def _on_run_all_scenarios(self):
+        """Run all scenarios sequentially and update comparison table."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network", "Load a network first.")
+            return
+
+        import copy
+        import wntr as _wntr
+
+        original_wn = self.api.wn
+        self.status_bar.showMessage("Running all scenarios...")
+        self.progress_bar.setVisible(True)
+
+        for i, sc in enumerate(self.scenario_panel.scenarios):
+            self.progress_bar.setValue(int((i / len(self.scenario_panel.scenarios)) * 100))
+
+            # Reset to original network
+            self.api.wn = _wntr.network.WaterNetworkModel(self.api._inp_file)
+
+            # Apply demand multiplier
+            if sc.demand_multiplier != 1.0:
+                for jname in self.api.get_node_list('junction'):
+                    junc = self.api.get_node(jname)
+                    if junc.demand_timeseries_list:
+                        junc.demand_timeseries_list[0].base_value *= sc.demand_multiplier
+
+            try:
+                sc.results = self.api.run_steady_state(save_plot=False)
+            except Exception as e:
+                sc.results = {'error': str(e), 'pressures': {}, 'flows': {}, 'compliance': []}
+
+        # Restore original
+        self.api.wn = _wntr.network.WaterNetworkModel(self.api._inp_file)
+
+        self.progress_bar.setVisible(False)
+        self.scenario_panel.update_comparison()
+
+        # Show base scenario results on canvas
+        base = self.scenario_panel.scenarios[0]
+        if base.results and 'error' not in base.results:
+            self.canvas.set_results(base.results)
+            self._populate_node_results(base.results)
+            self._populate_pipe_results(base.results)
+
+        self.status_bar.showMessage(
+            f"All {len(self.scenario_panel.scenarios)} scenarios complete.", 5000
+        )
 
     def _populate_node_results(self, results):
         """Fill the node results table."""

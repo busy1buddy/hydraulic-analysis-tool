@@ -39,6 +39,16 @@
 - Canvas element selection updates Properties panel
 - All 185 tests pass
 
+## Phase 4 — Scenario Comparison (2026-04-04)
+- Created desktop/scenario_panel.py: scenario management with create/edit/duplicate/delete
+- ScenarioData: stores demand multiplier, modifications, results
+- ScenarioDialog: form for name and demand multiplier
+- ScenarioComparisonTable: side-by-side min/max pressure, max velocity, WSAA issues
+- Run All: executes all scenarios sequentially, updates comparison table
+- Scenario dock tabified with Project Explorer on left
+- Base scenario results shown on canvas after run-all
+- All 185 tests pass
+
 ## Phase 3 — Analysis Integration (2026-04-04)
 - Created desktop/analysis_worker.py: QThread worker for background analysis
 - Supports steady-state, transient, and slurry analysis modes
