@@ -457,7 +457,7 @@ class NetworkCanvas(QWidget):
 
     def _fit_view(self):
         """Auto-fit to show all elements with padding."""
-        self.plot_widget.autoRange(padding=0.15)
+        self.plot_widget.autoRange(padding=0.25)
 
     def _toggle_labels(self, show):
         """Toggle node/pipe labels."""

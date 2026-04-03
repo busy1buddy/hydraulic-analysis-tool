@@ -186,13 +186,16 @@ class MainWindow(QMainWindow):
 
         # --- Right: Properties ---
         self.properties_dock = QDockWidget("Properties", self)
-        self.properties_dock.setMinimumWidth(250)
+        self.properties_dock.setMinimumWidth(220)
         self.properties_table = QTableWidget(0, 2)
         self.properties_table.setHorizontalHeaderLabels(["Property", "Value"])
         self.properties_table.horizontalHeader().setStretchLastSection(True)
+        self.properties_table.setMinimumWidth(220)
         self.properties_table.setFont(QFont("Consolas", 10))
+        self.properties_table.verticalHeader().setVisible(False)
         self.properties_dock.setWidget(self.properties_table)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_dock)
+        self.properties_dock.setVisible(True)
         self.toggle_properties_act.toggled.connect(self.properties_dock.setVisible)
         self.properties_dock.visibilityChanged.connect(self.toggle_properties_act.setChecked)
 
@@ -238,13 +241,13 @@ class MainWindow(QMainWindow):
 
         # --- Scenario Panel (tabbed with explorer on left) ---
         self.scenario_dock = QDockWidget("Scenarios", self)
-        self.scenario_dock.setMinimumWidth(300)
+        self.scenario_dock.setMinimumWidth(250)
         self.scenario_panel = ScenarioPanel()
         self.scenario_panel.run_all.connect(self._on_run_all_scenarios)
         self.scenario_dock.setWidget(self.scenario_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.scenario_dock)
-        self.tabifyDockWidget(self.explorer_dock, self.scenario_dock)
-        self.explorer_dock.raise_()
+        # Tab scenario behind explorer so explorer is the visible tab
+        self.tabifyDockWidget(self.scenario_dock, self.explorer_dock)
 
         # Wire tree selection
         self.explorer_tree.itemClicked.connect(self._on_tree_item_clicked)
