@@ -108,6 +108,8 @@ PUMP_DATABASE = {
         'application': 'Large mine dewatering / open pit',
     },
     # Slurry pumps
+    # Slurry pump motor ratings sized for SG=1.5 slurry at BEP
+    # shaft_power = (Q_m3s * H * rho * g) / eff; motor ≈ shaft / 0.80
     'SLP-200-30': {
         'manufacturer': 'Generic Slurry',
         'model': 'SLP-200-30',
@@ -122,7 +124,7 @@ PUMP_DATABASE = {
             (0, 0), (10, 40), (20, 58), (30, 68),
             (40, 65), (50, 52), (55, 38),
         ],
-        'power_kW': 45,
+        'power_kW': 22,  # BEP shaft ~17.5 kW (SG=1.5), ratio 0.80
         'npshr_m': 4.0,
         'application': 'Tailings transfer, slurry pumping',
     },
@@ -140,7 +142,7 @@ PUMP_DATABASE = {
             (0, 0), (20, 45), (40, 62), (60, 72),
             (80, 70), (100, 58), (110, 42),
         ],
-        'power_kW': 110,
+        'power_kW': 75,  # BEP shaft ~52.7 kW (SG=1.5), ratio 0.70
         'npshr_m': 5.5,
         'application': 'Large slurry pipeline, paste fill',
     },

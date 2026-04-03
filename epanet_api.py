@@ -172,6 +172,127 @@ class HydraulicAPI:
         }
 
     # =========================================================================
+    # NETWORK MUTATION (all mutations must go through these methods)
+    # =========================================================================
+
+    def add_junction(self, jid, elevation=0, base_demand=0, coordinates=None):
+        """Add a junction to the network. Demand in m³/s (WNTR internal)."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        self.wn.add_junction(jid, elevation=elevation, base_demand=base_demand,
+                             coordinates=coordinates)
+
+    def update_junction(self, jid, elevation=None, base_demand=None, coordinates=None):
+        """Update junction properties."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        node = self.wn.get_node(jid)
+        if elevation is not None:
+            node.elevation = elevation
+        if base_demand is not None and node.demand_timeseries_list:
+            node.demand_timeseries_list[0].base_value = base_demand
+        if coordinates is not None:
+            node.coordinates = coordinates
+
+    def remove_junction(self, jid):
+        """Remove a junction (node) from the network."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        self.wn.remove_node(jid)
+
+    def add_pipe(self, pid, start_node, end_node, length=100, diameter_m=0.3,
+                 roughness=130):
+        """Add a pipe. Diameter in metres (WNTR internal)."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        self.wn.add_pipe(pid, start_node, end_node, length=length,
+                         diameter=diameter_m, roughness=roughness)
+
+    def update_pipe(self, pid, length=None, diameter_m=None, roughness=None):
+        """Update pipe properties. Diameter in metres."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        pipe = self.wn.get_link(pid)
+        if length is not None:
+            pipe.length = length
+        if diameter_m is not None:
+            pipe.diameter = diameter_m
+        if roughness is not None:
+            pipe.roughness = roughness
+
+    def remove_pipe(self, pid):
+        """Remove a pipe (link) from the network."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        self.wn.remove_link(pid)
+
+    def remove_node(self, nid):
+        """Remove any node type from the network."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        self.wn.remove_node(nid)
+
+    def remove_link(self, lid):
+        """Remove any link type from the network."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        self.wn.remove_link(lid)
+
+    def get_node(self, nid):
+        """Get a node object for read-only property access."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        return self.wn.get_node(nid)
+
+    def get_link(self, lid):
+        """Get a link object for read-only property access."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        return self.wn.get_link(lid)
+
+    def get_node_list(self, node_type=None):
+        """Return list of node IDs, optionally filtered by type."""
+        if self.wn is None:
+            return []
+        if node_type == 'junction':
+            return list(self.wn.junction_name_list)
+        elif node_type == 'reservoir':
+            return list(self.wn.reservoir_name_list)
+        elif node_type == 'tank':
+            return list(self.wn.tank_name_list)
+        return (list(self.wn.junction_name_list) +
+                list(self.wn.reservoir_name_list) +
+                list(self.wn.tank_name_list))
+
+    def get_link_list(self, link_type=None):
+        """Return list of link IDs, optionally filtered by type."""
+        if self.wn is None:
+            return []
+        if link_type == 'pipe':
+            return list(self.wn.pipe_name_list)
+        elif link_type == 'pump':
+            return list(self.wn.pump_name_list)
+        elif link_type == 'valve':
+            return list(self.wn.valve_name_list)
+        return (list(self.wn.pipe_name_list) +
+                list(self.wn.pump_name_list) +
+                list(self.wn.valve_name_list))
+
+    def get_steady_results(self):
+        """Return the raw steady-state WNTR results object."""
+        return self.steady_results
+
+    def get_transient_model(self):
+        """Return the TSNet transient model object."""
+        return self.tm
+
+    def write_inp(self, path):
+        """Write the current network to an .inp file."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        wntr.network.write_inpfile(self.wn, path)
+
+    # =========================================================================
     # STEADY-STATE ANALYSIS
     # =========================================================================
 
@@ -211,8 +332,11 @@ class HydraulicAPI:
             pipe = self.wn.get_link(pipe_name)
             f = flows[pipe_name]
             area = np.pi * (pipe.diameter / 2) ** 2
+            if area <= 0:
+                continue  # skip degenerate pipe with zero diameter
             v_avg = abs(float(f.mean())) / area
-            v_max = abs(float(f.max())) / area
+            # abs() required — flow can be negative on reversing pipes
+            v_max = float(f.abs().max()) / area
 
             results['flows'][pipe_name] = {
                 'min_lps': round(float(f.min()) * 1000, 2),
@@ -242,7 +366,10 @@ class HydraulicAPI:
         for pipe_name in self.wn.pipe_name_list:
             pipe = self.wn.get_link(pipe_name)
             area = np.pi * (pipe.diameter / 2) ** 2
-            v_max = abs(float(flows[pipe_name].max())) / area
+            if area <= 0:
+                continue  # skip degenerate pipe with zero diameter
+            # abs() required — flow can be negative on reversing pipes
+            v_max = float(flows[pipe_name].abs().max()) / area
             if v_max > self.DEFAULTS['max_velocity_ms']:
                 results['compliance'].append({
                     'type': 'WARNING',
@@ -486,18 +613,19 @@ class HydraulicAPI:
             }
 
             # Analyse water age at each junction
+            # WNTR water age is in seconds — convert to hours for WSAA comparison
             for junc in self.wn.junction_name_list:
                 q = quality[junc]
-                max_age = round(float(q.max()), 2)
-                avg_age = round(float(q.mean()), 2)
+                max_age_hrs = round(float(q.max()) / 3600, 2)
+                avg_age_hrs = round(float(q.mean()) / 3600, 2)
 
                 results['junction_quality'][junc] = {
-                    'max_age_hrs': max_age,
-                    'avg_age_hrs': avg_age,
+                    'max_age_hrs': max_age_hrs,
+                    'avg_age_hrs': avg_age_hrs,
                 }
 
                 # Flag stagnation risk (> 24 hours)
-                if max_age > 24.0:
+                if max_age_hrs > 24.0:
                     results['stagnation_risk'].append(junc)
 
             # Compliance items
@@ -636,32 +764,35 @@ class HydraulicAPI:
             min_h = float(np.min(head))
             delta_h = max_h - steady
 
+            # WSAA compliance checks gauge pressure, not total head
+            gauge_max_m = max_h - node.elevation
+            gauge_max_kPa = gauge_max_m * g
+
             results['junctions'][node_name] = {
                 'steady_head_m': round(steady, 1),
                 'max_head_m': round(max_h, 1),
                 'min_head_m': round(min_h, 1),
                 'surge_m': round(delta_h, 1),
                 'surge_kPa': round(delta_h * g, 0),
-                'max_pressure_kPa': round(max_h * g, 0),
+                'max_pressure_kPa': round(gauge_max_kPa, 0),
             }
 
             if delta_h > results['max_surge_m']:
                 results['max_surge_m'] = round(delta_h, 1)
                 results['max_surge_kPa'] = round(delta_h * g, 0)
 
-            # Compliance
-            max_p_kPa = max_h * g
-            if max_p_kPa > self.DEFAULTS['pipe_rating_kPa']:
+            # Compliance — compare gauge pressure to PN35 rating
+            if gauge_max_kPa > self.DEFAULTS['pipe_rating_kPa']:
                 results['compliance'].append({
                     'type': 'CRITICAL',
                     'element': node_name,
-                    'message': f'Transient pressure {max_p_kPa:.0f} kPa EXCEEDS PN35 rating',
+                    'message': f'Transient gauge pressure {gauge_max_kPa:.0f} kPa EXCEEDS PN35 rating',
                 })
-            elif max_p_kPa > self.DEFAULTS['pipe_rating_kPa'] * 0.8:
+            elif gauge_max_kPa > self.DEFAULTS['pipe_rating_kPa'] * 0.8:
                 results['compliance'].append({
                     'type': 'WARNING',
                     'element': node_name,
-                    'message': f'Transient pressure {max_p_kPa:.0f} kPa exceeds 80% of PN35',
+                    'message': f'Transient gauge pressure {gauge_max_kPa:.0f} kPa exceeds 80% of PN35',
                 })
 
             min_pressure_head = min_h - node.elevation
@@ -869,8 +1000,6 @@ class HydraulicAPI:
             'max_surge_kPa': 0,
         }
 
-        pipe_rating_m = self.DEFAULTS['pipe_rating_kPa'] / g
-
         for node_name in tm.junction_name_list:
             node = tm.get_node(node_name)
             head = node.head
@@ -879,32 +1008,35 @@ class HydraulicAPI:
             min_h = float(np.min(head))
             delta_h = max_h - steady
 
+            # WSAA compliance checks gauge pressure, not total head
+            gauge_max_m = max_h - node.elevation
+            gauge_max_kPa = gauge_max_m * g
+
             results['junctions'][node_name] = {
                 'steady_head_m': round(steady, 1),
                 'max_head_m': round(max_h, 1),
                 'min_head_m': round(min_h, 1),
                 'surge_m': round(delta_h, 1),
                 'surge_kPa': round(delta_h * g, 0),
-                'max_pressure_kPa': round(max_h * g, 0),
+                'max_pressure_kPa': round(gauge_max_kPa, 0),
             }
 
             if delta_h > results['max_surge_m']:
                 results['max_surge_m'] = round(delta_h, 1)
                 results['max_surge_kPa'] = round(delta_h * g, 0)
 
-            # Compliance checks
-            max_p_kPa = max_h * g
-            if max_p_kPa > self.DEFAULTS['pipe_rating_kPa']:
+            # Compliance — compare gauge pressure to PN35 rating
+            if gauge_max_kPa > self.DEFAULTS['pipe_rating_kPa']:
                 results['compliance'].append({
                     'type': 'CRITICAL',
                     'element': node_name,
-                    'message': f'Transient pressure {max_p_kPa:.0f} kPa EXCEEDS PN35 rating',
+                    'message': f'Transient gauge pressure {gauge_max_kPa:.0f} kPa EXCEEDS PN35 rating',
                 })
-            elif max_p_kPa > self.DEFAULTS['pipe_rating_kPa'] * 0.8:
+            elif gauge_max_kPa > self.DEFAULTS['pipe_rating_kPa'] * 0.8:
                 results['compliance'].append({
                     'type': 'WARNING',
                     'element': node_name,
-                    'message': f'Transient pressure {max_p_kPa:.0f} kPa exceeds 80% of PN35',
+                    'message': f'Transient gauge pressure {gauge_max_kPa:.0f} kPa exceeds 80% of PN35',
                 })
 
             min_pressure_head = min_h - node.elevation

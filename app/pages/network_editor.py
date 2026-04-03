@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from nicegui import ui
 from app.theme import PLOTLY_LAYOUT, COLORS, CHART_COLORS
 from app.components.network_plot import create_network_figure
-import wntr
+# Layer boundary: UI must not import wntr — use HydraulicAPI methods instead
 
 
 def create_page(api, status_refs):
@@ -111,14 +111,14 @@ def create_page(api, status_refs):
 
         if mode == 'add_junction':
             # Auto-generate next ID
-            existing = list(api.wn.junction_name_list) if api.wn else []
+            existing = api.get_node_list('junction')
             nums = [int(j[1:]) for j in existing if j[1:].isdigit()]
             next_num = max(nums, default=0) + 1
             junc_id_input.value = f'J{next_num}'
             add_junc_dialog.open()
 
         elif mode == 'add_pipe':
-            existing = list(api.wn.pipe_name_list) if api.wn else []
+            existing = api.get_link_list('pipe')
             nums = [int(p[1:]) for p in existing if p[1:].isdigit()]
             next_num = max(nums, default=0) + 1
             pipe_id_input.value = f'P{next_num}'
@@ -137,7 +137,7 @@ def create_page(api, status_refs):
             ui.notify(f'Error: {e}', type='negative')
 
     def refresh_canvas():
-        if api.wn is None:
+        if not api.get_node_list():
             return
         fig = create_network_figure(api.wn)
         fig.update_layout(dragmode='pan')
@@ -150,7 +150,7 @@ def create_page(api, status_refs):
 
     def show_properties(element_id, element_type):
         props_container.clear()
-        if api.wn is None:
+        if not api.get_node_list():
             return
 
         with props_container:
@@ -159,7 +159,7 @@ def create_page(api, status_refs):
             ui.separator()
 
             if element_type == 'junction':
-                node = api.wn.get_node(element_id)
+                node = api.get_node(element_id)
                 elev_input = ui.number('Elevation (m)',
                                       value=round(node.elevation, 1))
                 demand_val = node.demand_timeseries_list[0].base_value * 1000 if node.demand_timeseries_list else 0
@@ -180,7 +180,7 @@ def create_page(api, status_refs):
                     'color=primary').style('margin-top: 12px')
 
             elif element_type == 'pipe':
-                pipe = api.wn.get_link(element_id)
+                pipe = api.get_link(element_id)
                 ui.label(f'From: {pipe.start_node_name}').style(
                     f'color: {COLORS["muted"]}')
                 ui.label(f'To: {pipe.end_node_name}').style(
@@ -203,7 +203,7 @@ def create_page(api, status_refs):
                     'color=primary').style('margin-top: 12px')
 
             elif element_type == 'reservoir':
-                node = api.wn.get_node(element_id)
+                node = api.get_node(element_id)
                 head_input = ui.number('Head (m)',
                                       value=round(node.base_head, 1))
 
@@ -218,7 +218,7 @@ def create_page(api, status_refs):
     def confirm_add_junction():
         try:
             jid = junc_id_input.value.strip()
-            api.wn.add_junction(
+            api.add_junction(
                 jid,
                 elevation=float(junc_elev_input.value),
                 base_demand=float(junc_demand_input.value) / 1000,
@@ -235,7 +235,7 @@ def create_page(api, status_refs):
     def confirm_add_pipe():
         try:
             pid = pipe_id_input.value.strip()
-            api.wn.add_pipe(
+            api.add_pipe(
                 pid,
                 pipe_start_input.value.strip(),
                 pipe_end_input.value.strip(),
@@ -254,15 +254,15 @@ def create_page(api, status_refs):
     def delete_selected():
         elem = editor_state['selected_element']
         etype = editor_state['selected_type']
-        if not elem or not api.wn:
+        if not elem or not api.get_node_list():
             ui.notify('Nothing selected', type='warning')
             return
 
         try:
             if etype in ('junction', 'reservoir', 'tank'):
-                api.wn.remove_node(elem)
+                api.remove_node(elem)
             elif etype in ('pipe', 'valve'):
-                api.wn.remove_link(elem)
+                api.remove_link(elem)
 
             editor_state['selected_element'] = None
             props_container.clear()
@@ -274,7 +274,7 @@ def create_page(api, status_refs):
             ui.notify(f'Cannot delete: {e}', type='negative')
 
     def save_network():
-        if api.wn is None:
+        if not api.get_node_list():
             ui.notify('No network loaded', type='warning')
             return
         fname = network_select.value
@@ -282,7 +282,7 @@ def create_page(api, status_refs):
             return
         try:
             path = os.path.join(api.model_dir, fname)
-            wntr.network.write_inpfile(api.wn, path)
+            api.write_inp(path)
             ui.notify(f'Saved to {fname}', type='positive')
         except Exception as e:
             ui.notify(f'Save failed: {e}', type='negative')
@@ -307,19 +307,18 @@ def create_page(api, status_refs):
             ui.button('Select', on_click=lambda: on_element_select()).props('color=primary')
 
         def update_element_list(e=None):
-            if api.wn is None:
+            if not api.get_node_list():
                 return
             t = element_type_select.value
-            if t == 'Junctions':
-                element_id_select.options = list(api.wn.junction_name_list)
-            elif t == 'Pipes':
-                element_id_select.options = list(api.wn.pipe_name_list)
-            elif t == 'Reservoirs':
-                element_id_select.options = list(api.wn.reservoir_name_list)
-            elif t == 'Tanks':
-                element_id_select.options = list(api.wn.tank_name_list)
-            elif t == 'Valves':
-                element_id_select.options = list(api.wn.valve_name_list)
+            type_map = {
+                'Junctions': 'junction', 'Pipes': 'pipe',
+                'Reservoirs': 'reservoir', 'Tanks': 'tank', 'Valves': 'valve',
+            }
+            lt = type_map.get(t)
+            if lt in ('junction', 'reservoir', 'tank'):
+                element_id_select.options = api.get_node_list(lt)
+            elif lt in ('pipe', 'valve'):
+                element_id_select.options = api.get_link_list(lt)
             element_id_select.update()
 
         element_type_select.on_value_change(update_element_list)

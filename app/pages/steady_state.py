@@ -112,12 +112,12 @@ def create_page(api, status_refs):
             update_metric(demand_label, f'{total_demand:.1f}', COLORS['accent'])
 
             # Pressure chart
-            sr = api.steady_results
+            sr = api.get_steady_results()
             pressures = sr.node['pressure']
             hours = (pressures.index / 3600).tolist()
 
             p_fig = go.Figure()
-            for i, junc in enumerate(api.wn.junction_name_list):
+            for i, junc in enumerate(api.get_node_list('junction')):
                 p_fig.add_trace(go.Scatter(
                     x=hours, y=pressures[junc].tolist(), name=junc,
                     line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
@@ -131,7 +131,7 @@ def create_page(api, status_refs):
             # Flow chart
             flows = sr.link['flowrate']
             f_fig = go.Figure()
-            for i, pipe_name in enumerate(api.wn.pipe_name_list):
+            for i, pipe_name in enumerate(api.get_link_list('pipe')):
                 f_fig.add_trace(go.Scatter(
                     x=hours, y=(flows[pipe_name] * 1000).tolist(), name=pipe_name,
                     line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),

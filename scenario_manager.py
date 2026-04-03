@@ -10,8 +10,7 @@ import os
 import json
 import copy
 import numpy as np
-import wntr
-
+# Layer boundary: scenario manager routes through HydraulicAPI, not direct wntr
 from epanet_api import HydraulicAPI
 
 
@@ -54,43 +53,41 @@ class ScenarioManager:
             mod_type = mod['type']
 
             if mod_type == 'pipe_diameter':
-                pipe = api.wn.get_link(mod['target'])
-                pipe.diameter = mod['value'] / 1000  # mm to m
+                api.update_pipe(mod['target'], diameter_m=mod['value'] / 1000)
 
             elif mod_type == 'pipe_roughness':
-                pipe = api.wn.get_link(mod['target'])
-                pipe.roughness = mod['value']
+                api.update_pipe(mod['target'], roughness=mod['value'])
 
             elif mod_type == 'demand_factor':
                 factor = mod['value']
-                for jname in api.wn.junction_name_list:
-                    junc = api.wn.get_node(jname)
+                for jname in api.get_node_list('junction'):
+                    junc = api.get_node(jname)
                     if junc.demand_timeseries_list:
                         junc.demand_timeseries_list[0].base_value *= factor
 
             elif mod_type == 'demand_set':
-                junc = api.wn.get_node(mod['target'])
-                junc.demand_timeseries_list[0].base_value = mod['value'] / 1000
+                api.update_junction(mod['target'],
+                                    base_demand=mod['value'] / 1000)
 
             elif mod_type == 'add_junction':
-                api.wn.add_junction(
+                api.add_junction(
                     mod['id'], elevation=mod.get('elevation', 40),
                     base_demand=mod.get('demand', 0) / 1000,
                     coordinates=(mod.get('x', 0), mod.get('y', 0)),
                 )
 
             elif mod_type == 'add_pipe':
-                api.wn.add_pipe(
+                api.add_pipe(
                     mod['id'], mod['start'], mod['end'],
                     length=mod.get('length', 100),
-                    diameter=mod.get('diameter', 200) / 1000,
+                    diameter_m=mod.get('diameter', 200) / 1000,
                     roughness=mod.get('roughness', 130),
                 )
 
         # Save modified network
         scenario_file = f'scenario_{name}.inp'
         scenario_path = os.path.join(api.model_dir, scenario_file)
-        wntr.network.write_inpfile(api.wn, scenario_path)
+        api.write_inp(scenario_path)
 
         self.scenarios[name] = {
             'name': name,

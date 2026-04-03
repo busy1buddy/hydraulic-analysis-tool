@@ -86,7 +86,7 @@ def create_page(api, status_refs):
             )
 
             # Head vs time chart
-            tm = api.tm
+            tm = api.get_transient_model()
             t = tm.simulation_timestamps
             if isinstance(t, np.ndarray):
                 t = t.tolist()

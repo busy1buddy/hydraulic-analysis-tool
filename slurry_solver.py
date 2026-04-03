@@ -132,9 +132,10 @@ def bingham_plastic_headloss(flow_m3s, diameter_m, length_m, density, tau_y, mu_
 
     if Re_B < Re_crit:
         # Laminar flow - Buckingham-Reiner equation
-        # Friction factor for Bingham plastic laminar flow
-        f = 16 / Re_B * (1 + He / (6 * Re_B) - (He ** 4) / (3 * 1e7 * Re_B ** 7))
-        f = max(f, 16 / Re_B)  # Floor at Newtonian laminar
+        # Darcy friction factor for laminar Bingham plastic — Buckingham-Reiner
+        # Uses Darcy convention (64/Re), NOT Fanning (16/Re)
+        f = 64 / Re_B * (1 + He / (6 * Re_B) - (He ** 4) / (3 * 1e7 * Re_B ** 7))
+        f = max(f, 64 / Re_B)  # Floor at Newtonian laminar (Darcy)
         regime = 'laminar'
     else:
         # Turbulent flow - Wilson-Thomas correlation

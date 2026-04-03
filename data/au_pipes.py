@@ -93,7 +93,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
         },
         375: {
             "nominal_dn": 375,
-            "internal_diameter_mm": 390.4,
+            "internal_diameter_mm": 382.2,
             "wall_thickness_mm": 7.9,
             "pressure_class": "PN25",
             "hazen_williams_c": 140,
@@ -102,33 +102,46 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
         },
         450: {
             "nominal_dn": 450,
-            "internal_diameter_mm": 468.0,
+            "internal_diameter_mm": 457.8,
             "wall_thickness_mm": 8.6,
             "pressure_class": "PN25",
             "hazen_williams_c": 140,
-            "wave_speed_ms": 1090,
+            "wave_speed_ms": 1100,  # DI minimum 1100 m/s per AS 2280
+            "standard": "AS 2280",
+        },
+        500: {
+            "nominal_dn": 500,
+            "internal_diameter_mm": 508.0,
+            "wall_thickness_mm": 9.0,
+            "pressure_class": "PN25",
+            "hazen_williams_c": 140,
+            "wave_speed_ms": 1100,  # DI minimum 1100 m/s per AS 2280
             "standard": "AS 2280",
         },
         600: {
             "nominal_dn": 600,
-            "internal_diameter_mm": 621.6,
+            "internal_diameter_mm": 609.8,
             "wall_thickness_mm": 9.9,
             "pressure_class": "PN25",
             "hazen_williams_c": 140,
-            "wave_speed_ms": 1080,
+            "wave_speed_ms": 1100,  # DI minimum 1100 m/s per AS 2280
             "standard": "AS 2280",
         },
     },
     # ------------------------------------------------------------------
     # PVC -- AS/NZS 1477
+    # OD is per AS/NZS 1477 OD series — OD is NOT equal to DN.
+    # DN100→OD110, DN150→OD160, DN200→OD225, DN250→OD280, DN300→OD315, DN375→OD400
     # Sizes up to DN200 are PN18; DN225+ are PN12.
+    # Wall thickness: PN18 wall = OD / (2 * SDR_PN18), PN12 wall = OD / (2 * SDR_PN12)
     # Wave speed for PVC is typically 300-500 m/s.
     # ------------------------------------------------------------------
     "PVC": {
         100: {
             "nominal_dn": 100,
+            "outside_diameter_mm": 110,  # AS/NZS 1477 OD series
             "internal_diameter_mm": 96.8,
-            "wall_thickness_mm": 5.6,
+            "wall_thickness_mm": 6.6,
             "pressure_class": "PN18",
             "hazen_williams_c": 150,
             "wave_speed_ms": 425,
@@ -136,6 +149,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
         },
         150: {
             "nominal_dn": 150,
+            "outside_diameter_mm": 160,  # AS/NZS 1477 OD series
             "internal_diameter_mm": 146.2,
             "wall_thickness_mm": 6.9,
             "pressure_class": "PN18",
@@ -145,26 +159,19 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
         },
         200: {
             "nominal_dn": 200,
-            "internal_diameter_mm": 194.4,
-            "wall_thickness_mm": 8.8,
+            "outside_diameter_mm": 225,  # AS/NZS 1477 OD series
+            "internal_diameter_mm": 211.4,
+            "wall_thickness_mm": 6.8,
             "pressure_class": "PN18",
             "hazen_williams_c": 150,
             "wave_speed_ms": 405,
             "standard": "AS/NZS 1477",
         },
-        225: {
-            "nominal_dn": 225,
-            "internal_diameter_mm": 213.0,
-            "wall_thickness_mm": 6.0,
-            "pressure_class": "PN12",
-            "hazen_williams_c": 150,
-            "wave_speed_ms": 390,
-            "standard": "AS/NZS 1477",
-        },
         250: {
             "nominal_dn": 250,
-            "internal_diameter_mm": 236.8,
-            "wall_thickness_mm": 6.6,
+            "outside_diameter_mm": 280,  # AS/NZS 1477 OD series
+            "internal_diameter_mm": 264.6,
+            "wall_thickness_mm": 7.7,
             "pressure_class": "PN12",
             "hazen_williams_c": 150,
             "wave_speed_ms": 385,
@@ -172,8 +179,9 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
         },
         300: {
             "nominal_dn": 300,
-            "internal_diameter_mm": 284.0,
-            "wall_thickness_mm": 8.0,
+            "outside_diameter_mm": 315,  # AS/NZS 1477 OD series
+            "internal_diameter_mm": 297.6,
+            "wall_thickness_mm": 8.7,
             "pressure_class": "PN12",
             "hazen_williams_c": 150,
             "wave_speed_ms": 375,
@@ -181,8 +189,9 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
         },
         375: {
             "nominal_dn": 375,
-            "internal_diameter_mm": 355.6,
-            "wall_thickness_mm": 9.7,
+            "outside_diameter_mm": 400,  # AS/NZS 1477 OD series
+            "internal_diameter_mm": 378.0,
+            "wall_thickness_mm": 11.0,
             "pressure_class": "PN12",
             "hazen_williams_c": 150,
             "wave_speed_ms": 365,
@@ -307,7 +316,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
             "internal_diameter_mm": 375.0,
             "wall_thickness_mm": 47.0,
             "pressure_class": "Class 2",
-            "hazen_williams_c": 120,
+            "hazen_williams_c": 110,  # AS 4058: DN375/450 → C=110
             "wave_speed_ms": 1100,
             "standard": "AS 4058",
         },
@@ -316,7 +325,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
             "internal_diameter_mm": 450.0,
             "wall_thickness_mm": 51.0,
             "pressure_class": "Class 3",
-            "hazen_williams_c": 120,
+            "hazen_williams_c": 110,  # AS 4058: DN375/450 → C=110
             "wave_speed_ms": 1120,
             "standard": "AS 4058",
         },
@@ -325,7 +334,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
             "internal_diameter_mm": 525.0,
             "wall_thickness_mm": 55.0,
             "pressure_class": "Class 3",
-            "hazen_williams_c": 120,
+            "hazen_williams_c": 100,  # AS 4058: mid-range size
             "wave_speed_ms": 1130,
             "standard": "AS 4058",
         },
@@ -334,7 +343,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
             "internal_diameter_mm": 600.0,
             "wall_thickness_mm": 60.0,
             "pressure_class": "Class 3",
-            "hazen_williams_c": 120,
+            "hazen_williams_c": 100,  # AS 4058: DN600/750 → C=100
             "wave_speed_ms": 1140,
             "standard": "AS 4058",
         },
@@ -343,7 +352,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
             "internal_diameter_mm": 750.0,
             "wall_thickness_mm": 69.0,
             "pressure_class": "Class 4",
-            "hazen_williams_c": 120,
+            "hazen_williams_c": 100,  # AS 4058: DN600/750 → C=100
             "wave_speed_ms": 1150,
             "standard": "AS 4058",
         },
@@ -352,7 +361,7 @@ PIPE_DATABASE: Dict[str, Dict[int, dict]] = {
             "internal_diameter_mm": 900.0,
             "wall_thickness_mm": 80.0,
             "pressure_class": "Class 4",
-            "hazen_williams_c": 120,
+            "hazen_williams_c": 90,  # AS 4058: DN900 → C=90
             "wave_speed_ms": 1160,
             "standard": "AS 4058",
         },
@@ -371,7 +380,7 @@ _AGING_PARAMS: Dict[str, dict] = {
     "Ductile Iron": {"c_new": 140, "rate_per_year": 1.0, "c_min": 90},
     "PVC":          {"c_new": 150, "rate_per_year": 0.1, "c_min": 140},
     "PE":           {"c_new": 150, "rate_per_year": 0.1, "c_min": 140},
-    "Concrete":     {"c_new": 120, "rate_per_year": 0.5, "c_min": 80},
+    "Concrete":     {"c_new": 110, "rate_per_year": 0.5, "c_min": 80},  # AS 4058: new-pipe C varies by size (90-110)
 }
 
 # Representative wave speeds per material family (m/s)
