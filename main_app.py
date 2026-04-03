@@ -1,0 +1,111 @@
+"""
+Hydraulic Analysis Tool — Entry Point
+=======================================
+Launch the PyQt6 desktop application.
+
+Usage:
+    python main_app.py
+    python main_app.py path/to/network.inp
+"""
+
+import sys
+import os
+
+# Ensure project root is on path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QFont
+from desktop.main_window import MainWindow
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("Hydraulic Analysis Tool")
+    app.setOrganizationName("HydraulicTool")
+
+    # Dark theme stylesheet
+    app.setStyleSheet("""
+        QMainWindow { background-color: #1e1e2e; }
+        QDockWidget { color: #cdd6f4; }
+        QDockWidget::title {
+            background-color: #313244;
+            color: #cdd6f4;
+            padding: 6px;
+        }
+        QTreeWidget {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            border: 1px solid #313244;
+            font-family: Consolas;
+        }
+        QTreeWidget::item:selected {
+            background-color: #45475a;
+        }
+        QTableWidget {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            border: 1px solid #313244;
+            gridline-color: #313244;
+        }
+        QTableWidget::item:selected {
+            background-color: #45475a;
+        }
+        QHeaderView::section {
+            background-color: #313244;
+            color: #cdd6f4;
+            padding: 4px;
+            border: 1px solid #45475a;
+        }
+        QMenuBar {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+        }
+        QMenuBar::item:selected {
+            background-color: #45475a;
+        }
+        QMenu {
+            background-color: #313244;
+            color: #cdd6f4;
+        }
+        QMenu::item:selected {
+            background-color: #45475a;
+        }
+        QStatusBar {
+            background-color: #181825;
+            color: #a6adc8;
+        }
+        QLabel {
+            color: #cdd6f4;
+        }
+        QSplitter::handle {
+            background-color: #313244;
+        }
+        QMessageBox {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+        }
+    """)
+
+    window = MainWindow()
+
+    # If a file was passed as argument, open it
+    if len(sys.argv) > 1:
+        filepath = sys.argv[1]
+        if os.path.isfile(filepath) and filepath.endswith('.inp'):
+            window._current_file = filepath
+            import wntr as _wntr
+            window.api.wn = _wntr.network.WaterNetworkModel(filepath)
+            window.api._inp_file = filepath
+            window._populate_explorer()
+            window._update_status_bar()
+            window.setWindowTitle(
+                f"Hydraulic Analysis Tool — {os.path.basename(filepath)}"
+            )
+
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

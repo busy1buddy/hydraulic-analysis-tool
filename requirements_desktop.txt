@@ -1,0 +1,28 @@
+# Hydraulic Analysis Tool — Desktop Dependencies
+# Install with: pip install -r requirements_desktop.txt
+
+# GUI
+PyQt6>=6.5.0
+pyqtgraph>=0.14.0
+
+# Core hydraulic analysis
+wntr>=1.4.0
+tsnet>=0.3.1
+
+# Scientific computing
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+networkx>=3.0
+
+# Reports
+python-docx>=0.8.11
+reportlab>=4.0.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Packaging
+pyinstaller>=6.0.0

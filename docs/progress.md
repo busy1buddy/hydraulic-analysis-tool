@@ -17,3 +17,14 @@
 - PE100 yield fixed from 10 to 20 MPa in pipe_stress.py
 - Created scripts/validate_pipe_db.py — 58/58 checks pass
 - All 185 tests pass, 12 xfail (known TSNet pump stability)
+
+## Phase 1 — PyQt6 Walking Skeleton (2026-04-04)
+- Created desktop/main_window.py: QMainWindow with 6 menus (File, Analysis, Tools, Reports, View, Help)
+- Three dock panels: Project Explorer (tree), Properties (table), Results (node/pipe tables)
+- Status bar: Analysis Type | Nodes: N | Pipes: N | WSAA: --
+- File > Open loads .inp via HydraulicAPI, populates explorer tree
+- File > Save/Save As supports .hap JSON project format
+- Dark theme (Catppuccin Mocha) via stylesheet
+- Entry point: main_app.py (accepts .inp as CLI argument)
+- Created requirements_desktop.txt
+- All 185 tests pass
