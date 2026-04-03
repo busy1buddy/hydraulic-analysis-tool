@@ -38,3 +38,15 @@
 - Color legend widget, zoom/pan/fit, labels toggle
 - Canvas element selection updates Properties panel
 - All 185 tests pass
+
+## Phase 3 — Analysis Integration (2026-04-04)
+- Created desktop/analysis_worker.py: QThread worker for background analysis
+- Supports steady-state, transient, and slurry analysis modes
+- Progress bar in status bar during solve
+- On finish: canvas colors update, results tables populate, WSAA status updates
+- On error: QMessageBox with human-readable message
+- Node results table: ID, Elevation, Pressure, Head, WSAA Status (PASS/FAIL with standard ref)
+- Pipe results table: ID, Diameter (DN), Length, Velocity, Headloss (m/km)
+- Slurry mode toggle integrates slurry_solver.py for Bingham plastic headloss
+- WSAA compliance summary in status bar with pass/fail coloring
+- All 185 tests pass

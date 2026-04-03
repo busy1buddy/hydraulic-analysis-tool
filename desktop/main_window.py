@@ -12,13 +12,14 @@ from PyQt6.QtWidgets import (
     QMainWindow, QMenuBar, QMenu, QStatusBar, QDockWidget,
     QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem,
     QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
-    QMessageBox, QHeaderView, QSplitter,
+    QMessageBox, QHeaderView, QSplitter, QProgressBar,
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtGui import QAction, QFont, QColor
 
 from epanet_api import HydraulicAPI
 from desktop.network_canvas import NetworkCanvas
+from desktop.analysis_worker import AnalysisWorker
 
 
 class MainWindow(QMainWindow):
@@ -235,6 +236,12 @@ class MainWindow(QMainWindow):
         self.nodes_label = QLabel("Nodes: 0")
         self.pipes_label = QLabel("Pipes: 0")
         self.wsaa_label = QLabel("WSAA: --")
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximumWidth(150)
+        self.progress_bar.setMaximumHeight(16)
+        self.progress_bar.setVisible(False)
+        self.status_bar.addWidget(self.progress_bar)
 
         for lbl in (self.analysis_label, self.nodes_label,
                     self.pipes_label, self.wsaa_label):
@@ -482,20 +489,154 @@ class MainWindow(QMainWindow):
         self._add_property_row("Valve Type", str(valve.valve_type))
 
     # =====================================================================
-    # ANALYSIS ACTIONS (stubs — wired in Phase 3)
+    # ANALYSIS ACTIONS
     # =====================================================================
 
     def _on_run_steady(self):
         if self.api.wn is None:
             QMessageBox.warning(self, "No Network", "Load a network first.")
             return
-        self.status_bar.showMessage("Running steady-state analysis...")
+        atype = 'slurry' if self.slurry_act.isChecked() else 'steady'
+        params = {}
+        if atype == 'slurry':
+            params['slurry'] = {
+                'yield_stress': 10.0,
+                'plastic_viscosity': 0.01,
+                'density': 1500,
+            }
+        self._run_analysis(atype, params)
 
     def _on_run_transient(self):
         if self.api.wn is None:
             QMessageBox.warning(self, "No Network", "Load a network first.")
             return
-        self.status_bar.showMessage("Running transient analysis...")
+        self._run_analysis('transient')
+
+    def _run_analysis(self, analysis_type, params=None):
+        """Launch analysis in background thread."""
+        self._worker = AnalysisWorker(self.api, analysis_type, params)
+        self._worker.started_signal.connect(self._on_analysis_started)
+        self._worker.progress.connect(self._on_analysis_progress)
+        self._worker.finished.connect(self._on_analysis_finished)
+        self._worker.error.connect(self._on_analysis_error)
+        self._worker.start()
+
+    def _on_analysis_started(self):
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.status_bar.showMessage("Running analysis...")
+
+    def _on_analysis_progress(self, value):
+        self.progress_bar.setValue(value)
+
+    def _on_analysis_finished(self, results):
+        self.progress_bar.setVisible(False)
+        self._last_results = results
+
+        # Update canvas colors
+        self.canvas.set_results(results)
+
+        # Populate results tables
+        self._populate_node_results(results)
+        self._populate_pipe_results(results)
+
+        # Update WSAA status
+        compliance = results.get('compliance', [])
+        fails = sum(1 for c in compliance if c.get('type') in ('WARNING', 'CRITICAL'))
+        if fails == 0:
+            self.wsaa_label.setText("WSAA: PASS")
+            self.wsaa_label.setStyleSheet("color: #a6e3a1;")
+        else:
+            self.wsaa_label.setText(f"WSAA: {fails} issue(s)")
+            self.wsaa_label.setStyleSheet("color: #f38ba8;")
+
+        analysis_type = "Slurry" if self.slurry_act.isChecked() else "Hydraulic"
+        if 'junctions' in results and 'max_surge_m' in results:
+            analysis_type = "Transient"
+        self.analysis_label.setText(f"Analysis: {analysis_type}")
+        self.status_bar.showMessage("Analysis complete.", 5000)
+
+    def _on_analysis_error(self, msg):
+        self.progress_bar.setVisible(False)
+        QMessageBox.critical(self, "Analysis Error", msg)
+        self.status_bar.showMessage("Analysis failed.", 5000)
+
+    def _populate_node_results(self, results):
+        """Fill the node results table."""
+        pressures = results.get('pressures', {})
+        self.node_results_table.setRowCount(0)
+
+        for jid, pdata in pressures.items():
+            row = self.node_results_table.rowCount()
+            self.node_results_table.insertRow(row)
+
+            try:
+                node = self.api.get_node(jid)
+                elev = f"{node.elevation:.1f}"
+            except Exception:
+                elev = "--"
+
+            avg_p = pdata.get('avg_m', 0)
+            max_p = pdata.get('max_m', 0)
+            head = node.elevation + avg_p if elev != "--" else avg_p
+
+            # WSAA compliance check — WSAA WSA 03-2011 Table 3.1
+            if avg_p < 20.0:
+                status = "FAIL (<20 m)"
+            elif avg_p > 50.0:
+                status = "FAIL (>50 m)"
+            else:
+                status = "PASS"
+
+            items = [jid, elev, f"{avg_p:.1f}", f"{head:.1f}", status]
+            for col, val in enumerate(items):
+                item = QTableWidgetItem(str(val))
+                if "FAIL" in str(val):
+                    item.setForeground(QColor(243, 139, 168))  # red
+                elif val == "PASS":
+                    item.setForeground(QColor(166, 227, 161))  # green
+                self.node_results_table.setItem(row, col, item)
+
+    def _populate_pipe_results(self, results):
+        """Fill the pipe results table."""
+        flows = results.get('flows', {})
+        self.pipe_results_table.setRowCount(0)
+
+        for pid, fdata in flows.items():
+            row = self.pipe_results_table.rowCount()
+            self.pipe_results_table.insertRow(row)
+
+            try:
+                pipe = self.api.get_link(pid)
+                dn = f"{int(pipe.diameter * 1000)} mm"
+                length = f"{pipe.length:.1f}"
+            except Exception:
+                dn = "--"
+                length = "--"
+
+            v = fdata.get('max_velocity_ms', 0)
+            # Headloss per km approximation
+            avg_lps = abs(fdata.get('avg_lps', 0))
+            try:
+                pipe = self.api.get_link(pid)
+                if pipe.length > 0 and pipe.diameter > 0:
+                    # Hazen-Williams headloss per km
+                    Q_m3s = avg_lps / 1000
+                    hl_per_m = (10.67 * Q_m3s ** 1.852) / (
+                        pipe.roughness ** 1.852 * pipe.diameter ** 4.87)
+                    hl_per_km = hl_per_m * 1000
+                else:
+                    hl_per_km = 0
+            except Exception:
+                hl_per_km = 0
+
+            items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}"]
+            for col, val in enumerate(items):
+                item = QTableWidgetItem(str(val))
+                # Flag velocity > 2.0 m/s — WSAA WSA 03-2011
+                if col == 3 and v > 2.0:
+                    item.setForeground(QColor(243, 139, 168))
+                self.pipe_results_table.setItem(row, col, item)
 
     def _on_slurry_toggle(self, checked):
         self._update_status_bar()
