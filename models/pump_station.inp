@@ -1,0 +1,81 @@
+[TITLE]
+Pump Station Transient Analysis
+Pump trip and startup scenarios - SI/Metric (LPS)
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              50              0                               ;  Pump suction
+ J2              80              0                               ;  Pump discharge header
+ J3              75              5.0                             ;  Demand node
+ J4              70              8.0                             ;  Demand node
+ J5              65              6.0                             ;  Demand node
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              50                                              ;  Low-level source
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              R1              J1              100             300             130             0               Open
+ P2              J2              J3              500             250             130             0               Open
+ P3              J3              J4              400             200             120             0               Open
+ P4              J4              J5              350             200             120             0               Open
+ P5              J3              J5              300             150             120             0               Open
+
+[PUMPS]
+;ID              Node1           Node2           Parameters
+ PMP1            J1              J2              HEAD CURVE1
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+ V1              J2              J3              250             TCV             1               0
+
+[PATTERNS]
+
+[CURVES]
+;ID              X-Value         Y-Value
+;PUMP: Pump curve for PMP1
+ CURVE1          0               100
+ CURVE1          20              80
+ CURVE1          40              50
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+
+[TIMES]
+ Duration            0:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+
+[REPORT]
+ Status              No
+ Summary             No
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ Unbalanced          Continue 10
+ Demand Multiplier   1.0
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               50.00
+ J1              10.00              50.00
+ J2              20.00              80.00
+ J3              40.00              75.00
+ J4              55.00              70.00
+ J5              65.00              65.00
+
+[END]

@@ -1,0 +1,25 @@
+# EPANET Hydraulic Analysis - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core hydraulic analysis
+wntr>=1.4.0              # EPANET wrapper (steady-state, network modelling)
+epyt>=2.3.0              # EPANET Python Toolkit (direct API access)
+tsnet>=0.3.1             # Transient/water hammer analysis (MOC solver)
+
+# Web dashboard
+fastapi>=0.100.0         # API server (legacy dashboard)
+uvicorn>=0.20.0          # ASGI server (legacy dashboard)
+nicegui>=2.0.0           # NiceGUI dashboard (primary UI)
+
+# Testing
+pytest>=7.0.0
+httpx>=0.24.0
+pytest-cov>=4.0.0
+
+# Scientific computing
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+networkx>=3.0
+plotly>=5.15.0

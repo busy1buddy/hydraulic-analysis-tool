@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EPANET Hydraulic Analysis Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1419;
+    --card: #1a2332;
+    --border: #2d3748;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --accent: #3b82f6;
+    --green: #10b981;
+    --red: #ef4444;
+    --orange: #f59e0b;
+    --cyan: #06b6d4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0f1419 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .badge {
+    background: var(--accent); color: white; padding: 2px 10px;
+    border-radius: 12px; font-size: 11px; font-weight: 600;
+  }
+  header .au-badge {
+    background: #065f46; color: #6ee7b7;
+  }
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .full-width { grid-column: 1 / -1; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; position: relative;
+  }
+  .card h2 {
+    font-size: 14px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot-blue { background: var(--accent); }
+  .dot-green { background: var(--green); }
+  .dot-orange { background: var(--orange); }
+  .dot-cyan { background: var(--cyan); }
+
+  /* Controls */
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  select, input, button {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 6px; font-size: 13px;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--accent); }
+  input { width: 100px; }
+  button {
+    background: var(--accent); border: none; cursor: pointer;
+    font-weight: 600; transition: opacity 0.2s;
+  }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.btn-green { background: var(--green); }
+  button.btn-orange { background: var(--orange); color: #000; }
+  label { font-size: 12px; color: var(--muted); }
+
+  /* Status bar */
+  .status-bar {
+    display: flex; gap: 24px; padding: 10px 16px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 16px; align-items: center;
+  }
+  .status-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .status-item .label { color: var(--muted); }
+
+  /* Network canvas */
+  #networkCanvas {
+    width: 100%; height: 350px; background: #0d1117;
+    border-radius: 6px; border: 1px solid var(--border);
+  }
+
+  /* Compliance table */
+  .compliance-list { list-style: none; max-height: 200px; overflow-y: auto; }
+  .compliance-list li {
+    padding: 6px 10px; border-radius: 4px; margin-bottom: 4px;
+    font-size: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .compliance-list .tag {
+    padding: 1px 6px; border-radius: 3px; font-size: 10px;
+    font-weight: 700; text-transform: uppercase;
+  }
+  .tag-ok { background: #065f46; color: #6ee7b7; }
+  .tag-warning { background: #78350f; color: #fbbf24; }
+  .tag-critical { background: #7f1d1d; color: #fca5a5; }
+
+  /* Metric cards */
+  .metric { text-align: center; }
+  .metric .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .metric .unit { font-size: 12px; color: var(--muted); }
+  .metric .label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Loading overlay */
+  .loading {
+    position: absolute; inset: 0; background: rgba(15,20,25,0.85);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; z-index: 10; font-size: 13px;
+  }
+  .spinner {
+    width: 20px; height: 20px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none !important; }
+
+  /* Plotly dark theme overrides */
+  .js-plotly-plot .plotly .modebar { right: 4px !important; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; }
+  .tab {
+    padding: 10px 20px; cursor: pointer; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--border); color: var(--muted);
+    background: transparent; transition: all 0.2s;
+  }
+  .tab:first-child { border-radius: 6px 0 0 6px; }
+  .tab:last-child { border-radius: 0 6px 6px 0; }
+  .tab.active {
+    background: var(--accent); color: white; border-color: var(--accent);
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Transient controls */
+  .param-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  .param-grid label { display: flex; flex-direction: column; gap: 4px; }
+  .param-grid input { width: 100%; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2">
+    <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+  </svg>
+  <h1>EPANET Hydraulic Analysis</h1>
+  <span class="badge">WNTR 1.4.0</span>
+  <span class="badge">TSNet MOC</span>
+  <span class="badge au-badge">AU / SI Units</span>
+</header>
+
+<div class="container">
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <div class="status-item">
+      <div class="dot dot-green" style="width:8px;height:8px;border-radius:50%"></div>
+      <span class="label">Server:</span> <span id="serverStatus">Connected</span>
+    </div>
+    <div class="status-item">
+      <span class="label">Network:</span> <span id="activeNetwork">-</span>
+    </div>
+    <div class="status-item">
+      <span class="label">Last Analysis:</span> <span id="lastAnalysis">-</span>
+    </div>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('steady')">Steady-State Analysis</div>
+    <div class="tab" onclick="switchTab('transient')">Transient / Water Hammer</div>
+    <div class="tab" onclick="switchTab('joukowsky')">Joukowsky Calculator</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- STEADY-STATE TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <div id="tab-steady" class="tab-content active">
+
+    <div class="card" style="margin-bottom:16px">
+      <h2><div class="dot dot-blue"></div> Network Selection & Analysis</h2>
+      <div class="controls">
+        <select id="networkSelect" onchange="loadNetwork()">
+          <option value="">Select network...</option>
+        </select>
+        <button onclick="runSteadyState()" id="btnSteady">Run Steady-State Analysis</button>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Network Visualization -->
+      <div class="card">
+        <h2><div class="dot dot-cyan"></div> Network Topology</h2>
+        <div id="networkPlot" style="width:100%;height:350px;"></div>
+        <div id="loadingNetwork" class="loading hidden"><div class="spinner"></div>Loading network...</div>
+      </div>
+
+      <!-- Compliance -->
+      <div class="card">
+        <h2><div class="dot dot-green"></div> Australian Standards Compliance (WSAA)</h2>
+        <ul class="compliance-list" id="complianceList">
+          <li style="color:var(--muted)">Run analysis to see compliance results</li>
+        </ul>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="grid-3">
+            <div class="metric">
+              <div class="value" id="metricMinP">-</div>
+              <div class="unit">m</div>
+              <div class="label">Min Pressure</div>
+            </div>
+            <div class="metric">
+              <div class="value" id="metricMaxV">-</div>
+              <div class="unit">m/s</div>
+              <div class="label">Max Velocity</div>
+            </div>
+            <div class="metric">
+              <div class="value" id="metricDemand">-</div>
+              <div class="unit">LPS</div>
+              <div class="label">Total Demand</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Pressure chart -->
+      <div class="card">
+        <h2><div class="dot dot-blue"></div> Junction Pressures (24hr)</h2>
+        <div id="pressurePlot" style="width:100%;height:320px;"></div>
+        <div id="loadingSteady" class="loading hidden"><div class="spinner"></div>Running EPANET simulation...</div>
+      </div>
+      <!-- Flow chart -->
+      <div class="card">
+        <h2><div class="dot dot-orange"></div> Pipe Flows (24hr)</h2>
+        <div id="flowPlot" style="width:100%;height:320px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- TRANSIENT TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <div id="tab-transient" class="tab-content">
+
+    <div class="card" style="margin-bottom:16px">
+      <h2><div class="dot dot-orange"></div> Transient Analysis Parameters</h2>
+      <div class="param-grid" style="margin-bottom:12px">
+        <label>Network
+          <select id="transNetworkSelect">
+            <option value="transient_network.inp">transient_network.inp</option>
+          </select>
+        </label>
+        <label>Valve ID
+          <input type="text" id="transValve" value="V1">
+        </label>
+        <label>Closure Time (s)
+          <input type="number" id="transClosureTime" value="0.5" step="0.1" min="0.01">
+        </label>
+        <label>Start Time (s)
+          <input type="number" id="transStartTime" value="2.0" step="0.5">
+        </label>
+        <label>Wave Speed (m/s)
+          <input type="number" id="transWaveSpeed" value="1000" step="50">
+        </label>
+        <label>Duration (s)
+          <input type="number" id="transDuration" value="20" step="5">
+        </label>
+      </div>
+      <button class="btn-orange" onclick="runTransient()" id="btnTransient">Run Water Hammer Analysis</button>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2><div class="dot dot-orange"></div> Transient Head at Junctions</h2>
+        <div id="transientPlot" style="width:100%;height:350px;"></div>
+        <div id="loadingTransient" class="loading hidden"><div class="spinner"></div>Running MOC solver...</div>
+      </div>
+      <div class="card">
+        <h2><div class="dot dot-red" style="background:var(--red)"></div> Pressure Envelope</h2>
+        <div id="envelopePlot" style="width:100%;height:350px;"></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2><div class="dot dot-cyan"></div> Transient Results</h2>
+        <ul class="compliance-list" id="transientCompliance">
+          <li style="color:var(--muted)">Run analysis to see results</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2><div class="dot dot-green"></div> Mitigation Recommendations</h2>
+        <ul class="compliance-list" id="mitigationList">
+          <li style="color:var(--muted)">Run analysis to see recommendations</li>
+        </ul>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="grid-3">
+            <div class="metric">
+              <div class="value" id="metricSurge">-</div>
+              <div class="unit">m</div>
+              <div class="label">Max Surge</div>
+            </div>
+            <div class="metric">
+              <div class="value" id="metricSurgeKpa">-</div>
+              <div class="unit">kPa</div>
+              <div class="label">Surge Pressure</div>
+            </div>
+            <div class="metric">
+              <div class="value" id="metricRating">PN35</div>
+              <div class="unit">3500 kPa</div>
+              <div class="label">Pipe Rating</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- JOUKOWSKY TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <div id="tab-joukowsky" class="tab-content">
+    <div class="grid-2">
+      <div class="card">
+        <h2><div class="dot dot-cyan"></div> Joukowsky Pressure Rise Calculator</h2>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+          dH = (a x dV) / g &mdash; instantaneous pressure rise from sudden velocity change
+        </p>
+        <div class="param-grid" style="margin-bottom:16px">
+          <label>Wave Speed, a (m/s)
+            <input type="number" id="jkWaveSpeed" value="1000" step="50">
+          </label>
+          <label>Velocity Change, dV (m/s)
+            <input type="number" id="jkVelocity" value="1.0" step="0.1">
+          </label>
+          <label>Pipe Material
+            <select id="jkMaterial" onchange="setWaveSpeed()">
+              <option value="1000">Ductile Iron (~1000)</option>
+              <option value="1100">Steel (~1100)</option>
+              <option value="400">PVC (~400)</option>
+              <option value="300">PE/HDPE (~300)</option>
+              <option value="1200">Concrete (~1200)</option>
+            </select>
+          </label>
+        </div>
+        <button class="btn-green" onclick="calcJoukowsky()">Calculate</button>
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border)">
+          <div class="grid-2" style="margin-bottom:0">
+            <div class="metric">
+              <div class="value" id="jkHeadRise">-</div>
+              <div class="unit">metres of head</div>
+              <div class="label">Pressure Rise (dH)</div>
+            </div>
+            <div class="metric">
+              <div class="value" id="jkPressureKpa">-</div>
+              <div class="unit">kPa</div>
+              <div class="label">Pressure Rise (dP)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2><div class="dot dot-blue"></div> Wave Speed Reference (Australian Practice)</h2>
+        <div id="waveSpeedChart" style="width:100%;height:380px;"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = '';
+const plotLayout = {
+  paper_bgcolor: '#1a2332', plot_bgcolor: '#0d1117',
+  font: { color: '#8892a4', size: 11 },
+  margin: { t: 30, r: 20, b: 40, l: 50 },
+  xaxis: { gridcolor: '#2d3748', zerolinecolor: '#2d3748' },
+  yaxis: { gridcolor: '#2d3748', zerolinecolor: '#2d3748' },
+  legend: { bgcolor: 'rgba(0,0,0,0)', font: { size: 10 } },
+};
+const plotConfig = { responsive: true, displayModeBar: false };
+
+// ── Tab switching ──
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab-content#tab-${name}`).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'joukowsky') renderWaveSpeedChart();
+}
+
+// ── Load network list ──
+async function init() {
+  try {
+    const res = await fetch(`${API}/api/networks`);
+    const data = await res.json();
+    const sel = document.getElementById('networkSelect');
+    const tsel = document.getElementById('transNetworkSelect');
+    sel.innerHTML = '<option value="">Select network...</option>';
+    tsel.innerHTML = '';
+    data.networks.forEach(f => {
+      sel.innerHTML += `<option value="${f}">${f}</option>`;
+      tsel.innerHTML += `<option value="${f}">${f}</option>`;
+    });
+    // Auto-select first network
+    if (data.networks.length > 0) {
+      sel.value = data.networks[0];
+      loadNetwork();
+    }
+  } catch(e) {
+    document.getElementById('serverStatus').textContent = 'Disconnected';
+    document.getElementById('serverStatus').style.color = 'var(--red)';
+  }
+}
+
+// ── Load network topology ──
+async function loadNetwork() {
+  const file = document.getElementById('networkSelect').value;
+  if (!file) return;
+  document.getElementById('loadingNetwork').classList.remove('hidden');
+  document.getElementById('activeNetwork').textContent = file;
+
+  try {
+    const res = await fetch(`${API}/api/network/${file}`);
+    const data = await res.json();
+    renderNetwork(data);
+  } catch(e) {
+    console.error(e);
+  }
+  document.getElementById('loadingNetwork').classList.add('hidden');
+}
+
+function renderNetwork(data) {
+  const { nodes, links } = data;
+  const traces = [];
+
+  // Draw pipes
+  links.forEach(link => {
+    const n1 = nodes.find(n => n.id === link.start);
+    const n2 = nodes.find(n => n.id === link.end);
+    if (!n1 || !n2) return;
+    const width = link.type === 'valve' ? 4 : Math.max(1.5, (link.diameter_mm || 200) / 100);
+    const color = link.type === 'valve' ? '#f59e0b' : '#3b82f6';
+    const dash = link.type === 'valve' ? 'dot' : 'solid';
+    traces.push({
+      x: [n1.x, n2.x], y: [n1.y, n2.y],
+      mode: 'lines', type: 'scatter',
+      line: { color, width, dash },
+      hoverinfo: 'text',
+      text: `${link.id}: ${link.start}-${link.end}` + (link.diameter_mm ? ` (${link.diameter_mm}mm)` : ''),
+      showlegend: false,
+    });
+  });
+
+  // Draw nodes by type
+  const types = { junction: { color: '#10b981', symbol: 'circle', size: 10 },
+                  reservoir: { color: '#3b82f6', symbol: 'square', size: 14 },
+                  tank: { color: '#06b6d4', symbol: 'diamond', size: 14 } };
+  Object.entries(types).forEach(([type, style]) => {
+    const filtered = nodes.filter(n => n.type === type);
+    if (filtered.length === 0) return;
+    traces.push({
+      x: filtered.map(n => n.x), y: filtered.map(n => n.y),
+      text: filtered.map(n => {
+        let label = `<b>${n.id}</b><br>Type: ${n.type}`;
+        if (n.elevation !== undefined) label += `<br>Elev: ${n.elevation}m`;
+        if (n.demand_lps !== undefined) label += `<br>Demand: ${n.demand_lps} LPS`;
+        if (n.head !== undefined) label += `<br>Head: ${n.head}m`;
+        return label;
+      }),
+      mode: 'markers+text', type: 'scatter',
+      marker: { color: style.color, size: style.size, symbol: style.symbol,
+                line: { color: '#fff', width: 1 } },
+      textposition: 'top center',
+      textfont: { size: 10, color: '#e2e8f0' },
+      hoverinfo: 'text',
+      name: type.charAt(0).toUpperCase() + type.slice(1),
+      customdata: filtered.map(n => n.id),
+    });
+    // Add labels as separate trace
+    traces.push({
+      x: filtered.map(n => n.x), y: filtered.map(n => n.y),
+      text: filtered.map(n => n.id),
+      mode: 'text', type: 'scatter',
+      textposition: 'top center',
+      textfont: { size: 9, color: '#a0aec0' },
+      hoverinfo: 'skip', showlegend: false,
+    });
+  });
+
+  const layout = {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: 'X (m)', scaleanchor: 'y' },
+    yaxis: { ...plotLayout.yaxis, title: 'Y (m)' },
+    showlegend: true, legend: { ...plotLayout.legend, x: 0, y: 1 },
+    margin: { t: 10, r: 10, b: 40, l: 50 },
+  };
+  Plotly.newPlot('networkPlot', traces, layout, plotConfig);
+}
+
+// ── Run Steady-State ──
+async function runSteadyState() {
+  const file = document.getElementById('networkSelect').value;
+  if (!file) return alert('Select a network first');
+
+  document.getElementById('btnSteady').disabled = true;
+  document.getElementById('btnSteady').textContent = 'Running...';
+  document.getElementById('loadingSteady').classList.remove('hidden');
+
+  try {
+    const res = await fetch(`${API}/api/steady/${file}`);
+    const data = await res.json();
+    renderSteadyResults(data);
+    document.getElementById('lastAnalysis').textContent = 'Steady-State @ ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    alert('Analysis failed: ' + e.message);
+  }
+
+  document.getElementById('btnSteady').disabled = false;
+  document.getElementById('btnSteady').textContent = 'Run Steady-State Analysis';
+  document.getElementById('loadingSteady').classList.add('hidden');
+}
+
+function renderSteadyResults(data) {
+  // Pressure plot
+  const pTraces = [];
+  const hours = data.time_hours;
+  const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4'];
+  let i = 0;
+  for (const [name, values] of Object.entries(data.pressure_series)) {
+    pTraces.push({
+      x: hours, y: values, name, type: 'scatter', mode: 'lines',
+      line: { color: colors[i % colors.length], width: 2 },
+    });
+    i++;
+  }
+  // Add WSAA minimum line
+  pTraces.push({
+    x: [0, Math.max(...hours)], y: [20, 20], name: 'Min 20m (WSAA)',
+    type: 'scatter', mode: 'lines',
+    line: { color: '#ef4444', dash: 'dash', width: 1 },
+  });
+
+  Plotly.newPlot('pressurePlot', pTraces, {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: 'Time (hours)' },
+    yaxis: { ...plotLayout.yaxis, title: 'Pressure (m)' },
+    showlegend: true,
+  }, plotConfig);
+
+  // Flow plot
+  const fTraces = [];
+  i = 0;
+  for (const [name, values] of Object.entries(data.flow_series)) {
+    fTraces.push({
+      x: hours, y: values, name, type: 'scatter', mode: 'lines',
+      line: { color: colors[i % colors.length], width: 2 },
+    });
+    i++;
+  }
+  Plotly.newPlot('flowPlot', fTraces, {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: 'Time (hours)' },
+    yaxis: { ...plotLayout.yaxis, title: 'Flow (LPS)' },
+    showlegend: true,
+  }, plotConfig);
+
+  // Compliance list
+  const list = document.getElementById('complianceList');
+  list.innerHTML = '';
+  data.compliance.forEach(c => {
+    const cls = c.type === 'OK' ? 'tag-ok' : c.type === 'WARNING' ? 'tag-warning' : 'tag-critical';
+    list.innerHTML += `<li><span class="tag ${cls}">${c.type}</span> ${c.element || ''} ${c.message}</li>`;
+  });
+
+  // Metrics
+  let minP = Infinity, maxV = 0, totalDemand = 0;
+  for (const [, p] of Object.entries(data.pressures)) {
+    if (p.min_m < minP) minP = p.min_m;
+  }
+  for (const [, f] of Object.entries(data.flows)) {
+    if (f.max_velocity_ms > maxV) maxV = f.max_velocity_ms;
+    totalDemand += Math.abs(f.avg_lps);
+  }
+  document.getElementById('metricMinP').textContent = minP.toFixed(1);
+  document.getElementById('metricMinP').style.color = minP < 20 ? 'var(--red)' : 'var(--green)';
+  document.getElementById('metricMaxV').textContent = maxV.toFixed(2);
+  document.getElementById('metricMaxV').style.color = maxV > 2.0 ? 'var(--red)' : 'var(--green)';
+  document.getElementById('metricDemand').textContent = totalDemand.toFixed(1);
+}
+
+// ── Run Transient ──
+async function runTransient() {
+  document.getElementById('btnTransient').disabled = true;
+  document.getElementById('btnTransient').textContent = 'Running MOC Solver...';
+  document.getElementById('loadingTransient').classList.remove('hidden');
+
+  const body = {
+    inp_file: document.getElementById('transNetworkSelect').value,
+    valve: document.getElementById('transValve').value,
+    closure_time: parseFloat(document.getElementById('transClosureTime').value),
+    start_time: parseFloat(document.getElementById('transStartTime').value),
+    wave_speed: parseFloat(document.getElementById('transWaveSpeed').value),
+    sim_duration: parseFloat(document.getElementById('transDuration').value),
+  };
+
+  try {
+    const res = await fetch(`${API}/api/transient`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    renderTransientResults(data, body);
+    document.getElementById('lastAnalysis').textContent = 'Transient @ ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    alert('Transient analysis failed: ' + e.message);
+  }
+
+  document.getElementById('btnTransient').disabled = false;
+  document.getElementById('btnTransient').textContent = 'Run Water Hammer Analysis';
+  document.getElementById('loadingTransient').classList.add('hidden');
+}
+
+function renderTransientResults(data, params) {
+  const t = data.time_seconds;
+  const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4'];
+
+  // Head vs time
+  const traces = [];
+  let i = 0;
+  for (const [name, values] of Object.entries(data.head_series)) {
+    traces.push({
+      x: t, y: values, name, type: 'scatter', mode: 'lines',
+      line: { color: colors[i % colors.length], width: 1.5 },
+    });
+    i++;
+  }
+  // Valve closure marker
+  traces.push({
+    x: [params.start_time, params.start_time],
+    y: [Math.min(...Object.values(data.head_series).flat()), Math.max(...Object.values(data.head_series).flat())],
+    name: 'Valve closure', type: 'scatter', mode: 'lines',
+    line: { color: '#10b981', dash: 'dot', width: 1 },
+  });
+
+  Plotly.newPlot('transientPlot', traces, {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: 'Time (seconds)' },
+    yaxis: { ...plotLayout.yaxis, title: 'Head (m)' },
+    showlegend: true,
+  }, plotConfig);
+
+  // Pressure envelope
+  const junctions = Object.keys(data.junctions);
+  const steadyH = junctions.map(j => data.junctions[j].steady_head_m);
+  const maxH = junctions.map(j => data.junctions[j].max_head_m);
+  const minH = junctions.map(j => data.junctions[j].min_head_m);
+
+  Plotly.newPlot('envelopePlot', [
+    { x: junctions, y: maxH, name: 'Max', type: 'scatter', mode: 'lines+markers',
+      line: { color: '#ef4444' }, marker: { symbol: 'triangle-up', size: 8 } },
+    { x: junctions, y: minH, name: 'Min', type: 'scatter', mode: 'lines+markers',
+      line: { color: '#ef4444' }, marker: { symbol: 'triangle-down', size: 8 },
+      fill: 'tonexty', fillcolor: 'rgba(239,68,68,0.15)' },
+    { x: junctions, y: steadyH, name: 'Steady', type: 'scatter', mode: 'lines+markers',
+      line: { color: '#3b82f6', width: 2.5 }, marker: { size: 8 } },
+  ], {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: 'Junction' },
+    yaxis: { ...plotLayout.yaxis, title: 'Head (m)' },
+    showlegend: true,
+  }, plotConfig);
+
+  // Compliance
+  const cList = document.getElementById('transientCompliance');
+  cList.innerHTML = '';
+  for (const [name, d] of Object.entries(data.junctions)) {
+    const cls = d.surge_m > 30 ? 'tag-critical' : d.surge_m > 15 ? 'tag-warning' : 'tag-ok';
+    const tag = d.surge_m > 30 ? 'HIGH' : d.surge_m > 15 ? 'MOD' : 'OK';
+    cList.innerHTML += `<li><span class="tag ${cls}">${tag}</span> ${name}: surge ${d.surge_m}m (${d.surge_kPa} kPa), max ${d.max_head_m}m</li>`;
+  }
+
+  // Mitigation
+  const mList = document.getElementById('mitigationList');
+  mList.innerHTML = '';
+  data.mitigation.forEach(m => {
+    mList.innerHTML += `<li style="color:var(--text)">&#8226; ${m}</li>`;
+  });
+
+  // Metrics
+  document.getElementById('metricSurge').textContent = data.max_surge_m;
+  document.getElementById('metricSurge').style.color = data.max_surge_m > 50 ? 'var(--red)' : data.max_surge_m > 20 ? 'var(--orange)' : 'var(--green)';
+  document.getElementById('metricSurgeKpa').textContent = data.max_surge_kPa;
+}
+
+// ── Joukowsky ──
+function setWaveSpeed() {
+  document.getElementById('jkWaveSpeed').value = document.getElementById('jkMaterial').value;
+}
+
+async function calcJoukowsky() {
+  const ws = parseFloat(document.getElementById('jkWaveSpeed').value);
+  const dv = parseFloat(document.getElementById('jkVelocity').value);
+  try {
+    const res = await fetch(`${API}/api/joukowsky`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wave_speed: ws, velocity_change: dv }),
+    });
+    const data = await res.json();
+    document.getElementById('jkHeadRise').textContent = data.head_rise_m;
+    document.getElementById('jkPressureKpa').textContent = data.pressure_rise_kPa;
+  } catch(e) { alert('Calculation failed'); }
+}
+
+function renderWaveSpeedChart() {
+  const materials = ['PE/HDPE', 'PVC', 'Ductile Iron', 'Steel', 'Concrete'];
+  const speeds = [300, 400, 1000, 1100, 1200];
+  const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+  Plotly.newPlot('waveSpeedChart', [{
+    x: speeds, y: materials, type: 'bar', orientation: 'h',
+    marker: { color: colors },
+    text: speeds.map(s => s + ' m/s'), textposition: 'outside',
+    textfont: { color: '#e2e8f0', size: 12 },
+  }], {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: 'Wave Speed (m/s)', range: [0, 1500] },
+    yaxis: { ...plotLayout.yaxis },
+    margin: { t: 10, r: 60, b: 40, l: 100 },
+  }, plotConfig);
+}
+
+// ── Init ──
+init();
+</script>
+</body>
+</html>

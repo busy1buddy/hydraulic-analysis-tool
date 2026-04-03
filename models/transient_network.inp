@@ -1,0 +1,77 @@
+[TITLE]
+Water Hammer Analysis - Valve Closure Transient
+Australian conditions - SI/Metric (LPS)
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              50              0                               ;  Upstream junction
+ J2              48              2.0                             ;  Mid-point junction
+ J3              45              5.0                             ;  Downstream junction
+ J4              42              3.0                             ;  Branch junction
+ J5              40              0                               ;  Valve upstream node
+ J6              40              8.0                             ;  Downstream demand node
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              80                                              ;  Source reservoir
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              R1              J1              800             300             130             0               Open
+ P2              J1              J2              600             250             130             0               Open
+ P3              J2              J3              500             200             120             0               Open
+ P4              J2              J4              400             150             120             0               Open
+ P5              J3              J5              300             200             120             0               Open
+ P6              J6              J4              200             150             120             0               Open
+
+[PUMPS]
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+ V1              J5              J6              200             TCV             1               0
+
+[PATTERNS]
+
+[CURVES]
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+
+[TIMES]
+ Duration            0:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+
+[REPORT]
+ Status              No
+ Summary             No
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ Unbalanced          Continue 10
+ Demand Multiplier   1.0
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               50.00
+ J1              20.00              50.00
+ J2              35.00              48.00
+ J3              50.00              45.00
+ J4              35.00              60.00
+ J5              60.00              42.00
+ J6              70.00              42.00
+
+[END]

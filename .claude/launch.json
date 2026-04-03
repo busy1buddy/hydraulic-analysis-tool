@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "epanet-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["server.py"],
+      "port": 8765
+    },
+    {
+      "name": "nicegui-app",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "app.main"],
+      "port": 8766
+    }
+  ]
+}

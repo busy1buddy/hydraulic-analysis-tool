@@ -1,0 +1,15 @@
+[project]
+name = "epanet-hydraulic-toolkit"
+version = "0.1.0"
+description = "EPANET hydraulic and transient analysis toolkit for Australian water engineering"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["epanet_api"]
+omit = ["tests/*", "server.py", "run_*.py"]

@@ -1,0 +1,149 @@
+; Filename: C:\Users\brian\Downloads\EPANET_CLAUDE\models\australian_network.inp
+; WNTR: 1.4.0
+; Created: 2026-04-03 19:25:54
+[TITLE]
+Australian Suburban Water Distribution Network
+Simple test model - SI/Metric units (LPS)
+Designed for Australian engineering standards
+
+[JUNCTIONS]
+;ID                      Elevation       Demand Pattern                 
+ J1                                50               0 1                          ;
+ J2                                45               5 1                          ;
+ J3                                42               8 1                          ;
+ J4                                48               3 1                          ;
+ J5                                40              12 1                          ;
+ J6                                38               6 1                          ;
+ J7                                44               4 1                          ;
+
+[RESERVOIRS]
+;ID                                   Head                  Pattern
+ R1                                80                            ;
+
+[TANKS]
+;ID                              Elevation           Init Level            Min Level            Max Level             Diameter           Min Volume Volume Curve         Overflow            
+ T1                                55               3             0.5               5              12               0                                             ;
+
+[PIPES]
+;ID                   Node1                Node2                              Length             Diameter            Roughness           Minor Loss               Status
+ P1                   R1                   J1                               500             300             130               0                 Open   ;
+ P2                   J1                   J2                               400             250             130               0                 Open   ;
+ P3                   J2                   J3                               350             200             120               0                 Open   ;
+ P4                   J1                   J4                               300             200             130               0                 Open   ;
+ P5                   J3                   J5                               450             200             120               0                 Open   ;
+ P6                   J5                   J6                               600             150             110               0                 Open   ;
+ P7                   J2                   J7                               250             150             120               0                 Open   ;
+ P8                   J4                   T1                               200             200             130               0                 Open   ;
+ P9                   J5                   J7                               300             150             120               0                 Open   ;
+
+[PUMPS]
+;ID                   Node1                Node2                Properties          
+
+[VALVES]
+;ID                   Node1                Node2                            Diameter Type              Setting           Minor Loss
+
+[TAGS]
+;type      name       tag       
+
+[DEMANDS]
+;ID        Demand     Pattern   
+
+[STATUS]
+;ID        Setting   
+
+[PATTERNS]
+;ID        Multipliers
+
+1 0.500000 0.400000 0.300000 0.300000 0.500000 0.800000
+1 1.200000 1.500000 1.300000 1.000000 0.900000 0.800000
+1 0.700000 0.600000 0.700000 0.900000 1.300000 1.500000
+1 1.400000 1.200000 1.000000 0.800000 0.700000 0.600000
+
+[CURVES]
+;ID         X-Value      Y-Value     
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+GLOBAL EFFICIENCY      75.0000
+GLOBAL PRICE           0.2500
+DEMAND CHARGE          0.0000
+
+[EMITTERS]
+;ID        Flow coefficient
+
+[QUALITY]
+
+[SOURCES]
+;Node      Type       Quality    Pattern   
+
+[REACTIONS]
+;Type           Pipe/Tank               Coefficient
+
+ ORDER BULK 1
+ ORDER TANK 1
+ ORDER WALL 1
+ GLOBAL BULK 0.0000    
+ GLOBAL WALL 0.0000    
+ LIMITING POTENTIAL 0.0000    
+ ROUGHNESS CORRELATION 0.0000    
+
+[MIXING]
+;Tank ID             Model Fraction
+
+[TIMES]
+DURATION             24:00:00
+HYDRAULIC TIMESTEP   01:00:00
+QUALITY TIMESTEP     00:05:00
+PATTERN TIMESTEP     01:00:00
+PATTERN START        00:00:00
+REPORT TIMESTEP      01:00:00
+REPORT START         00:00:00
+START CLOCKTIME      00:00:00 AM
+RULE TIMESTEP        00:06:00
+STATISTIC            NONE      
+
+[REPORT]
+SUMMARY    NO
+PAGE       0
+
+[OPTIONS]
+UNITS                LPS                 
+HEADLOSS             H-W                 
+SPECIFIC GRAVITY     1
+VISCOSITY            1
+TRIALS               40
+ACCURACY             0.001
+CHECKFREQ            2
+MAXCHECK             10
+UNBALANCED           CONTINUE 10
+PATTERN              1                   
+DEMAND MULTIPLIER    1
+EMITTER EXPONENT     0.5
+QUALITY              NONE                
+DIFFUSIVITY          1
+TOLERANCE            0.01
+
+[COORDINATES]
+;Node      X-Coord    Y-Coord   
+J1                 15.000000000         50.000000000
+J2                 30.000000000         45.000000000
+J3                 45.000000000         40.000000000
+J4                 25.000000000         60.000000000
+J5                 55.000000000         35.000000000
+J6                 70.000000000         30.000000000
+J7                 40.000000000         55.000000000
+R1                  0.000000000         50.000000000
+T1                 30.000000000         70.000000000
+
+[VERTICES]
+;Link      X-Coord    Y-Coord   
+
+[LABELS]
+
+[BACKDROP]
+UNITS    NONE
+
+[END]

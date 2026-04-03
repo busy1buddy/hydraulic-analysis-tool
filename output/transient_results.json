@@ -1,0 +1,69 @@
+{
+  "wave_speed_ms": 1000,
+  "closure_time_s": 0.5,
+  "valve": "V1",
+  "junctions": {
+    "J1": {
+      "steady_head_m": 79.8,
+      "max_head_m": 91.6,
+      "min_head_m": 71.5,
+      "surge_m": 11.8,
+      "surge_kPa": 116.0,
+      "max_pressure_kPa": 899.0
+    },
+    "J2": {
+      "steady_head_m": 79.4,
+      "max_head_m": 94.0,
+      "min_head_m": 70.1,
+      "surge_m": 14.6,
+      "surge_kPa": 143.0,
+      "max_pressure_kPa": 922.0
+    },
+    "J3": {
+      "steady_head_m": 79.0,
+      "max_head_m": 97.3,
+      "min_head_m": 66.8,
+      "surge_m": 18.3,
+      "surge_kPa": 180.0,
+      "max_pressure_kPa": 955.0
+    },
+    "J4": {
+      "steady_head_m": 79.0,
+      "max_head_m": 98.3,
+      "min_head_m": 67.5,
+      "surge_m": 19.4,
+      "surge_kPa": 190.0,
+      "max_pressure_kPa": 965.0
+    },
+    "J5": {
+      "steady_head_m": 78.9,
+      "max_head_m": 98.6,
+      "min_head_m": 63.0,
+      "surge_m": 19.6,
+      "surge_kPa": 193.0,
+      "max_pressure_kPa": 967.0
+    },
+    "J6": {
+      "steady_head_m": 78.9,
+      "max_head_m": 99.5,
+      "min_head_m": 65.2,
+      "surge_m": 20.6,
+      "surge_kPa": 202.0,
+      "max_pressure_kPa": 976.0
+    }
+  },
+  "compliance": [
+    {
+      "type": "OK",
+      "message": "All transient pressures within PN35 pipe rating"
+    }
+  ],
+  "max_surge_m": 20.6,
+  "max_surge_kPa": 202.0,
+  "mitigation": [
+    "Extend valve closure time to >5 seconds",
+    "Consider surge anticipation valves",
+    "Review pipe class ratings with safety factor"
+  ],
+  "plot": "C:\\Users\\brian\\Downloads\\EPANET_CLAUDE\\api_transient_results.png"
+}
