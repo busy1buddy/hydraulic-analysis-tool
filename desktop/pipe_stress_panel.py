@@ -28,6 +28,17 @@ def _detect_material_key(roughness):
         return 'ductile_iron'
 
 
+# PN ratings in kPa for pressure class safety factor
+# These are the maximum allowable operating pressures per standard
+_PN_RATING_KPA = {
+    'ductile_iron': 3500,    # PN35 — AS 2280
+    'pvc_pn12': 1200,        # PN12 — AS/NZS 1477
+    'pvc_pn18': 1800,        # PN18 — AS/NZS 1477
+    'pe100': 1600,           # PN16 SDR11 — AS/NZS 4130
+    'concrete_class3': 2500, # Class 3 — AS 4058
+}
+
+
 class PipeStressPanel(QWidget):
     """Table showing pipe stress analysis results."""
 
@@ -43,8 +54,8 @@ class PipeStressPanel(QWidget):
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([
-            "Pipe ID", "DN (mm)", "Wall (mm)", "Material",
-            "Hoop (MPa)", "von Mises (MPa)", "Safety Factor"
+            "Pipe ID", "DN (mm)", "Material", "Pressure (kPa)",
+            "Hoop (MPa)", "PN Rating (kPa)", "SF (PN/P)"
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setFont(QFont("Consolas", 9))
@@ -103,14 +114,17 @@ class PipeStressPanel(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            sf = stress.get('safety_factor_hoop', 0)
             hoop = stress.get('hoop_stress_MPa', 0)
-            vm = stress.get('von_mises_MPa', 0)
             mat_display = material_key.replace('_', ' ').title()
 
+            # PN safety factor = rated pressure / operating pressure
+            # This is the meaningful engineering metric for pipe selection
+            pn_rating = _PN_RATING_KPA.get(material_key, 3500)
+            sf = round(pn_rating / pressure_kPa, 2) if pressure_kPa > 0 else float('inf')
+
             items = [
-                pid, str(dn_mm), f"{wall_mm:.1f}", mat_display,
-                f"{hoop:.1f}", f"{vm:.1f}", f"{sf:.2f}"
+                pid, str(dn_mm), mat_display, f"{pressure_kPa:.0f}",
+                f"{hoop:.1f}", str(pn_rating), f"{sf:.2f}"
             ]
 
             for col, val in enumerate(items):
@@ -119,6 +133,8 @@ class PipeStressPanel(QWidget):
                 if col == 6 and sf < 1.5:
                     item.setForeground(QColor(243, 139, 168))
                     fail_count += 1
+                elif col == 6 and sf < 2.0:
+                    item.setForeground(QColor(249, 226, 175))  # yellow warning
                 elif col == 6:
                     item.setForeground(QColor(166, 227, 161))
                 self.table.setItem(row, col, item)
