@@ -39,6 +39,15 @@
 - Canvas element selection updates Properties panel
 - All 185 tests pass
 
+## Phase 6 — Packaging and Installer (2026-04-04)
+- Created hydraulic_tool.spec: PyInstaller spec with --onedir mode
+- Hidden imports for WNTR, TSNet, PyQt6, scipy, all domain modules
+- Data files bundled: au_pipes.py, pump_curves.py, models/*.inp, reports/
+- Created build.bat: one-command build script
+- Created installer/setup.iss: Inno Setup with .hap and .inp file associations
+- Desktop shortcut, Start Menu entry, uninstaller
+- All 185 tests pass, 12 xfail (known TSNet pump stability)
+
 ## Phase 5 — Reports, Audit Trail, Quality Review, Pipe Stress (2026-04-04)
 - Created desktop/report_dialog.py: report builder with section checklist, DOCX/PDF generation
 - Created desktop/audit_trail.py: auto-logs every analysis run with .inp snapshot, parameters, results, compliance summary
