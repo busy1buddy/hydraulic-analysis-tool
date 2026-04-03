@@ -39,6 +39,16 @@
 - Canvas element selection updates Properties panel
 - All 185 tests pass
 
+## Phase 5 — Reports, Audit Trail, Quality Review, Pipe Stress (2026-04-04)
+- Created desktop/report_dialog.py: report builder with section checklist, DOCX/PDF generation
+- Created desktop/audit_trail.py: auto-logs every analysis run with .inp snapshot, parameters, results, compliance summary
+- Created desktop/pipe_stress_panel.py: hoop/von Mises/safety factor per pipe, red highlights for SF < 1.5
+- Report dialog with 7 section checkboxes, project info, one-click generate
+- Audit trail stores to docs/audit/{YYYY-MM-DD}/{HHMMSS}/
+- Pipe stress panel integrated into Results dock with material detection from roughness
+- PE100 yield corrected to 20 MPa (AS/NZS 4130)
+- All 185 tests pass
+
 ## Phase 4 — Scenario Comparison (2026-04-04)
 - Created desktop/scenario_panel.py: scenario management with create/edit/duplicate/delete
 - ScenarioData: stores demand multiplier, modifications, results

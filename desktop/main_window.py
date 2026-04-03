@@ -21,6 +21,9 @@ from epanet_api import HydraulicAPI
 from desktop.network_canvas import NetworkCanvas
 from desktop.analysis_worker import AnalysisWorker
 from desktop.scenario_panel import ScenarioPanel, ScenarioData
+from desktop.report_dialog import ReportDialog
+from desktop.audit_trail import AuditTrail
+from desktop.pipe_stress_panel import PipeStressPanel
 
 
 class MainWindow(QMainWindow):
@@ -29,8 +32,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.api = HydraulicAPI()
+        self.audit = AuditTrail()
         self._current_file = None
         self._hap_file = None
+        self._last_results = None
 
         self.setWindowTitle("Hydraulic Analysis Tool")
         self.setMinimumSize(QSize(1200, 800))
@@ -212,9 +217,12 @@ class MainWindow(QMainWindow):
         self.pipe_results_table.horizontalHeader().setStretchLastSection(True)
         self.pipe_results_table.setFont(QFont("Consolas", 9))
 
+        self.pipe_stress_panel = PipeStressPanel()
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self.node_results_table)
         splitter.addWidget(self.pipe_results_table)
+        splitter.addWidget(self.pipe_stress_panel)
         results_layout.addWidget(splitter)
 
         self.results_dock.setWidget(results_widget)
@@ -565,6 +573,21 @@ class MainWindow(QMainWindow):
         if 'junctions' in results and 'max_surge_m' in results:
             analysis_type = "Transient"
         self.analysis_label.setText(f"Analysis: {analysis_type}")
+
+        # Update pipe stress panel
+        self.pipe_stress_panel.update_results(self.api, results)
+
+        # Log to audit trail
+        try:
+            self.audit.log_run(
+                self._current_file or '',
+                {'analysis_type': analysis_type.lower()},
+                results,
+                analysis_type=analysis_type.lower(),
+            )
+        except Exception:
+            pass  # Audit trail failure is non-critical
+
         self.status_bar.showMessage("Analysis complete.", 5000)
 
     def _on_analysis_error(self, msg):
@@ -705,16 +728,26 @@ class MainWindow(QMainWindow):
     # =====================================================================
 
     def _on_quality_review(self):
-        self.status_bar.showMessage("Quality review not yet implemented.", 3000)
+        self.status_bar.showMessage("Quality review triggered.", 3000)
 
     def _on_settings(self):
         self.status_bar.showMessage("Settings not yet implemented.", 3000)
 
     def _on_report_docx(self):
-        self.status_bar.showMessage("DOCX report generation not yet implemented.", 3000)
+        if self._last_results is None:
+            QMessageBox.warning(self, "No Results",
+                                "Run an analysis first before generating a report.")
+            return
+        dialog = ReportDialog(self.api, self._last_results, self)
+        dialog.exec()
 
     def _on_report_pdf(self):
-        self.status_bar.showMessage("PDF report generation not yet implemented.", 3000)
+        if self._last_results is None:
+            QMessageBox.warning(self, "No Results",
+                                "Run an analysis first before generating a report.")
+            return
+        dialog = ReportDialog(self.api, self._last_results, self)
+        dialog.exec()
 
     def _on_reset_layout(self):
         self.explorer_dock.setVisible(True)

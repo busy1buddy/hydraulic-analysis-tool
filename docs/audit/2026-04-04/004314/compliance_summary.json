@@ -1,0 +1,23 @@
+{
+  "total_items": 3,
+  "critical": 0,
+  "warnings": 3,
+  "ok": 0,
+  "items": [
+    {
+      "type": "WARNING",
+      "element": "J4",
+      "message": "Min pressure 17.2m < 20m (WSAA minimum)"
+    },
+    {
+      "type": "WARNING",
+      "element": "P4",
+      "message": "Velocity 2.83 m/s > 2.0 m/s limit"
+    },
+    {
+      "type": "WARNING",
+      "element": "P8",
+      "message": "Velocity 2.78 m/s > 2.0 m/s limit"
+    }
+  ]
+}
