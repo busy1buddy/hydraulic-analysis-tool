@@ -208,6 +208,14 @@ class NetworkCanvas(QWidget):
         self._label_items = []
         self._show_labels = False
 
+    def ensure_scene_connected(self):
+        """Re-connect scene click handler if the scene was recreated."""
+        try:
+            self.plot_widget.scene().sigMouseClicked.disconnect(self._on_scene_clicked)
+        except (TypeError, RuntimeError):
+            pass
+        self.plot_widget.scene().sigMouseClicked.connect(self._on_scene_clicked)
+
     def set_api(self, api):
         """Set the HydraulicAPI instance and render the network."""
         self.api = api

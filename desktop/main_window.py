@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
     QMessageBox, QHeaderView, QSplitter, QProgressBar,
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent
 from PyQt6.QtGui import QAction, QFont, QColor
 
 from epanet_api import HydraulicAPI
@@ -173,8 +173,13 @@ class MainWindow(QMainWindow):
     # =====================================================================
 
     def _setup_dock_panels(self):
+        # Dock features: movable and floatable, but NOT closable
+        _dock_features = (QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                          QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+
         # --- Left: Project Explorer ---
         self.explorer_dock = QDockWidget("Project Explorer", self)
+        self.explorer_dock.setFeatures(_dock_features)
         self.explorer_dock.setMinimumWidth(220)
         self.explorer_tree = QTreeWidget()
         self.explorer_tree.setHeaderLabels(["Element"])
@@ -186,6 +191,7 @@ class MainWindow(QMainWindow):
 
         # --- Right: Properties ---
         self.properties_dock = QDockWidget("Properties", self)
+        self.properties_dock.setFeatures(_dock_features)
         self.properties_dock.setMinimumWidth(220)
         self.properties_table = QTableWidget(0, 2)
         self.properties_table.setHorizontalHeaderLabels(["Property", "Value"])
@@ -201,6 +207,7 @@ class MainWindow(QMainWindow):
 
         # --- Bottom: Results ---
         self.results_dock = QDockWidget("Results", self)
+        self.results_dock.setFeatures(_dock_features)
         self.results_dock.setMinimumHeight(300)
         results_widget = QWidget()
         results_layout = QVBoxLayout(results_widget)
@@ -241,6 +248,7 @@ class MainWindow(QMainWindow):
 
         # --- Scenario Panel (tabbed with explorer on left) ---
         self.scenario_dock = QDockWidget("Scenarios", self)
+        self.scenario_dock.setFeatures(_dock_features)
         self.scenario_dock.setMinimumWidth(250)
         self.scenario_panel = ScenarioPanel()
         self.scenario_panel.run_all.connect(self._on_run_all_scenarios)
@@ -788,3 +796,45 @@ class MainWindow(QMainWindow):
             "AS/NZS 4130, AS 4058\n\n"
             "Powered by WNTR + TSNet"
         )
+
+    # =====================================================================
+    # WINDOW STATE PRESERVATION
+    # =====================================================================
+
+    def showEvent(self, event):
+        """Save dock layout once the window is first shown, and restore on subsequent shows."""
+        super().showEvent(event)
+        if not hasattr(self, '_initial_state'):
+            # First show — capture the good layout
+            self._initial_state = self.saveState()
+        else:
+            # Subsequent shows (e.g. restore from minimise) — restore layout
+            self._restore_layout()
+
+    def changeEvent(self, event):
+        """Handle window state changes (minimise/restore/focus)."""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            # Save state before any state change
+            if not self.isMinimized():
+                self._saved_state = self.saveState()
+            # If we just restored from minimised, restore the layout
+            if hasattr(self, '_was_minimized') and self._was_minimized and not self.isMinimized():
+                self._restore_layout()
+            self._was_minimized = self.isMinimized()
+
+    def _restore_layout(self):
+        """Restore dock layout and re-ensure canvas interactivity."""
+        # Restore dock geometry from saved state
+        state = getattr(self, '_saved_state', None) or getattr(self, '_initial_state', None)
+        if state:
+            self.restoreState(state)
+
+        # Force all docks visible
+        self.explorer_dock.setVisible(True)
+        self.properties_dock.setVisible(True)
+        self.results_dock.setVisible(True)
+        self.scenario_dock.setVisible(True)
+
+        # Re-ensure canvas scene click handler is connected
+        self.canvas.ensure_scene_connected()
