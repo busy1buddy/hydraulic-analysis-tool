@@ -100,6 +100,25 @@ class ColourMapWidget(QWidget):
         row3.addWidget(self.reset_btn)
         layout.addLayout(row3)
 
+        # Percentile clip
+        row4 = QHBoxLayout()
+        row4.addWidget(QLabel("Clip:"))
+        self.clip_spin = QDoubleSpinBox()
+        self.clip_spin.setRange(0, 10)
+        self.clip_spin.setDecimals(1)
+        self.clip_spin.setValue(0.0)
+        self.clip_spin.setSuffix(" %")
+        self.clip_spin.setFont(font)
+        self.clip_spin.setToolTip(
+            "Percentile clip — ignore top/bottom N% of values when\n"
+            "setting colour range. Prevents outliers from washing out\n"
+            "the colour scale. Set to 0 for no clipping."
+        )
+        self.clip_spin.valueChanged.connect(self._on_clip_changed)
+        row4.addWidget(self.clip_spin)
+        row4.addStretch()
+        layout.addLayout(row4)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -188,7 +207,34 @@ class ColourMapWidget(QWidget):
         self.colour_map_changed.emit()
 
     def _on_reset(self):
+        self.clip_spin.setValue(0.0)
         self.set_range(self._data_vmin, self._data_vmax)
+
+    def _on_clip_changed(self, pct):
+        """Apply percentile clip to the data range."""
+        if not hasattr(self, '_raw_values') or self._raw_values is None:
+            return
+        if pct <= 0 or len(self._raw_values) < 3:
+            self.set_range(self._data_vmin, self._data_vmax)
+            return
+        clipped_min = float(np.percentile(self._raw_values, pct))
+        clipped_max = float(np.percentile(self._raw_values, 100 - pct))
+        self.set_range(clipped_min, clipped_max)
+
+    def set_data_values(self, values):
+        """
+        Store raw data values for percentile clip computation.
+
+        Parameters
+        ----------
+        values : list or np.ndarray
+            All data values currently displayed on the canvas
+        """
+        self._raw_values = np.array(values) if values else None
+        # Update full range
+        if self._raw_values is not None and len(self._raw_values) > 0:
+            self._data_vmin = float(self._raw_values.min())
+            self._data_vmax = float(self._raw_values.max())
 
     def _emit_changed(self):
         self.colour_map_changed.emit()

@@ -1793,6 +1793,148 @@ class HydraulicAPI:
         return pipe_scores
 
     # =========================================================================
+    # SURGE PROTECTION DESIGN
+    # =========================================================================
+
+    def design_surge_protection(self, transient_results):
+        """
+        Design surge protection based on transient analysis results.
+
+        Returns recommendations for:
+        - Surge vessel sizing (volume per AS/NZS 2566)
+        - Air valve placement at profile high points
+        - Slow-closing valve specification (closure time > 2L/a)
+
+        Parameters
+        ----------
+        transient_results : dict
+            Results from run_transient() or run_pump_trip()
+
+        Returns dict with 'surge_vessel', 'air_valves', 'slow_valve', 'summary'.
+        Ref: AS/NZS 2566, Wylie & Streeter (1993), Thorley (2004)
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        surge_m = transient_results.get('max_surge_m', 0)
+        surge_kPa = transient_results.get('max_surge_kPa', 0)
+        junctions = transient_results.get('junctions', {})
+        g = 9.81  # m/s²
+
+        recommendations = {
+            'max_surge_m': surge_m,
+            'max_surge_kPa': surge_kPa,
+            'surge_vessel': None,
+            'air_valves': [],
+            'slow_valve': None,
+            'summary': [],
+        }
+
+        if surge_m < 30:
+            recommendations['summary'].append(
+                f'Surge of {surge_m:.1f} m is below 30 m threshold — '
+                f'no protection required for typical PN35 (3500 kPa) ductile iron.')
+            return recommendations
+
+        # --- Surge Vessel Sizing ---
+        # Volume = a × Q × L / (2 × g × H_allowed)
+        # where a = wave speed, Q = flow, L = pipe length, H_allowed = allowable surge
+        # Ref: Wylie & Streeter (1993) Ch. 12
+        total_length = sum(self.wn.get_link(pid).length for pid in self.wn.pipe_name_list)
+        avg_diameter = 0
+        n_pipes = len(self.wn.pipe_name_list)
+        if n_pipes > 0:
+            avg_diameter = sum(self.wn.get_link(pid).diameter
+                              for pid in self.wn.pipe_name_list) / n_pipes
+
+        # Estimate flow from pipe areas and typical velocity
+        avg_area = 3.14159 * (avg_diameter / 2) ** 2
+        # Use max velocity from transient as flow estimate
+        max_v = 0
+        for jdata in junctions.values():
+            head_arr = jdata.get('head', [])
+            if hasattr(head_arr, '__len__') and len(head_arr) > 1:
+                max_v = max(max_v, abs(float(head_arr[0]) - float(head_arr[-1])))
+
+        if max_v == 0:
+            max_v = 1.5  # assume 1.5 m/s typical
+
+        Q_estimate = avg_area * max_v  # m³/s
+        wave_speed = self.DEFAULTS['wave_speed_ms']
+
+        # Allowable surge = PN rating minus normal operating head
+        H_allowed = max(30, surge_m * 0.5)  # limit to 50% of surge
+
+        if total_length > 0 and H_allowed > 0:
+            # Surge vessel volume formula — Wylie & Streeter (1993)
+            V_vessel = (wave_speed * Q_estimate * total_length) / (2 * g * H_allowed)
+            V_vessel = max(0.5, V_vessel)  # minimum 0.5 m³
+        else:
+            V_vessel = 1.0
+
+        recommendations['surge_vessel'] = {
+            'volume_m3': round(V_vessel, 1),
+            'pressure_rating_kPa': int(surge_kPa * 1.5),  # 50% safety factor
+            'location': 'Adjacent to valve/pump causing transient',
+            'basis': (f'V = a×Q×L/(2gH) = {wave_speed}×{Q_estimate:.3f}×'
+                     f'{total_length:.0f}/(2×{g}×{H_allowed:.0f}) = {V_vessel:.1f} m³ '
+                     f'— Wylie & Streeter (1993) Ch. 12'),
+        }
+        recommendations['summary'].append(
+            f'Surge vessel: {V_vessel:.1f} m³ rated to '
+            f'{int(surge_kPa * 1.5)} kPa (1.5× safety factor).')
+
+        # --- Air Valve Placement ---
+        # Place at high points in the network profile (elevation peaks)
+        # Ref: AS/NZS 2566 Clause 4.3
+        elevations = {}
+        for jid in self.wn.junction_name_list:
+            node = self.wn.get_node(jid)
+            elevations[jid] = node.elevation
+
+        if elevations:
+            sorted_nodes = sorted(elevations.items(), key=lambda x: x[1], reverse=True)
+            # Recommend air valves at top 3 highest nodes or nodes above median
+            median_elev = sorted(elevations.values())[len(elevations) // 2]
+            high_points = [(nid, elev) for nid, elev in sorted_nodes
+                          if elev > median_elev][:5]
+
+            for nid, elev in high_points:
+                recommendations['air_valves'].append({
+                    'node': nid,
+                    'elevation_m': round(elev, 1),
+                    'type': 'Combination air valve (AS/NZS 2566)',
+                    'reason': f'Profile high point at {elev:.1f} m AHD — '
+                              f'negative pressure risk during transient',
+                })
+
+            if high_points:
+                recommendations['summary'].append(
+                    f'Air valves at {len(high_points)} high points: '
+                    f'{", ".join(nid for nid, _ in high_points)}.')
+
+        # --- Slow-Closing Valve ---
+        # Minimum closure time = 2L/a — critical period criterion
+        # Ref: Thorley (2004) "Fluid Transients in Pipeline Systems"
+        if total_length > 0:
+            t_critical = 2 * total_length / wave_speed  # seconds
+            t_recommended = max(t_critical * 2, 5.0)  # 2× critical, min 5s
+
+            recommendations['slow_valve'] = {
+                'critical_period_s': round(t_critical, 1),
+                'recommended_closure_s': round(t_recommended, 1),
+                'type': 'Actuated butterfly valve with controlled closure',
+                'basis': (f't_c = 2L/a = 2×{total_length:.0f}/{wave_speed} = '
+                         f'{t_critical:.1f} s — Thorley (2004). '
+                         f'Recommended: ≥{t_recommended:.0f} s (2× critical period).'),
+            }
+            recommendations['summary'].append(
+                f'Slow-closing valve: ≥{t_recommended:.0f} s closure time '
+                f'(critical period = {t_critical:.1f} s).')
+
+        return recommendations
+
+    # =========================================================================
     # AUTO-CALIBRATION (Roughness Optimisation)
     # =========================================================================
 

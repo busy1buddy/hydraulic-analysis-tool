@@ -38,6 +38,7 @@ from desktop.preferences import load_preferences, save_preferences
 from desktop.pressure_zone_dialog import PressureZoneDialog
 from desktop.rehab_dialog import RehabDialog
 from desktop.split_canvas import SplitCanvas
+from desktop.surge_wizard import SurgeWizard
 
 
 class MainWindow(QMainWindow):
@@ -838,6 +839,11 @@ class MainWindow(QMainWindow):
             pass  # Audit trail failure is non-critical
 
         self.status_bar.showMessage("Analysis complete.", 5000)
+
+        # Show surge protection wizard if transient surge > 30 m
+        if results.get('max_surge_m', 0) > 30:
+            wizard = SurgeWizard(self.api, results, parent=self)
+            wizard.exec()
 
     def _populate_animation_panel(self, results):
         """Load transient data into the AnimationPanel."""
