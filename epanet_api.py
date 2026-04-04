@@ -4182,6 +4182,63 @@ class HydraulicAPI:
         }
 
     # =========================================================================
+    # BATCH ANALYSIS MODE (L10)
+    # =========================================================================
+
+    def batch_analyse(self, inp_files, analyses=None):
+        """
+        Run analyses on multiple .inp files and return combined results.
+
+        Parameters
+        ----------
+        inp_files : list of str
+            Paths to .inp files
+        analyses : list of str or None
+            Analyses to run. Options: 'steady', 'topology', 'fingerprint',
+            'diagnose', 'compliance'. Default: all.
+
+        Returns list of dicts, one per file.
+        """
+        if analyses is None:
+            analyses = ['steady', 'topology', 'fingerprint', 'diagnose', 'compliance']
+
+        results = []
+        for inp_path in inp_files:
+            entry = {
+                'file': os.path.basename(inp_path),
+                'path': inp_path,
+                'analyses': {},
+            }
+            try:
+                self.load_network_from_path(inp_path)
+            except Exception as e:
+                entry['error'] = f'Failed to load: {e}'
+                results.append(entry)
+                continue
+
+            if 'steady' in analyses:
+                try:
+                    entry['analyses']['steady'] = self.run_steady_state(save_plot=False)
+                except Exception as e:
+                    entry['analyses']['steady'] = {'error': str(e)}
+
+            if 'topology' in analyses:
+                entry['analyses']['topology'] = self.analyse_topology()
+
+            if 'fingerprint' in analyses:
+                entry['analyses']['fingerprint'] = self.hydraulic_fingerprint()
+
+            if 'diagnose' in analyses:
+                entry['analyses']['diagnose'] = self.diagnose_network()
+
+            if 'compliance' in analyses:
+                entry['analyses']['compliance'] = self.run_design_compliance_check()
+
+            results.append(entry)
+
+        return results
+
+    # =========================================================================
     # PROJECT BUNDLE EXPORT/IMPORT
     # =========================================================================
 
