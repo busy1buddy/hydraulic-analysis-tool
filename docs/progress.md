@@ -48,6 +48,14 @@
 - Desktop shortcut, Start Menu entry, uninstaller
 - All 185 tests pass, 12 xfail (known TSNet pump stability)
 
+## Track 1.1 — Visualisation Audit (2026-04-04)
+- Ran all 10 tutorials through full UI pipeline: load, analyse, colourmap, value overlay, scaling, labels, fit, all colour modes
+- 0 issues found across all 10 tutorials
+- All tutorials: canvas nodes/pipes match expected, results tables populated, stress table correct, WSAA label set
+- ColourMapWidget (Viridis/Plasma/RdBu/RdBu/Jet) renders without crash on all networks
+- Value overlay, pipe DN scaling, node demand scaling all functional
+- Fit view produces finite ranges on all coordinate layouts
+
 ## Phase 5 — Reports, Audit Trail, Quality Review, Pipe Stress (2026-04-04)
 - Created desktop/report_dialog.py: report builder with section checklist, DOCX/PDF generation
 - Created desktop/audit_trail.py: auto-logs every analysis run with .inp snapshot, parameters, results, compliance summary
