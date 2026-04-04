@@ -15,7 +15,9 @@
 - I12: Pipe sizing optimisation — cost database (Rawlinsons), iterative upsizing, budget limits
 - I14: 3D network visualisation — PyQtGraph OpenGL, elevation Z-axis, WSAA colours
 - I15: Advanced slurry — settling velocity (Stokes/Schiller-Naumann/Newton), Durand deposition velocity, Rouse concentration profile
+- I13: Automated report scheduling — Windows Task Scheduler, CLI script
 - 618 tests passing (+78 from I-series), 12 xfailed
+- Zero TODOs/FIXMEs in codebase, all review blockers fixed
 
 ## v1.3.0 Release (2026-04-04)
 - C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
