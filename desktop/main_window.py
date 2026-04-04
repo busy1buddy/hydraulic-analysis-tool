@@ -39,6 +39,7 @@ from desktop.pressure_zone_dialog import PressureZoneDialog
 from desktop.rehab_dialog import RehabDialog
 from desktop.split_canvas import SplitCanvas
 from desktop.surge_wizard import SurgeWizard
+from desktop.view_3d import View3D
 
 
 class MainWindow(QMainWindow):
@@ -244,6 +245,10 @@ class MainWindow(QMainWindow):
         split_act = QAction("Split &Screen (Compare Scenarios)", self)
         split_act.triggered.connect(self._on_split_screen)
         view_menu.addAction(split_act)
+
+        view_3d_act = QAction("&3D View", self)
+        view_3d_act.triggered.connect(self._on_3d_view)
+        view_menu.addAction(view_3d_act)
 
         view_menu.addSeparator()
 
@@ -987,6 +992,15 @@ class MainWindow(QMainWindow):
     def _on_scale_nodes_toggled(self, checked: bool):
         """Toggle node size scaling by demand."""
         self.canvas.set_node_scaling(checked)
+
+    def _on_3d_view(self):
+        """Open 3D network visualisation."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        view = View3D(self.api, results=self._last_results, parent=self)
+        view.show()
 
     def _on_basemap_toggled(self, checked: bool):
         """Toggle GIS basemap overlay."""

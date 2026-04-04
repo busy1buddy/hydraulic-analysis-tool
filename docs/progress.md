@@ -10,7 +10,10 @@
 - I7: Fire flow sweep QThread — replaced processEvents() with proper background worker
 - I9: Project bundle — .hydraulic ZIP export/import with .inp, .hap, scenarios, audit
 - PyInstaller rebuilt for v1.3.0-release (94 MB exe, all new modules included)
-- 576 tests passing (+36 from I-series), 12 xfailed
+- I10: Network comparison — topology diff, property changes, identical detection
+- I11: Demand forecasting — linear/exponential/logistic growth, WSAA failure year prediction
+- I12: Pipe sizing optimisation — cost database (Rawlinsons), iterative upsizing, budget limits
+- 595 tests passing (+55 from I-series), 12 xfailed
 
 ## v1.3.0 Release (2026-04-04)
 - C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
