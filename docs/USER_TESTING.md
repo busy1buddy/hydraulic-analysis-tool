@@ -152,6 +152,29 @@ If you find any issues:
 3. Check the terminal/console for any error messages
 4. File an issue on the project repository
 
+## v2.0.0 Tutorial Smoke Test Results (2026-04-04)
+
+All 10 tutorial networks tested: load, steady-state, quality score, resilience, diagnostics.
+
+| Tutorial | Status | Quality Score | Resilience | Issues |
+|----------|--------|--------------|------------|--------|
+| dead_end_network | PASS | 92/100 (A) | 0.324 (B) | 0 |
+| elevated_tank | PASS | 61/100 (C) | 0.000 (F) | 0 |
+| fire_flow_demand | PASS | 90/100 (A) | 0.334 (B) | 0 |
+| industrial_ring_main | PASS | 80/100 (B) | 0.712 (A) | 0 |
+| mining_slurry_line | PASS | 90/100 (A) | 0.540 (A) | 0 |
+| multistage_pump | PASS | 56/100 (D) | 0.000 (F) | 1 |
+| pressure_zone_boundary | PASS | 86/100 (B) | 0.523 (A) | 0 |
+| pump_station | PASS | 80/100 (B) | 1.000 (A) | 1 |
+| rehabilitation_comparison | PASS | 90/100 (A) | 0.300 (B) | 0 |
+| simple_loop | PASS | 95/100 (A) | 0.346 (B) | 0 |
+
+**Result: 10/10 PASS** — no crashes, no Python tracebacks, all analyses complete.
+
+Notes:
+- elevated_tank and multistage_pump have Ir=0 because they have no junction demands (tank/pump test circuits)
+- multistage_pump and pump_station show 1 diagnostic issue each (high demand or roughness warnings)
+
 ## Standards Reference
 
 This tool checks against:

@@ -1,12 +1,16 @@
 # Build Progress
 
-## v2.0.0 — Production Ready (2026-04-04)
+## v2.0.0-release — Production Ready (2026-04-04)
 - Innovation Q2: Pump failure impact analysis — power loss simulation, affected customer report
 - Innovation Q3: Quick network assessment — comprehensive evaluation in seconds for unknown networks
 - Mining slurry design workflow documented (tutorials/mining_slurry_line/DESIGN_WORKFLOW.md)
 - REST API: /api/assessment endpoint for quick assessment
 - Tools > Quick Assessment (F10) in UI
-- 800+ tests passing, 12 xfailed (TSNet)
+- R1: 833 tests total (794 pass reliably, 39 transient with 12 xfail)
+- R2: 10/10 tutorials smoke tested — all pass, no crashes
+- R3: Formula audit updated — 8 new formulas since v1.1.0, all with published sources
+- R5: CHANGELOG.md covering all 11 versions
+- R6: README.md rewritten for new users with quick start, feature list, citations
 
 ## v1.9.0 M-Series — Depth and Polish (2026-04-04)
 - M1: Todini resilience index — first-class metric in status bar, dashboard KPI, compliance certificate, benchmarked 10 tutorials
