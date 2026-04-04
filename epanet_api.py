@@ -1105,7 +1105,7 @@ class HydraulicAPI:
     # =========================================================================
 
     def run_pump_trip(self, pump_name, trip_time=2.0, sim_duration=30,
-                      wave_speed=1000, save_plot=True):
+                      wave_speed=None, save_plot=True):
         """
         Run pump trip (sudden shutdown) transient analysis using TSNet.
 
@@ -1121,8 +1121,8 @@ class HydraulicAPI:
             Duration of pump shutdown in seconds.
         sim_duration : float
             Total simulation time in seconds.
-        wave_speed : float
-            Wave speed in m/s (default: 1000 for ductile iron).
+        wave_speed : float or None
+            Wave speed in m/s (default: 1100 per AS 2280 ductile iron).
         save_plot : bool
             Whether to save plot image.
 
@@ -1152,7 +1152,7 @@ class HydraulicAPI:
                                         ws, save_plot)
 
     def run_pump_startup(self, pump_name, ramp_time=10.0, sim_duration=30,
-                         wave_speed=1000, save_plot=True):
+                         wave_speed=None, save_plot=True):
         """
         Run pump startup transient analysis using TSNet.
 
@@ -1167,8 +1167,8 @@ class HydraulicAPI:
             Duration of pump ramp-up in seconds.
         sim_duration : float
             Total simulation time in seconds.
-        wave_speed : float
-            Wave speed in m/s (default: 1000 for ductile iron).
+        wave_speed : float or None
+            Wave speed in m/s (default: 1100 per AS 2280 ductile iron).
         save_plot : bool
             Whether to save plot image.
 
@@ -1827,8 +1827,8 @@ if __name__ == '__main__':
     parser.add_argument('--valve', help='Valve name for transient analysis')
     parser.add_argument('--closure-time', type=float, default=0.5,
                        help='Valve closure time (seconds)')
-    parser.add_argument('--wave-speed', type=float, default=1000,
-                       help='Wave speed (m/s)')
+    parser.add_argument('--wave-speed', type=float, default=1100,
+                       help='Wave speed (m/s) — AS 2280 default 1100 for ductile iron')
     parser.add_argument('--duration', type=float, default=20,
                        help='Transient simulation duration (seconds)')
     parser.add_argument('--json', action='store_true', help='Output as JSON')

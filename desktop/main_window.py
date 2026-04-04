@@ -698,8 +698,8 @@ class MainWindow(QMainWindow):
             demand = node.demand_timeseries_list[0].base_value * 1000
         self._add_property_row("Base Demand", f"{demand:.2f} LPS")
         x, y = node.coordinates
-        self._add_property_row("X", f"{x:.1f}")
-        self._add_property_row("Y", f"{y:.1f}")
+        self._add_property_row("X (m)", f"{x:.1f}")
+        self._add_property_row("Y (m)", f"{y:.1f}")
 
     def _show_reservoir_properties(self, rid, node):
         self._add_property_row("Type", "Reservoir")
@@ -1052,7 +1052,7 @@ class MainWindow(QMainWindow):
             else:
                 status = "PASS"
 
-            items = [jid, elev, f"{min_p:.1f}", f"{head:.1f}", status]
+            items = [jid, elev, f"{min_p:.1f} m", f"{head:.1f} m", status]
             for col, val in enumerate(items):
                 item = QTableWidgetItem(str(val))
                 if "FAIL" in str(val):

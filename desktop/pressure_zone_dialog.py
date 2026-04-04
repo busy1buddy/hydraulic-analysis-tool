@@ -277,10 +277,10 @@ class PressureZoneDialog(QDialog):
             items = [
                 zone_name,
                 str(data['node_count']),
-                f"{data['total_demand_lps']:.1f}",
-                f"{data['min_pressure_m']:.1f}",
-                f"{data['max_pressure_m']:.1f}",
-                f"{data['avg_pressure_m']:.1f}",
+                f"{data['total_demand_lps']:.1f} LPS",
+                f"{data['min_pressure_m']:.1f} m",
+                f"{data['max_pressure_m']:.1f} m",
+                f"{data['avg_pressure_m']:.1f} m",
                 "PASS" if data['wsaa_compliant'] else "FAIL",
                 "Yes" if data['prv_recommended'] else "No",
             ]

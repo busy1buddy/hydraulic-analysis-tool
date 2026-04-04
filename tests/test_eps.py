@@ -229,7 +229,7 @@ class TestEPSExecution:
         # For each junction, the pressure shown in col 2 should be min_m (not avg_m)
         for row in range(window.node_results_table.rowCount()):
             jid = window.node_results_table.item(row, 0).text()
-            shown_p = float(window.node_results_table.item(row, 2).text())
+            shown_p = float(window.node_results_table.item(row, 2).text().replace(' m', ''))
             pdata = results['pressures'].get(jid, {})
             min_p = pdata.get('min_m', 0)
             assert abs(shown_p - min_p) < 0.2, (

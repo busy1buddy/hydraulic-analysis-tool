@@ -188,7 +188,7 @@ class FireFlowDialog(QDialog):
             else:
                 fail_count += 1
 
-            items = [jid, f"{p:.1f}", f"{min_pressure:.1f}", status]
+            items = [jid, f"{p:.1f} m", f"{min_pressure:.1f} m", status]
             for col, val in enumerate(items):
                 item = QTableWidgetItem(str(val))
                 if col == 3 and val == "FAIL":
@@ -230,14 +230,14 @@ class FireFlowDialog(QDialog):
                 p_str = "--"
             elif p >= min_pressure:
                 status = "PASS"
-                p_str = f"{p:.1f}"
+                p_str = f"{p:.1f} m"
                 pass_count += 1
             else:
                 status = "FAIL"
-                p_str = f"{p:.1f}"
+                p_str = f"{p:.1f} m"
                 fail_count += 1
 
-            items = [jid, p_str, f"{min_pressure:.1f}", status]
+            items = [jid, p_str, f"{min_pressure:.1f} m", status]
             for col, val in enumerate(items):
                 item = QTableWidgetItem(str(val))
                 if col == 3 and val == "FAIL":

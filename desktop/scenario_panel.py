@@ -117,8 +117,8 @@ class ScenarioComparisonTable(QWidget):
                              if c.get('type') in ('WARNING', 'CRITICAL'))
 
                 items.extend([
-                    f"{min_p:.1f}", f"{max_p:.1f}",
-                    f"{max_v:.2f}", str(issues),
+                    f"{min_p:.1f} m", f"{max_p:.1f} m",
+                    f"{max_v:.2f} m/s", str(issues),
                 ])
             else:
                 items.extend(["--", "--", "--", "--"])

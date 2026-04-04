@@ -98,4 +98,14 @@ class AnalysisWorker(QThread):
             self.finished.emit(results)
 
         except Exception as e:
-            self.error.emit(f"{type(e).__name__}: {e}")
+            # Map exceptions to engineer-friendly messages
+            msg = str(e)
+            if 'convergence' in msg.lower() or 'infeasible' in msg.lower():
+                msg = "Solver did not converge — check network connectivity and boundary conditions."
+            elif 'no network' in msg.lower():
+                msg = "No network loaded. Open a .inp file first."
+            elif 'negative' in msg.lower() or 'sqrt' in msg.lower():
+                msg = "Numerical instability — try adjusting simulation parameters or simplifying pump curves."
+            else:
+                msg = f"Analysis failed: {msg}"
+            self.error.emit(msg)

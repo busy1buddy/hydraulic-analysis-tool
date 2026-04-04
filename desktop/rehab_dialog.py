@@ -158,14 +158,14 @@ class RehabDialog(QDialog):
 
             values = [
                 r['pipe_id'],
-                str(r['diameter_mm']),
-                f"{r['length_m']:.0f}",
+                f"{r['diameter_mm']} mm",
+                f"{r['length_m']:.0f} m",
                 r['material'],
                 year_str,
-                age_str,
+                f"{age_str} yr" if age_str != "--" else "--",
                 cond_str,
                 str(r['break_history']),
-                f"{r['velocity_ms']:.2f}",
+                f"{r['velocity_ms']:.2f} m/s",
                 f"{r['priority_score']:.1f}",
                 r['risk_category'],
             ]
