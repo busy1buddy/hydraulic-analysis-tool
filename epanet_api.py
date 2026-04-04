@@ -2728,6 +2728,160 @@ class HydraulicAPI:
         return groups
 
     # =========================================================================
+    # LEAKAGE DETECTION ANALYSIS
+    # =========================================================================
+
+    def leakage_analysis(self, measured_inflow_lps, legitimate_night_use_lps=0):
+        """
+        Analyse water losses by comparing metered inflow vs customer demands.
+
+        Parameters
+        ----------
+        measured_inflow_lps : float
+            Total measured inflow from supply meters (LPS)
+        legitimate_night_use_lps : float
+            Estimated legitimate night-time use (LPS)
+
+        Returns dict with apparent_loss, real_loss, minimum_night_flow,
+        infrastructure_leakage_index (ILI).
+        Ref: WSAA Best Practice Guidelines for Leakage Management
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        # Sum of customer demands
+        total_demand_lps = 0
+        for jid in self.wn.junction_name_list:
+            junc = self.wn.get_node(jid)
+            if junc.demand_timeseries_list:
+                total_demand_lps += junc.demand_timeseries_list[0].base_value * 1000
+
+        # Total pipe length for ILI calculation
+        total_length_km = sum(
+            self.wn.get_link(pid).length for pid in self.wn.pipe_name_list) / 1000
+        n_connections = len(self.wn.junction_name_list)
+
+        # Apparent losses = meter inaccuracy (estimated 2-5% of metered)
+        apparent_loss_pct = 3.0  # typical for Australian utilities
+        apparent_loss_lps = measured_inflow_lps * (apparent_loss_pct / 100)
+
+        # Real losses = total loss - apparent loss
+        total_loss_lps = max(0, measured_inflow_lps - total_demand_lps)
+        real_loss_lps = max(0, total_loss_lps - apparent_loss_lps)
+
+        # Minimum Night Flow (MNF) method
+        # MNF = total_loss + legitimate_night_use
+        mnf_lps = real_loss_lps + legitimate_night_use_lps
+
+        # Infrastructure Leakage Index (ILI)
+        # ILI = CARL / UARL
+        # UARL = (18 × Lm + 0.8 × Nc + 25 × Lp) × P / 1000
+        # where Lm = main length (km), Nc = connections, Lp = total service pipe (km)
+        # P = average pressure (m)
+        avg_pressure = self.DEFAULTS['min_pressure_m'] + 15  # estimate 35m
+        Lp = n_connections * 0.015  # average 15m service pipe
+        UARL_lday = (18 * total_length_km + 0.8 * n_connections + 25 * Lp) * avg_pressure / 1000
+        UARL_lps = UARL_lday / 86.4  # L/day to L/s
+
+        ILI = real_loss_lps / UARL_lps if UARL_lps > 0 else 0
+
+        # Performance category per WSAA
+        if ILI <= 1.0:
+            category = 'A — Best practice'
+        elif ILI <= 2.0:
+            category = 'B — Good'
+        elif ILI <= 4.0:
+            category = 'C — Average'
+        elif ILI <= 8.0:
+            category = 'D — Below average'
+        else:
+            category = 'E — Poor — immediate action required'
+
+        return {
+            'measured_inflow_lps': round(measured_inflow_lps, 2),
+            'total_demand_lps': round(total_demand_lps, 2),
+            'total_loss_lps': round(total_loss_lps, 2),
+            'apparent_loss_lps': round(apparent_loss_lps, 2),
+            'real_loss_lps': round(real_loss_lps, 2),
+            'loss_pct': round(total_loss_lps / max(measured_inflow_lps, 0.01) * 100, 1),
+            'mnf_lps': round(mnf_lps, 2),
+            'ili': round(ILI, 2),
+            'performance_category': category,
+            'network_length_km': round(total_length_km, 2),
+            'n_connections': n_connections,
+        }
+
+    # =========================================================================
+    # NETWORK RELIABILITY ANALYSIS
+    # =========================================================================
+
+    def reliability_analysis(self):
+        """
+        Assess network reliability by simulating single-pipe failures.
+
+        For each pipe: close it, run analysis, check which nodes lose
+        adequate pressure (< WSAA 20 m). Ranks pipes by criticality.
+
+        Returns list of dicts sorted by criticality (most critical first):
+        'pipe_id', 'affected_nodes', 'n_affected', 'criticality_index'.
+
+        Ref: Wagner et al. (1988) "Reliability of Water Distribution Systems"
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        n_junctions = len(self.wn.junction_name_list)
+        if n_junctions == 0:
+            return []
+
+        # Run baseline
+        try:
+            base_results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Baseline failed: {e}'}
+
+        base_ok_nodes = set()
+        for jid, p in base_results.get('pressures', {}).items():
+            if p.get('min_m', 0) >= self.DEFAULTS['min_pressure_m']:
+                base_ok_nodes.add(jid)
+
+        results = []
+
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            original_status = pipe.initial_status
+
+            # Close pipe (simulate failure)
+            pipe.initial_status = wntr.network.LinkStatus(0)  # closed
+
+            try:
+                fail_results = self.run_steady_state(save_plot=False)
+                fail_pressures = fail_results.get('pressures', {})
+                affected = []
+                for jid in base_ok_nodes:
+                    p = fail_pressures.get(jid, {}).get('min_m', 0)
+                    if p < self.DEFAULTS['min_pressure_m']:
+                        affected.append(jid)
+            except Exception:
+                affected = list(base_ok_nodes)  # assume all affected on solver failure
+
+            # Restore pipe
+            pipe.initial_status = original_status
+
+            criticality = len(affected) / max(n_junctions, 1)
+            results.append({
+                'pipe_id': pid,
+                'diameter_mm': int(pipe.diameter * 1000),
+                'length_m': round(pipe.length, 1),
+                'affected_nodes': affected,
+                'n_affected': len(affected),
+                'criticality_index': round(criticality, 3),
+            })
+
+        results.sort(key=lambda x: x['criticality_index'], reverse=True)
+        return results
+
+    # =========================================================================
     # NETWORK COMPARISON
     # =========================================================================
 
