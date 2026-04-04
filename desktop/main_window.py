@@ -41,6 +41,7 @@ from desktop.split_canvas import SplitCanvas
 from desktop.surge_wizard import SurgeWizard
 from desktop.view_3d import View3D
 from desktop.report_scheduler import ReportSchedulerDialog
+from desktop.pipe_profile_dialog import PipeProfileDialog
 
 
 class MainWindow(QMainWindow):
@@ -171,6 +172,10 @@ class MainWindow(QMainWindow):
         wq_trace_act = QAction("&Trace...", self)
         wq_trace_act.triggered.connect(self._on_water_quality_trace)
         wq_menu.addAction(wq_trace_act)
+
+        profile_act = QAction("&Pipe Profile...", self)
+        profile_act.triggered.connect(self._on_pipe_profile)
+        analysis_menu.addAction(profile_act)
 
         analysis_menu.addSeparator()
 
@@ -1172,6 +1177,15 @@ class MainWindow(QMainWindow):
     # =====================================================================
     # DEMAND PATTERNS / EPS
     # =====================================================================
+
+    def _on_pipe_profile(self):
+        """Open pipe profile longitudinal section dialog."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        dialog = PipeProfileDialog(self.api, results=self._last_results, parent=self)
+        dialog.exec()
 
     def _on_calibration(self):
         """Open the Calibration Tools dialog."""

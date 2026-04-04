@@ -1509,6 +1509,220 @@ class HydraulicAPI:
         return []
 
     # =========================================================================
+    # NETWORK SKELETONISATION
+    # =========================================================================
+
+    def skeletonise(self, min_diameter_mm=100, remove_dead_ends=True,
+                    merge_series=True):
+        """
+        Simplify the network by removing insignificant elements.
+
+        Operations:
+        1. Remove dead-end branches below min_diameter_mm
+        2. Merge series pipes (two pipes with a junction that has no demand)
+        3. Report before/after counts
+
+        Returns dict with 'removed_pipes', 'removed_nodes', 'merged_pipes',
+        'before', 'after' counts. Does NOT modify the network — returns
+        a plan that the user can review before applying.
+
+        Ref: Walski (2001) "Pipe Network Simplification"
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        before = {
+            'nodes': len(self.wn.junction_name_list),
+            'pipes': len(self.wn.pipe_name_list),
+        }
+
+        dead_end_removals = []
+        series_merges = []
+
+        if remove_dead_ends:
+            # Find dead-end junctions (degree 1, below diameter threshold)
+            for jid in list(self.wn.junction_name_list):
+                connected_pipes = []
+                for pid in self.wn.pipe_name_list:
+                    pipe = self.wn.get_link(pid)
+                    if pipe.start_node_name == jid or pipe.end_node_name == jid:
+                        connected_pipes.append(pid)
+                if len(connected_pipes) == 1:
+                    pipe = self.wn.get_link(connected_pipes[0])
+                    dn_mm = int(pipe.diameter * 1000)
+                    if dn_mm < min_diameter_mm:
+                        dead_end_removals.append({
+                            'node': jid,
+                            'pipe': connected_pipes[0],
+                            'diameter_mm': dn_mm,
+                        })
+
+        if merge_series:
+            # Find series junctions (degree 2, no demand)
+            for jid in list(self.wn.junction_name_list):
+                # Skip if already marked for removal
+                if any(d['node'] == jid for d in dead_end_removals):
+                    continue
+                # Check demand
+                junc = self.wn.get_node(jid)
+                demand = 0
+                if junc.demand_timeseries_list:
+                    demand = abs(junc.demand_timeseries_list[0].base_value)
+                if demand > 0.0001:
+                    continue  # has demand — can't remove
+
+                connected_pipes = []
+                for pid in self.wn.pipe_name_list:
+                    pipe = self.wn.get_link(pid)
+                    if pipe.start_node_name == jid or pipe.end_node_name == jid:
+                        connected_pipes.append(pid)
+                if len(connected_pipes) == 2:
+                    p1 = self.wn.get_link(connected_pipes[0])
+                    p2 = self.wn.get_link(connected_pipes[1])
+                    # Equivalent pipe: same diameter (larger), combined length, average roughness
+                    eq_length = p1.length + p2.length
+                    eq_diameter = max(p1.diameter, p2.diameter)
+                    eq_roughness = (p1.roughness + p2.roughness) / 2
+                    series_merges.append({
+                        'node': jid,
+                        'pipe1': connected_pipes[0],
+                        'pipe2': connected_pipes[1],
+                        'equivalent_length_m': round(eq_length, 1),
+                        'equivalent_diameter_mm': int(eq_diameter * 1000),
+                        'equivalent_roughness': round(eq_roughness, 0),
+                    })
+
+        after = {
+            'nodes': before['nodes'] - len(dead_end_removals) - len(series_merges),
+            'pipes': before['pipes'] - len(dead_end_removals) - len(series_merges),
+        }
+
+        return {
+            'dead_end_removals': dead_end_removals,
+            'series_merges': series_merges,
+            'before': before,
+            'after': after,
+            'reduction_pct': round(
+                (1 - after['pipes'] / max(before['pipes'], 1)) * 100, 1),
+        }
+
+    # =========================================================================
+    # SENSITIVITY ANALYSIS
+    # =========================================================================
+
+    def sensitivity_analysis(self, parameter='roughness', variation_pct=20):
+        """
+        One-at-a-time sensitivity analysis.
+
+        Varies each pipe's roughness (or each junction's demand) by ±N%
+        and measures the impact on system-wide minimum pressure.
+
+        Parameters
+        ----------
+        parameter : str
+            'roughness' or 'demand'
+        variation_pct : float
+            Percentage variation (default 20%)
+
+        Returns list of dicts sorted by impact (highest first), each with:
+        'element', 'base_value', 'pressure_change_m', 'sensitivity_rank'.
+
+        Ref: WSAA Design Guidelines — sensitivity analysis
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        # Run baseline
+        try:
+            base_results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Baseline failed: {e}'}
+
+        base_pressures = base_results.get('pressures', {})
+        base_min_p = min(p.get('min_m', 0) for p in base_pressures.values()) if base_pressures else 0
+
+        sensitivities = []
+        factor = variation_pct / 100
+
+        if parameter == 'roughness':
+            for pid in self.wn.pipe_name_list:
+                pipe = self.wn.get_link(pid)
+                original = pipe.roughness
+
+                # Decrease roughness (worse condition)
+                pipe.roughness = original * (1 - factor)
+                try:
+                    res = self.run_steady_state(save_plot=False)
+                    p = res.get('pressures', {})
+                    min_p_low = min(v.get('min_m', 0) for v in p.values()) if p else 0
+                except Exception:
+                    min_p_low = base_min_p
+
+                # Restore
+                pipe.roughness = original
+
+                # Increase roughness (better condition)
+                pipe.roughness = original * (1 + factor)
+                try:
+                    res = self.run_steady_state(save_plot=False)
+                    p = res.get('pressures', {})
+                    min_p_high = min(v.get('min_m', 0) for v in p.values()) if p else 0
+                except Exception:
+                    min_p_high = base_min_p
+
+                pipe.roughness = original
+
+                impact = abs(min_p_high - min_p_low)
+                sensitivities.append({
+                    'element': pid,
+                    'type': 'pipe roughness',
+                    'base_value': round(original, 0),
+                    'pressure_change_m': round(impact, 2),
+                })
+
+        elif parameter == 'demand':
+            for jid in self.wn.junction_name_list:
+                junc = self.wn.get_node(jid)
+                if not junc.demand_timeseries_list:
+                    continue
+                original = junc.demand_timeseries_list[0].base_value
+                if abs(original) < 1e-6:
+                    continue
+
+                junc.demand_timeseries_list[0].base_value = original * (1 + factor)
+                try:
+                    res = self.run_steady_state(save_plot=False)
+                    p = res.get('pressures', {})
+                    min_p_high = min(v.get('min_m', 0) for v in p.values()) if p else 0
+                except Exception:
+                    min_p_high = base_min_p
+
+                junc.demand_timeseries_list[0].base_value = original * (1 - factor)
+                try:
+                    res = self.run_steady_state(save_plot=False)
+                    p = res.get('pressures', {})
+                    min_p_low = min(v.get('min_m', 0) for v in p.values()) if p else 0
+                except Exception:
+                    min_p_low = base_min_p
+
+                junc.demand_timeseries_list[0].base_value = original
+
+                impact = abs(min_p_high - min_p_low)
+                sensitivities.append({
+                    'element': jid,
+                    'type': 'junction demand',
+                    'base_value': round(original * 1000, 2),  # m³/s to LPS
+                    'pressure_change_m': round(impact, 2),
+                })
+
+        # Sort by impact
+        sensitivities.sort(key=lambda x: x['pressure_change_m'], reverse=True)
+        for i, s in enumerate(sensitivities):
+            s['sensitivity_rank'] = i + 1
+
+        return sensitivities
+
+    # =========================================================================
     # PRESSURE ZONE MANAGEMENT
     # =========================================================================
 
@@ -1791,6 +2005,248 @@ class HydraulicAPI:
         # Sort by priority (highest first)
         pipe_scores.sort(key=lambda x: x['priority_score'], reverse=True)
         return pipe_scores
+
+    # =========================================================================
+    # PIPE PROFILE (Longitudinal Section)
+    # =========================================================================
+
+    def compute_pipe_profile(self, node_path, results=None):
+        """
+        Compute longitudinal section data for a path through the network.
+
+        Parameters
+        ----------
+        node_path : list of str
+            Ordered list of node IDs defining the path (e.g., ['R1','J1','J2','J3'])
+        results : dict or None
+            Steady-state results dict. If None, runs analysis.
+
+        Returns dict with:
+            - 'stations': list of cumulative distance (m)
+            - 'invert': list of pipe invert elevation (m AHD)
+            - 'hgl': list of hydraulic grade line (m AHD) = pressure + elevation
+            - 'ground': list of node elevation (m AHD) — for profile
+            - 'pressure_head': list of pressure (m) at each node
+            - 'pipes': list of {'id', 'start_station', 'end_station', 'diameter_mm'}
+            - 'warnings': list of issues (negative pressure, air pockets)
+
+        Ref: Standard hydraulic design practice — longitudinal section
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+        if len(node_path) < 2:
+            return {'error': 'Path must contain at least 2 nodes'}
+
+        if results is None:
+            results = self.run_steady_state(save_plot=False)
+
+        pressures = results.get('pressures', {})
+
+        stations = [0.0]
+        invert = []
+        hgl = []
+        ground = []
+        pressure_head = []
+        pipes_info = []
+        warnings = []
+        cumulative_dist = 0.0
+
+        for i, nid in enumerate(node_path):
+            try:
+                node = self.wn.get_node(nid)
+            except Exception:
+                return {'error': f'Node {nid} not found in network'}
+
+            elev = getattr(node, 'elevation', getattr(node, 'base_head', 0))
+            ground.append(round(elev, 2))
+            invert.append(round(elev, 2))
+
+            p_data = pressures.get(nid, {})
+            p_m = p_data.get('avg_m', 0)
+            pressure_head.append(round(p_m, 2))
+            hgl.append(round(elev + p_m, 2))
+
+            # Check for negative pressure (air pocket risk)
+            if p_m < 0:
+                warnings.append(f'{nid}: negative pressure {p_m:.1f} m — air pocket risk')
+            elif p_m < 5:
+                warnings.append(f'{nid}: very low pressure {p_m:.1f} m — cavitation risk')
+
+            # Find pipe connecting this node to next
+            if i < len(node_path) - 1:
+                next_nid = node_path[i + 1]
+                pipe_found = False
+                for pid in self.wn.pipe_name_list:
+                    pipe = self.wn.get_link(pid)
+                    sn, en = pipe.start_node_name, pipe.end_node_name
+                    if (sn == nid and en == next_nid) or (sn == next_nid and en == nid):
+                        cumulative_dist += pipe.length
+                        stations.append(round(cumulative_dist, 1))
+                        pipes_info.append({
+                            'id': pid,
+                            'start_station': round(cumulative_dist - pipe.length, 1),
+                            'end_station': round(cumulative_dist, 1),
+                            'diameter_mm': int(pipe.diameter * 1000),
+                            'length_m': round(pipe.length, 1),
+                        })
+                        pipe_found = True
+                        break
+                if not pipe_found:
+                    return {'error': f'No pipe connecting {nid} to {next_nid}'}
+
+        # Check HGL slope for air pocket potential
+        for i in range(1, len(hgl)):
+            if hgl[i] > hgl[i - 1] and ground[i] > ground[i - 1]:
+                # HGL rises at a high point — potential air pocket
+                if ground[i] > hgl[i]:
+                    warnings.append(
+                        f'Profile high point at {node_path[i]}: '
+                        f'ground ({ground[i]:.1f} m) above HGL ({hgl[i]:.1f} m)')
+
+        return {
+            'stations': stations,
+            'invert': invert,
+            'hgl': hgl,
+            'ground': ground,
+            'pressure_head': pressure_head,
+            'pipes': pipes_info,
+            'node_ids': node_path,
+            'warnings': warnings,
+            'total_length_m': round(cumulative_dist, 1),
+        }
+
+    # =========================================================================
+    # PUMP OPERATING POINT
+    # =========================================================================
+
+    def compute_pump_operating_point(self, pump_name, results=None):
+        """
+        Compute pump and system curves to find the operating point.
+
+        Parameters
+        ----------
+        pump_name : str
+            Pump ID in the network
+        results : dict or None
+            Steady-state results. If None, runs analysis.
+
+        Returns dict with:
+            - 'pump_curve': [(flow_lps, head_m), ...]
+            - 'system_curve': [(flow_lps, head_m), ...]
+            - 'operating_point': {'flow_lps', 'head_m'}
+            - 'efficiency': float or None
+            - 'bep_flow_lps': float or None (best efficiency point)
+            - 'warnings': list of operating issues
+
+        Ref: Pump fundamentals — Karassik et al. (2008)
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        try:
+            pump = self.wn.get_link(pump_name)
+        except Exception:
+            return {'error': f'Pump {pump_name} not found'}
+
+        if results is None:
+            results = self.run_steady_state(save_plot=False)
+
+        # Get pump curve points from WNTR
+        pump_curve_name = pump.pump_curve_name
+        if pump_curve_name is None:
+            return {'error': f'Pump {pump_name} has no defined pump curve'}
+
+        try:
+            curve = self.wn.get_curve(pump_curve_name)
+            curve_pts = [(round(pt[0] * 1000, 2), round(pt[1], 2))  # m³/s→LPS, m
+                         for pt in curve.points]
+        except Exception:
+            return {'error': f'Could not read pump curve {pump_curve_name}'}
+
+        if not curve_pts:
+            return {'error': 'Pump curve has no data points'}
+
+        # Get operating flow from results
+        flows = results.get('flows', {})
+        pump_flow_data = flows.get(pump_name, {})
+        op_flow_lps = abs(pump_flow_data.get('avg_lps', 0))
+
+        # Compute operating head from pump curve interpolation
+        # Linear interpolation along curve
+        op_head = 0
+        for i in range(len(curve_pts) - 1):
+            q0, h0 = curve_pts[i]
+            q1, h1 = curve_pts[i + 1]
+            if q0 <= op_flow_lps <= q1:
+                t = (op_flow_lps - q0) / (q1 - q0) if q1 != q0 else 0
+                op_head = h0 + t * (h1 - h0)
+                break
+        else:
+            # Extrapolate from last two points
+            if len(curve_pts) >= 2:
+                q0, h0 = curve_pts[-2]
+                q1, h1 = curve_pts[-1]
+                if q1 != q0:
+                    t = (op_flow_lps - q0) / (q1 - q0)
+                    op_head = h0 + t * (h1 - h0)
+
+        # Build system curve (parabolic: H = H_static + k*Q²)
+        # H_static from node elevations, k from operating point
+        sn = pump.start_node_name
+        en = pump.end_node_name
+        try:
+            elev_start = getattr(self.wn.get_node(sn), 'elevation',
+                                 getattr(self.wn.get_node(sn), 'base_head', 0))
+            elev_end = getattr(self.wn.get_node(en), 'elevation',
+                               getattr(self.wn.get_node(en), 'base_head', 0))
+            # Include downstream pressure target
+            p_end = results.get('pressures', {}).get(en, {}).get('avg_m', 0)
+            H_static = (elev_end + p_end) - elev_start
+        except Exception:
+            H_static = 0
+
+        if op_flow_lps > 0.01:
+            k = (op_head - H_static) / (op_flow_lps ** 2) if op_head > H_static else 0
+        else:
+            k = 0
+
+        max_flow = curve_pts[-1][0] * 1.3 if curve_pts else 100
+        system_pts = []
+        for i in range(21):
+            q = max_flow * i / 20
+            h = H_static + k * q ** 2
+            system_pts.append((round(q, 2), round(h, 2)))
+
+        # BEP estimation: middle of pump curve range
+        bep_flow = (curve_pts[0][0] + curve_pts[-1][0]) / 2 if len(curve_pts) >= 2 else None
+
+        # Warnings
+        warnings = []
+        if bep_flow:
+            ratio = op_flow_lps / bep_flow if bep_flow > 0 else 0
+            if ratio < 0.7:
+                warnings.append(
+                    f'Operating at {ratio:.1%} of BEP flow — '
+                    f'risk of recirculation, vibration, and reduced bearing life')
+            elif ratio > 1.2:
+                warnings.append(
+                    f'Operating at {ratio:.1%} of BEP flow — '
+                    f'risk of cavitation and motor overload')
+
+        if op_head < 0:
+            warnings.append('Negative operating head — check pump direction')
+
+        return {
+            'pump_curve': curve_pts,
+            'system_curve': system_pts,
+            'operating_point': {
+                'flow_lps': round(op_flow_lps, 2),
+                'head_m': round(op_head, 2),
+            },
+            'bep_flow_lps': round(bep_flow, 2) if bep_flow else None,
+            'static_head_m': round(H_static, 2),
+            'warnings': warnings,
+        }
 
     # =========================================================================
     # PIPE SIZING OPTIMISATION
