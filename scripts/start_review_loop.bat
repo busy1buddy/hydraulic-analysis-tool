@@ -5,4 +5,7 @@ start /B python "%~dp0review_bridge.py" > "%~dp0..\docs\review_loop\bridge.log" 
 timeout /t 3 /nobreak > nul
 curl -s localhost:7771/health
 echo.
-echo Bridge running. Logs: docs\review_loop\bridge.log
+echo Bridge running. Warming up...
+python "%~dp0submit_for_review.py" --context "warmup" --question "warmup" --output "warmup" --fast >nul 2>&1
+echo Warmup complete. Bridge ready.
+echo Logs: docs\review_loop\bridge.log

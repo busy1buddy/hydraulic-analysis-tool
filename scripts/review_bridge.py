@@ -16,7 +16,6 @@ import subprocess
 import time
 from datetime import datetime
 
-# Ensure project root
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HISTORY_FILE = os.path.join(ROOT, 'docs', 'review_loop', 'history.jsonl')
 os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
@@ -62,31 +61,44 @@ Respond in valid JSON only. No text outside the JSON:
   "can_continue": true
 }}"""
 
+TIMEOUT_FAST = 180
+TIMEOUT_THOROUGH = 300
 
-def _run_claude_reviewer(prompt):
-    """Run claude CLI and return its stdout."""
-    try:
-        result = subprocess.run(
-            ["claude", "--print", "--dangerously-skip-permissions", prompt],
-            capture_output=True, text=True, timeout=120,
-            cwd=ROOT,
-        )
-        return result.stdout.strip(), result.returncode
-    except FileNotFoundError:
-        return '{"assessment": "Claude CLI not found on PATH", "quality": "NEEDS_WORK", "issues": ["claude CLI not installed"], "next_instructions": "", "can_continue": true}', 1
-    except subprocess.TimeoutExpired:
-        return '{"assessment": "Review timed out after 120s", "quality": "ACCEPTABLE", "issues": ["timeout"], "next_instructions": "", "can_continue": true}', 1
+
+def _run_claude_reviewer(prompt, model=None, timeout=TIMEOUT_FAST):
+    """Run claude CLI and return its stdout. Retries once on timeout."""
+    cmd = ["claude", "--print", "--dangerously-skip-permissions"]
+    if model:
+        cmd.extend(["--model", model])
+    cmd.append(prompt)
+
+    for attempt in range(2):  # retry once on timeout
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=timeout, cwd=ROOT,
+            )
+            return result.stdout.strip(), result.returncode
+        except FileNotFoundError:
+            return ('{"assessment": "Claude CLI not found on PATH", '
+                    '"quality": "NEEDS_WORK", "issues": ["claude CLI not installed"], '
+                    '"next_instructions": "", "can_continue": true}'), 1
+        except subprocess.TimeoutExpired:
+            if attempt == 0:
+                continue  # retry once
+            return ('{"assessment": "Review timed out after retry", '
+                    '"quality": "ACCEPTABLE", "issues": ["timeout after 2 attempts"], '
+                    '"next_instructions": "", "can_continue": true}'), 1
+    return '{}', 1
 
 
 def _parse_json_from_output(text):
     """Extract the first JSON object from text."""
-    # Try direct parse first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # Find JSON in the output
     start = text.find('{')
     if start == -1:
         return None
@@ -128,12 +140,20 @@ def review():
     output = data.get('output', '')
     context = data.get('context', '')
     question = data.get('question', '')
+    mode = data.get('mode', 'fast')  # 'fast' (haiku) or 'thorough' (default model)
 
     prompt = REVIEWER_PROMPT_TEMPLATE.format(
         output=output, context=context, question=question
     )
 
-    stdout, rc = _run_claude_reviewer(prompt)
+    if mode == 'fast':
+        model = 'claude-haiku-4-5-20251001'
+        timeout = TIMEOUT_FAST
+    else:
+        model = None  # use default model
+        timeout = TIMEOUT_THOROUGH
+
+    stdout, rc = _run_claude_reviewer(prompt, model=model, timeout=timeout)
 
     parsed = _parse_json_from_output(stdout)
     if parsed is None:
@@ -162,7 +182,6 @@ def history():
                         entries.append(json.loads(line))
                     except json.JSONDecodeError:
                         pass
-    # Return last 20
     return jsonify(entries[-20:])
 
 

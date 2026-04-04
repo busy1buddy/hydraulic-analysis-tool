@@ -105,11 +105,13 @@ class ScenarioComparisonTable(QWidget):
                 flows = sc.results.get('flows', {})
                 compliance = sc.results.get('compliance', [])
 
-                all_p = [p.get('avg_m', 0) for p in pressures.values()]
+                # Use actual min/max across all timesteps, not averages
+                all_p_min = [p.get('min_m', 0) for p in pressures.values()]
+                all_p_max = [p.get('max_m', 0) for p in pressures.values()]
                 all_v = [f.get('max_velocity_ms', 0) for f in flows.values()]
 
-                min_p = min(all_p) if all_p else 0
-                max_p = max(all_p) if all_p else 0
+                min_p = min(all_p_min) if all_p_min else 0
+                max_p = max(all_p_max) if all_p_max else 0
                 max_v = max(all_v) if all_v else 0
                 issues = sum(1 for c in compliance
                              if c.get('type') in ('WARNING', 'CRITICAL'))
@@ -223,6 +225,10 @@ class ScenarioPanel(QWidget):
         dialog = ScenarioDialog(self, sc)
         if dialog.exec():
             new = dialog.get_scenario()
+            # Check for duplicate names (exclude the scenario being edited)
+            if new.name != sc.name and any(s.name == new.name for s in self.scenarios):
+                QMessageBox.warning(self, "Duplicate", f"Scenario '{new.name}' already exists.")
+                return
             sc.name = new.name
             sc.demand_multiplier = new.demand_multiplier
             self._refresh_tree()
