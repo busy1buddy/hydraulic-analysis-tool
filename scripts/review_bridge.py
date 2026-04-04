@@ -7,6 +7,8 @@ reviewer subprocess. No external API key needed.
 Start: python scripts/review_bridge.py
 Health: curl localhost:7771/health
 Submit: POST localhost:7771/review with JSON body
+
+Configure: set REVIEW_TIMEOUT=240 before starting to increase timeout.
 """
 
 import os
@@ -14,6 +16,7 @@ import sys
 import json
 import subprocess
 import time
+import tempfile
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +31,10 @@ except ImportError:
 
 app = Flask(__name__)
 
+# Configurable via environment variable
+TIMEOUT_FAST = int(os.environ.get('REVIEW_TIMEOUT', '180'))
+TIMEOUT_THOROUGH = int(os.environ.get('REVIEW_TIMEOUT_THOROUGH', '300'))
+
 REVIEWER_PROMPT_TEMPLATE = """You are a senior hydraulic engineer and software architect \
 reviewing output from an autonomous Claude Code session building a professional \
 hydraulic analysis desktop tool.
@@ -35,7 +42,7 @@ hydraulic analysis desktop tool.
 The tool uses PyQt6, WNTR, TSNet, and custom slurry solvers targeting \
 Australian water and mining engineers.
 Standards: WSAA, AS/NZS 1477, AS 2280, AS/NZS 4130, AS 4058.
-Current test suite: 410+ passing, 12 xfailed.
+Current test suite: 467+ passing (growing), 12 xfailed.
 
 TASK COMPLETED: {context}
 
@@ -61,35 +68,75 @@ Respond in valid JSON only. No text outside the JSON:
   "can_continue": true
 }}"""
 
-TIMEOUT_FAST = 180
-TIMEOUT_THOROUGH = 300
+
+def _check_claude_cli():
+    """Check if claude CLI is available and measure startup time."""
+    try:
+        t0 = time.perf_counter()
+        result = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True, text=True, timeout=15,
+        )
+        elapsed = time.perf_counter() - t0
+        version = result.stdout.strip().split('\n')[0] if result.stdout else 'unknown'
+        if elapsed > 5:
+            print(f"WARNING: claude CLI startup took {elapsed:.1f}s — reviews will be slow")
+        else:
+            print(f"claude CLI ready: {version} (startup: {elapsed:.1f}s)")
+        return True, elapsed
+    except FileNotFoundError:
+        print("WARNING: claude CLI not found on PATH")
+        return False, 0
+    except subprocess.TimeoutExpired:
+        print("WARNING: claude --version timed out after 15s")
+        return False, 0
 
 
 def _run_claude_reviewer(prompt, model=None, timeout=TIMEOUT_FAST):
-    """Run claude CLI and return its stdout. Retries once on timeout."""
-    cmd = ["claude", "--print", "--dangerously-skip-permissions"]
-    if model:
-        cmd.extend(["--model", model])
-    cmd.append(prompt)
+    """Run claude CLI via stdin (temp file) to avoid arg length limits. Retries once."""
+    # Write prompt to temp file and pipe via stdin
+    prompt_file = None
+    try:
+        prompt_file = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.txt', delete=False, encoding='utf-8',
+        )
+        prompt_file.write(prompt)
+        prompt_file.close()
 
-    for attempt in range(2):  # retry once on timeout
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=timeout, cwd=ROOT,
-            )
-            return result.stdout.strip(), result.returncode
-        except FileNotFoundError:
-            return ('{"assessment": "Claude CLI not found on PATH", '
-                    '"quality": "NEEDS_WORK", "issues": ["claude CLI not installed"], '
-                    '"next_instructions": "", "can_continue": true}'), 1
-        except subprocess.TimeoutExpired:
-            if attempt == 0:
-                continue  # retry once
-            return ('{"assessment": "Review timed out after retry", '
-                    '"quality": "ACCEPTABLE", "issues": ["timeout after 2 attempts"], '
-                    '"next_instructions": "", "can_continue": true}'), 1
-    return '{}', 1
+        cmd = ["claude", "--print", "--dangerously-skip-permissions"]
+        if model:
+            cmd.extend(["--model", model])
+
+        for attempt in range(2):
+            t0 = time.perf_counter()
+            try:
+                with open(prompt_file.name, 'r', encoding='utf-8') as stdin_f:
+                    result = subprocess.run(
+                        cmd, stdin=stdin_f,
+                        capture_output=True, text=True,
+                        timeout=timeout, cwd=ROOT,
+                    )
+                elapsed = time.perf_counter() - t0
+                return result.stdout.strip(), result.returncode, elapsed, False
+            except FileNotFoundError:
+                return ('{"assessment": "Claude CLI not found on PATH", '
+                        '"quality": "NEEDS_WORK", "issues": ["claude CLI not installed"], '
+                        '"next_instructions": "", "can_continue": true}'), 1, 0, False
+            except subprocess.TimeoutExpired:
+                elapsed = time.perf_counter() - t0
+                if attempt == 0:
+                    continue
+                return ('{"assessment": "Review timed out after retry", '
+                        '"quality": "ACCEPTABLE", "issues": ["timeout after 2 attempts"], '
+                        '"next_instructions": "", "can_continue": true}'), 1, elapsed, True
+    finally:
+        if prompt_file and os.path.exists(prompt_file.name):
+            try:
+                os.unlink(prompt_file.name)
+            except OSError:
+                pass
+
+    return '{}', 1, 0, True
 
 
 def _parse_json_from_output(text):
@@ -117,21 +164,52 @@ def _parse_json_from_output(text):
     return None
 
 
-def _log_exchange(context, question, response):
-    """Append to history.jsonl."""
+def _log_exchange(context, question, response, elapsed_s=0, timed_out=False):
+    """Append to history.jsonl with timing metadata."""
     entry = {
         'timestamp': datetime.now().isoformat(),
         'context': context,
         'question': question,
         'response': response,
+        'elapsed_s': round(elapsed_s, 1),
+        'timed_out': timed_out,
     }
     with open(HISTORY_FILE, 'a') as f:
         f.write(json.dumps(entry) + '\n')
 
 
+def _compute_stats():
+    """Compute timeout statistics from history."""
+    entries = []
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+
+    recent = entries[-10:] if len(entries) > 10 else entries
+    total = len(recent)
+    timeouts = sum(1 for e in recent if e.get('timed_out', False))
+    elapsed_vals = [e.get('elapsed_s', 0) for e in recent if e.get('elapsed_s', 0) > 0]
+    avg_time = sum(elapsed_vals) / len(elapsed_vals) if elapsed_vals else 0
+    timeout_rate = (timeouts / total * 100) if total > 0 else 0
+
+    return {
+        'total': total,
+        'timeouts': timeouts,
+        'timeout_rate': f"{timeout_rate:.0f}%",
+        'avg_response_time_s': round(avg_time, 1),
+    }
+
+
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok', 'reviewer': 'claude-code-cli'})
+    return jsonify({'status': 'ok', 'reviewer': 'claude-code-cli',
+                    'timeout_fast': TIMEOUT_FAST, 'timeout_thorough': TIMEOUT_THOROUGH})
 
 
 @app.route('/review', methods=['POST'])
@@ -140,7 +218,7 @@ def review():
     output = data.get('output', '')
     context = data.get('context', '')
     question = data.get('question', '')
-    mode = data.get('mode', 'fast')  # 'fast' (haiku) or 'thorough' (default model)
+    mode = data.get('mode', 'fast')
 
     prompt = REVIEWER_PROMPT_TEMPLATE.format(
         output=output, context=context, question=question
@@ -150,10 +228,10 @@ def review():
         model = 'claude-haiku-4-5-20251001'
         timeout = TIMEOUT_FAST
     else:
-        model = None  # use default model
+        model = None
         timeout = TIMEOUT_THOROUGH
 
-    stdout, rc = _run_claude_reviewer(prompt, model=model, timeout=timeout)
+    stdout, rc, elapsed, timed_out = _run_claude_reviewer(prompt, model=model, timeout=timeout)
 
     parsed = _parse_json_from_output(stdout)
     if parsed is None:
@@ -165,7 +243,7 @@ def review():
             'can_continue': True,
         }
 
-    _log_exchange(context, question, parsed)
+    _log_exchange(context, question, parsed, elapsed_s=elapsed, timed_out=timed_out)
 
     return jsonify(parsed)
 
@@ -182,10 +260,19 @@ def history():
                         entries.append(json.loads(line))
                     except json.JSONDecodeError:
                         pass
-    return jsonify(entries[-20:])
+
+    stats = _compute_stats()
+    return jsonify({'entries': entries[-20:], 'stats': stats})
 
 
 if __name__ == '__main__':
     print(f"Review bridge starting on http://localhost:7771")
+    print(f"Timeouts: fast={TIMEOUT_FAST}s, thorough={TIMEOUT_THOROUGH}s")
     print(f"History: {HISTORY_FILE}")
+    print()
+
+    # Startup check
+    _check_claude_cli()
+    print()
+
     app.run(host='127.0.0.1', port=7771, debug=False)

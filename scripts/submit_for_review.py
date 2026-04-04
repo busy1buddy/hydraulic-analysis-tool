@@ -95,6 +95,21 @@ def main():
         print("Bridge not running on localhost:7771 — skipping review")
         sys.exit(0)
 
+    # Check timeout rate from history
+    try:
+        req = urllib.request.Request(f'{bridge_url}/history', method='GET')
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            hist = json.loads(resp.read())
+            stats = hist.get('stats', {})
+            timeout_rate_str = stats.get('timeout_rate', '0%')
+            timeout_rate = int(timeout_rate_str.replace('%', '')) if timeout_rate_str else 0
+            if timeout_rate > 30:
+                print(f"Warning: review timeout rate is {timeout_rate_str} — "
+                      f"consider increasing REVIEW_TIMEOUT (currently "
+                      f"{stats.get('avg_response_time_s', '?')}s avg)")
+    except Exception:
+        pass
+
     print(f"Submitting review ({mode} mode)...")
 
     # Submit review
