@@ -141,7 +141,8 @@ class NetworkCanvas(QWidget):
 
     element_selected = pyqtSignal(str, str)  # (element_id, element_type)
 
-    COLOR_MODES = ["WSAA Compliance", "Pressure", "Velocity", "Headloss", "Status"]
+    COLOR_MODES = ["WSAA Compliance", "Pressure", "Velocity", "Headloss", "Status",
+                    "Pressure Min (EPS)", "Pressure Max (EPS)"]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -370,6 +371,12 @@ class NetworkCanvas(QWidget):
                     color = _wsaa_node_color(avg_p)
                 elif mode == "Pressure":
                     color = _interpolate_color(avg_p, PRESSURE_COLORS) if avg_p is not None else QColor(108, 112, 134)
+                elif mode == "Pressure Min (EPS)":
+                    min_p = p.get('min_m')
+                    color = self._color_from_cmap(min_p, PRESSURE_COLORS) if min_p is not None else QColor(108, 112, 134)
+                elif mode == "Pressure Max (EPS)":
+                    max_p = p.get('max_m')
+                    color = self._color_from_cmap(max_p, PRESSURE_COLORS) if max_p is not None else QColor(108, 112, 134)
                 else:
                     color = QColor(137, 180, 250)  # default blue
 
