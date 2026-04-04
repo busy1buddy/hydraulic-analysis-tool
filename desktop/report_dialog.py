@@ -16,7 +16,8 @@ from PyQt6.QtGui import QFont
 class ReportDialog(QDialog):
     """Report builder with section checklist."""
 
-    SECTIONS = [
+    # Base sections always available
+    BASE_SECTIONS = [
         ("executive_summary", "Executive Summary"),
         ("network_summary", "Network Summary"),
         ("node_results", "Node Results"),
@@ -24,6 +25,16 @@ class ReportDialog(QDialog):
         ("compliance", "Compliance Table"),
         ("scenario_comparison", "Scenario Comparison"),
         ("appendix", "Appendix: Input Parameters"),
+    ]
+
+    # Conditional sections (N4) — only shown when relevant analysis was run
+    CONDITIONAL_SECTIONS = [
+        ("slurry_design", "Slurry Pipeline Design"),
+        ("water_quality", "Water Quality Analysis"),
+        ("transient", "Transient / Water Hammer"),
+        ("resilience", "Network Resilience"),
+        ("rehabilitation", "Rehabilitation Priority"),
+        ("uncertainty", "Monte Carlo Uncertainty"),
     ]
 
     def __init__(self, api, results, parent=None):
@@ -45,11 +56,15 @@ class ReportDialog(QDialog):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
+        # Build section list based on what was actually run (N4)
+        active_sections = list(self.BASE_SECTIONS)
+        self._detect_conditional_sections(active_sections)
+
         # Section checklist
-        sections_group = QGroupBox("Report Sections")
+        sections_group = QGroupBox("Report Sections (auto-detected from analysis)")
         sections_layout = QVBoxLayout()
         self.checkboxes = {}
-        for key, label in self.SECTIONS:
+        for key, label in active_sections:
             cb = QCheckBox(label)
             cb.setChecked(True)
             cb.setFont(QFont("Consolas", 10))
@@ -57,6 +72,34 @@ class ReportDialog(QDialog):
             sections_layout.addWidget(cb)
         sections_group.setLayout(sections_layout)
         layout.addWidget(sections_group)
+
+    def _detect_conditional_sections(self, sections):
+        """Add conditional sections based on what analysis was run (N4)."""
+        if not self.results:
+            return
+
+        # Slurry mode was active?
+        if self.results.get('slurry_mode') or self.results.get('slurry_headloss'):
+            sections.append(("slurry_design", "Slurry Pipeline Design"))
+
+        # Transient results present?
+        if self.results.get('max_surge_m') or self.results.get('junctions'):
+            if isinstance(self.results.get('junctions'), dict):
+                sections.append(("transient", "Transient / Water Hammer"))
+
+        # Water quality was run?
+        if self.results.get('junction_quality'):
+            sections.append(("water_quality", "Water Quality Analysis"))
+
+        # Resilience index available?
+        if self.api and self.api.wn:
+            ri = self.api.compute_resilience_index(self.results)
+            if 'error' not in ri:
+                sections.append(("resilience", "Network Resilience"))
+
+        # Scenarios with no data → uncheck scenario comparison
+        if 'scenario_comparison' in self.checkboxes:
+            pass  # Already in base sections
 
         # Buttons
         btn_layout = QHBoxLayout()

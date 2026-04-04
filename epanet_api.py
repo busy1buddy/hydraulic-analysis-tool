@@ -4349,6 +4349,157 @@ class HydraulicAPI:
         return results
 
     # =========================================================================
+    # EXCEL NETWORK IMPORT (N5)
+    # =========================================================================
+
+    def import_from_excel(self, excel_path):
+        """
+        Import network from Excel spreadsheet.
+
+        Expected sheets:
+        - "Nodes": columns node_id, x, y, elevation, demand_lps
+        - "Pipes": columns pipe_id, start_node, end_node, diameter_mm,
+                   material, length_m, roughness_C
+
+        Parameters
+        ----------
+        excel_path : str
+            Path to .xlsx file
+
+        Returns dict with import summary and any validation warnings.
+        """
+        if not os.path.exists(excel_path):
+            return {'error': f'File not found: {excel_path}'}
+
+        try:
+            import pandas as pd
+        except ImportError:
+            return {'error': 'pandas required for Excel import (pip install pandas openpyxl)'}
+
+        warnings = []
+
+        try:
+            xls = pd.ExcelFile(excel_path)
+        except Exception as e:
+            return {'error': f'Could not read Excel file: {e}'}
+
+        # Read Nodes sheet
+        if 'Nodes' not in xls.sheet_names:
+            return {'error': 'Excel file must have a "Nodes" sheet'}
+        nodes_df = pd.read_excel(xls, 'Nodes')
+
+        required_node_cols = {'node_id', 'x', 'y', 'elevation'}
+        if not required_node_cols.issubset(set(nodes_df.columns)):
+            missing = required_node_cols - set(nodes_df.columns)
+            return {'error': f'Nodes sheet missing columns: {missing}'}
+
+        # Read Pipes sheet
+        if 'Pipes' not in xls.sheet_names:
+            return {'error': 'Excel file must have a "Pipes" sheet'}
+        pipes_df = pd.read_excel(xls, 'Pipes')
+
+        required_pipe_cols = {'pipe_id', 'start_node', 'end_node', 'diameter_mm', 'length_m'}
+        if not required_pipe_cols.issubset(set(pipes_df.columns)):
+            missing = required_pipe_cols - set(pipes_df.columns)
+            return {'error': f'Pipes sheet missing columns: {missing}'}
+
+        # Validate data
+        node_ids = set(nodes_df['node_id'].astype(str))
+        pipe_ids = set(pipes_df['pipe_id'].astype(str))
+
+        # Check for duplicates
+        if len(node_ids) < len(nodes_df):
+            warnings.append('Duplicate node IDs detected — only first occurrence kept')
+        if len(pipe_ids) < len(pipes_df):
+            warnings.append('Duplicate pipe IDs detected — only first occurrence kept')
+
+        # Check pipe endpoints reference valid nodes
+        for _, row in pipes_df.iterrows():
+            sn = str(row['start_node'])
+            en = str(row['end_node'])
+            if sn not in node_ids:
+                warnings.append(f'Pipe {row["pipe_id"]}: start_node {sn} not in Nodes sheet')
+            if en not in node_ids:
+                warnings.append(f'Pipe {row["pipe_id"]}: end_node {en} not in Nodes sheet')
+
+        # Separate reservoirs (nodes with demand_lps == -1 or NaN and high head)
+        # Simple heuristic: node with no demand and name starting with R → reservoir
+        junctions = []
+        reservoirs = []
+        for _, row in nodes_df.iterrows():
+            nid = str(row['node_id'])
+            demand_lps = float(row.get('demand_lps', 0) or 0)
+            elev = float(row['elevation'])
+            x = float(row['x'])
+            y = float(row['y'])
+
+            if nid.upper().startswith('R') and demand_lps <= 0:
+                reservoirs.append({
+                    'id': nid, 'head': elev, 'x': x, 'y': y,
+                })
+            else:
+                junctions.append({
+                    'id': nid, 'elevation': elev,
+                    'demand': demand_lps / 1000,  # LPS to m³/s
+                    'x': x, 'y': y,
+                })
+
+        # If no reservoirs found, treat the node with highest elevation as reservoir
+        if not reservoirs and junctions:
+            junctions.sort(key=lambda j: j['elevation'], reverse=True)
+            r = junctions.pop(0)
+            reservoirs.append({
+                'id': r['id'], 'head': r['elevation'], 'x': r['x'], 'y': r['y'],
+            })
+            warnings.append(f'No reservoir detected — using highest node {r["id"]} as reservoir')
+
+        # Build pipes
+        pipes = []
+        for _, row in pipes_df.iterrows():
+            pid = str(row['pipe_id'])
+            dn_mm = float(row['diameter_mm'])
+            length = float(row['length_m'])
+            roughness = float(row.get('roughness_C', 130) or 130)
+
+            pipes.append({
+                'id': pid,
+                'start': str(row['start_node']),
+                'end': str(row['end_node']),
+                'diameter': dn_mm,
+                'length': length,
+                'roughness': roughness,
+            })
+
+        # Filter out pipes with invalid node references
+        valid_node_ids = {j['id'] for j in junctions} | {r['id'] for r in reservoirs}
+        valid_pipes = []
+        for p in pipes:
+            if p['start'] in valid_node_ids and p['end'] in valid_node_ids:
+                valid_pipes.append(p)
+            else:
+                warnings.append(f'Pipe {p["id"]} skipped — endpoint not in valid nodes')
+
+        # Create network
+        name = os.path.splitext(os.path.basename(excel_path))[0]
+        self.create_network(
+            name=name,
+            junctions=junctions,
+            reservoirs=reservoirs,
+            pipes=valid_pipes,
+        )
+
+        return {
+            'imported': True,
+            'network_name': name,
+            'junctions': len(junctions),
+            'reservoirs': len(reservoirs),
+            'pipes': len(valid_pipes),
+            'pipes_skipped': len(pipes) - len(valid_pipes),
+            'warnings': warnings,
+            'warning_count': len(warnings),
+        }
+
+    # =========================================================================
     # SMART ERROR RECOVERY (L5)
     # =========================================================================
 
