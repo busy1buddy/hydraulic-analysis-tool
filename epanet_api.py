@@ -2669,6 +2669,203 @@ class HydraulicAPI:
         }
 
     # =========================================================================
+    # ASSET DETERIORATION MODELLING (J9)
+    # =========================================================================
+
+    def predict_deterioration(self, pipe_id, current_year=None, forecast_years=None):
+        """
+        Predict pipe condition score at future years using Gompertz model.
+
+        Condition score progression:
+        C(t) = C_max × exp(-b × exp(-k × age))
+
+        where C_max=5 (failure), b and k depend on material.
+
+        Parameters
+        ----------
+        pipe_id : str
+            Pipe ID with condition data set via set_pipe_condition()
+        current_year : int or None
+        forecast_years : list of int or None
+
+        Returns dict {year: {'condition_score', 'remaining_life_years'}}.
+        Ref: IPWEA Practice Note 7, Gompertz deterioration model
+        """
+        if not hasattr(self, '_pipe_conditions'):
+            self._pipe_conditions = {}
+
+        cond = self._pipe_conditions.get(pipe_id)
+        if cond is None:
+            return {'error': f'No condition data for {pipe_id}'}
+
+        if current_year is None:
+            from datetime import date
+            current_year = date.today().year
+        if forecast_years is None:
+            forecast_years = [current_year + 5, current_year + 10, current_year + 20]
+
+        install_year = cond.get('install_year', current_year - 30)
+        current_age = current_year - install_year
+        current_cs = cond.get('condition_score', 2.5)
+
+        # Material-specific Gompertz parameters
+        # Ref: IPWEA Practice Note 7 Table 4.1
+        import math
+        MATERIAL_PARAMS = {
+            'CI': {'b': 4.0, 'k': 0.04},   # Cast iron (fast deterioration)
+            'DI': {'b': 5.0, 'k': 0.03},   # Ductile iron
+            'AC': {'b': 3.5, 'k': 0.05},   # Asbestos cement (fast)
+            'PVC': {'b': 6.0, 'k': 0.02},  # PVC (slow deterioration)
+            'PE': {'b': 6.0, 'k': 0.02},   # PE (slow)
+            'Concrete': {'b': 5.0, 'k': 0.025},
+        }
+
+        material = cond.get('material', 'DI')
+        params = MATERIAL_PARAMS.get(material, {'b': 5.0, 'k': 0.03})
+        b, k = params['b'], params['k']
+
+        # Calibrate b to match current condition score
+        # C(age) = 5 × exp(-b × exp(-k × age))
+        # b_calibrated so that C(current_age) = current_cs
+        if current_cs > 0 and current_cs < 5:
+            try:
+                b_cal = -math.log(current_cs / 5) / math.exp(-k * current_age)
+                b = max(1, min(10, b_cal))
+            except (ValueError, ZeroDivisionError):
+                pass
+
+        results = {}
+        for year in forecast_years:
+            age = year - install_year
+            # Gompertz: C(age) = 5 × exp(-b × exp(-k × age))
+            cs = 5.0 * math.exp(-b * math.exp(-k * max(0, age)))
+            cs = max(current_cs, min(5.0, cs))  # can't improve over time
+
+            # Estimate remaining life (when cs reaches 5.0)
+            remaining = 0
+            for future_age in range(int(age), int(age) + 200):
+                cs_future = 5.0 * math.exp(-b * math.exp(-k * future_age))
+                if cs_future >= 4.9:
+                    remaining = future_age - age
+                    break
+
+            results[year] = {
+                'age_years': age,
+                'condition_score': round(cs, 2),
+                'remaining_life_years': remaining,
+            }
+
+        return results
+
+    # =========================================================================
+    # SCADA REPLAY (J11)
+    # =========================================================================
+
+    def run_scada_replay(self, csv_path):
+        """
+        Run EPS with actual measured demands from CSV.
+
+        CSV format: timestamp_h, node1, node2, ... (demands in LPS)
+
+        Parameters
+        ----------
+        csv_path : str
+            Path to CSV with time-series demands
+
+        Returns dict with timestep results and comparison metrics.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        import csv as csv_mod
+        with open(csv_path, 'r') as f:
+            reader = csv_mod.DictReader(f)
+            rows = list(reader)
+
+        if not rows:
+            return {'error': 'CSV is empty'}
+
+        # Get column names (first is timestamp, rest are node IDs)
+        columns = list(rows[0].keys())
+        time_col = columns[0]
+        node_cols = columns[1:]
+
+        n_timesteps = len(rows)
+
+        # Configure simulation duration
+        timestamps = [float(r[time_col]) for r in rows]
+        duration_hrs = max(timestamps) if timestamps else 24
+        timestep_s = 3600  # 1-hour default
+        if n_timesteps >= 2:
+            dt = (timestamps[1] - timestamps[0]) * 3600
+            timestep_s = max(300, int(dt))
+
+        self.wn.options.time.duration = int(duration_hrs * 3600)
+        self.wn.options.time.hydraulic_timestep = timestep_s
+        self.wn.options.time.pattern_timestep = timestep_s
+        self.wn.options.time.report_timestep = timestep_s
+
+        # Create demand patterns from CSV data
+        for node_id in node_cols:
+            if node_id in self.wn.junction_name_list:
+                values = [float(r[node_id]) / 1000 for r in rows]  # LPS to m³/s
+                avg_demand = sum(values) / len(values) if values else 0
+                # Set base demand and pattern multipliers
+                junc = self.wn.get_node(node_id)
+                if junc.demand_timeseries_list:
+                    junc.demand_timeseries_list[0].base_value = avg_demand
+                    if avg_demand > 0:
+                        multipliers = [v / avg_demand for v in values]
+                    else:
+                        multipliers = [1.0] * len(values)
+                    pat_name = f'scada_{node_id}'
+                    try:
+                        self.wn.add_pattern(pat_name, multipliers)
+                    except Exception:
+                        pass  # pattern may already exist
+                    junc.demand_timeseries_list[0].pattern_name = pat_name
+
+        # Run simulation
+        try:
+            results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Simulation failed: {e}'}
+
+        return {
+            'n_timesteps': n_timesteps,
+            'duration_hrs': duration_hrs,
+            'pressures': results.get('pressures', {}),
+            'flows': results.get('flows', {}),
+            'compliance': results.get('compliance', []),
+        }
+
+    # =========================================================================
+    # PIPE COST DATABASE MANAGEMENT (J12)
+    # =========================================================================
+
+    def set_pipe_cost(self, dn_mm, cost_per_m):
+        """Set or update pipe cost for a given DN (mm)."""
+        self.PIPE_COST_PER_M[dn_mm] = cost_per_m
+
+    def get_pipe_cost(self, dn_mm):
+        """Get pipe cost per metre for a given DN."""
+        return self.PIPE_COST_PER_M.get(dn_mm, 0)
+
+    def import_pipe_costs_csv(self, csv_path):
+        """Import pipe costs from CSV (columns: dn_mm, cost_per_m)."""
+        import csv as csv_mod
+        count = 0
+        with open(csv_path, 'r') as f:
+            reader = csv_mod.DictReader(f)
+            for row in reader:
+                dn = int(row.get('dn_mm', 0))
+                cost = float(row.get('cost_per_m', 0))
+                if dn > 0 and cost > 0:
+                    self.PIPE_COST_PER_M[dn] = cost
+                    count += 1
+        return count
+
+    # =========================================================================
     # MONTE CARLO UNCERTAINTY ANALYSIS (J8)
     # =========================================================================
 

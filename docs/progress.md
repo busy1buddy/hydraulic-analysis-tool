@@ -29,6 +29,15 @@
 - J15: Report template system — 3 defaults (Standard/Executive/Technical), save/load custom
 - 658 tests passing, 12 xfailed
 
+## v1.5.0 J-Series Continued (2026-04-04)
+- J3: Transient animation enhancement (surge envelope planned)
+- J6: Water hammer protection sizing — bladder accumulator (Boyle's law), flywheel (inertia), all with Thorley refs
+- J8: Monte Carlo uncertainty — N simulations, roughness/demand CV, per-node failure probability
+- J9: Asset deterioration modelling — Gompertz curves by material, failure year prediction
+- J11: SCADA replay — import CSV demands, run EPS with actual measured patterns
+- J12: Pipe cost database editor — custom costs, CSV import
+- 678 tests passing, 12 xfailed
+
 ## v1.3.0 Release (2026-04-04)
 - C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
 - C3: GIS background map — OpenStreetMap tile layer, MGA2020 + lat/lon coordinate detection, tile caching, basemap toggle in View menu
