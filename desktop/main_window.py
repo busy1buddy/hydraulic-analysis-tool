@@ -193,6 +193,13 @@ class MainWindow(QMainWindow):
         self.slurry_act.toggled.connect(self._on_slurry_toggle)
         analysis_menu.addAction(self.slurry_act)
 
+        analysis_menu.addSeparator()
+        design_check_act = QAction("&Design Compliance Check...", self)
+        design_check_act.setShortcut("F9")
+        design_check_act.setToolTip("Run all WSAA compliance checks and generate certificate")
+        design_check_act.triggered.connect(self._on_design_compliance_check)
+        analysis_menu.addAction(design_check_act)
+
         # --- Tools ---
         tools_menu = menubar.addMenu("&Tools")
 
@@ -211,6 +218,16 @@ class MainWindow(QMainWindow):
         schedule_act = QAction("&Schedule Reports...", self)
         schedule_act.triggered.connect(self._on_schedule_reports)
         tools_menu.addAction(schedule_act)
+
+        diag_act = QAction("&Network Diagnostics...", self)
+        diag_act.setToolTip("Diagnose common network problems and suggest fixes")
+        diag_act.triggered.connect(self._on_diagnostics)
+        tools_menu.addAction(diag_act)
+
+        topo_act = QAction("&Topology Analysis...", self)
+        topo_act.setToolTip("Analyse dead ends, loops, bridges, connectivity")
+        topo_act.triggered.connect(self._on_topology)
+        tools_menu.addAction(topo_act)
 
         tools_menu.addSeparator()
 
@@ -1200,6 +1217,60 @@ class MainWindow(QMainWindow):
             return
         dialog = PipeProfileDialog(self.api, results=self._last_results, parent=self)
         dialog.exec()
+
+    def _on_design_compliance_check(self):
+        """Run all compliance checks and show certificate."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        from desktop.compliance_dialog import ComplianceDialog
+        dialog = ComplianceDialog(self.api, parent=self)
+        dialog.exec()
+
+    def _on_diagnostics(self):
+        """Run network diagnostics."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        result = self.api.diagnose_network()
+        if 'error' in result:
+            QMessageBox.warning(self, "Error", result['error'])
+            return
+        # Build readable report
+        lines = [f"Network Diagnostics: {result['summary']}\n"]
+        for issue in result['issues']:
+            lines.append(f"[{issue['severity']}] {issue['message']}")
+            lines.append(f"  Suggestion: {issue['suggestion']}\n")
+        if not result['issues']:
+            lines.append("No issues detected — network appears healthy.")
+        QMessageBox.information(self, "Network Diagnostics", '\n'.join(lines))
+
+    def _on_topology(self):
+        """Run topology analysis."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        result = self.api.analyse_topology()
+        if 'error' in result:
+            QMessageBox.warning(self, "Error", result['error'])
+            return
+        lines = [
+            f"Nodes: {result['total_nodes']}  |  Pipes: {result['total_pipes']}",
+            f"Dead ends: {result['dead_end_count']}  |  Bridges: {result['bridge_count']}",
+            f"Independent loops: {result['loops']}  |  Components: {result['connected_components']}",
+            f"Connectivity ratio: {result['connectivity_ratio']}",
+            f"Avg node degree: {result['avg_node_degree']}",
+            f"Sources: {', '.join(result['sources'])}",
+        ]
+        if result['isolated_count'] > 0:
+            lines.append(f"\nIsolated nodes ({result['isolated_count']}): "
+                        f"{', '.join(result['isolated_nodes'][:10])}")
+        if result['dead_end_count'] > 0:
+            lines.append(f"\nDead ends: {', '.join(result['dead_ends'][:10])}")
+        QMessageBox.information(self, "Topology Analysis", '\n'.join(lines))
 
     def _on_calibration(self):
         """Open the Calibration Tools dialog."""

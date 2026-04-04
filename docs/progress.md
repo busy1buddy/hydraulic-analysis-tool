@@ -1,5 +1,14 @@
 # Build Progress
 
+## v1.8.0 L-Series (2026-04-04)
+- L1: Design compliance certificate — run all WSAA checks, formal certificate with PDF export, ComplianceDialog UI
+- L3: Network topology analysis — dead ends, bridges (Tarjan's), loops (cyclomatic complexity), connectivity ratio, degree distribution
+- L4: Hydraulic fingerprint — pressure/velocity stats, energy dissipation index, Todini resilience index, headloss ranking
+- L5: Smart error recovery — diagnose_network() checks disconnection, zero-length pipes, bad roughness, many dead ends, suggestions for each
+- UI: Analysis > Design Compliance Check (F9), Tools > Network Diagnostics, Tools > Topology Analysis
+- PyInstaller spec updated with all new desktop modules
+- 737 tests passing, 12 xfailed
+
 ## v1.3.0 Autonomous Development (2026-04-04)
 - Review cycle: 5 agents, 43 findings, 7 BLOCKERs fixed (wave speed, UI units, error messages)
 - I2: Split-screen scenario comparison — dual canvas, linked viewports, difference mode (A-B)

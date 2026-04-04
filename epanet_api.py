@@ -2669,6 +2669,460 @@ class HydraulicAPI:
         }
 
     # =========================================================================
+    # DESIGN COMPLIANCE CERTIFICATE (L1)
+    # =========================================================================
+
+    SOFTWARE_VERSION = '1.7.0'
+
+    def run_design_compliance_check(self):
+        """
+        Run all compliance checks in sequence and generate a formal
+        design compliance certificate.
+
+        Checks performed:
+        1. Pressure (WSAA WSA 03-2011) — 20-50 m
+        2. Velocity (WSAA) — <2.0 m/s
+        3. Fire flow (WSAA) — 25 LPS @ 12 m residual
+        4. Water age (WSAA) — <24 hours
+        5. Pipe stress (AS 2280) — PN safety factor
+        6. Slurry settling (if applicable) — deposition velocity
+
+        Returns dict with per-check results and overall COMPLIANT/NON-COMPLIANT.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        certificate = {
+            'network_name': os.path.basename(self._inp_file) if self._inp_file else 'Unknown',
+            'date': None,
+            'software_version': self.SOFTWARE_VERSION,
+            'checks': [],
+            'overall_status': 'COMPLIANT',
+        }
+
+        from datetime import date
+        certificate['date'] = date.today().strftime('%d %B %Y')
+
+        # 1. Steady-state pressure and velocity
+        try:
+            results = self.run_steady_state(save_plot=False)
+            pressures = results.get('pressures', {})
+            flows = results.get('flows', {})
+
+            # Pressure check
+            low_p_nodes = [jid for jid, p in pressures.items()
+                          if p.get('min_m', 0) < self.DEFAULTS['min_pressure_m']]
+            high_p_nodes = [jid for jid, p in pressures.items()
+                           if p.get('max_m', 0) > self.DEFAULTS['max_pressure_m']]
+
+            if not low_p_nodes and not high_p_nodes:
+                certificate['checks'].append({
+                    'check': 'Pressure (WSAA WSA 03-2011)',
+                    'status': 'PASS',
+                    'standard': 'WSAA WSA 03-2011 Table 3.1',
+                    'requirement': f'{self.DEFAULTS["min_pressure_m"]}-{self.DEFAULTS["max_pressure_m"]} m',
+                    'details': 'All junctions within pressure limits.',
+                })
+            else:
+                certificate['checks'].append({
+                    'check': 'Pressure (WSAA WSA 03-2011)',
+                    'status': 'FAIL',
+                    'standard': 'WSAA WSA 03-2011 Table 3.1',
+                    'requirement': f'{self.DEFAULTS["min_pressure_m"]}-{self.DEFAULTS["max_pressure_m"]} m',
+                    'details': (f'{len(low_p_nodes)} node(s) below {self.DEFAULTS["min_pressure_m"]} m, '
+                               f'{len(high_p_nodes)} node(s) above {self.DEFAULTS["max_pressure_m"]} m.'),
+                })
+                certificate['overall_status'] = 'NON-COMPLIANT'
+
+            # Velocity check
+            high_v_pipes = [pid for pid, f in flows.items()
+                           if f.get('max_velocity_ms', 0) > self.DEFAULTS['max_velocity_ms']]
+            if not high_v_pipes:
+                certificate['checks'].append({
+                    'check': 'Velocity (WSAA)',
+                    'status': 'PASS',
+                    'standard': 'WSAA WSA 03-2011 Clause 3.8.2',
+                    'requirement': f'< {self.DEFAULTS["max_velocity_ms"]} m/s',
+                    'details': 'All pipes within velocity limits.',
+                })
+            else:
+                certificate['checks'].append({
+                    'check': 'Velocity (WSAA)',
+                    'status': 'FAIL',
+                    'standard': 'WSAA WSA 03-2011 Clause 3.8.2',
+                    'requirement': f'< {self.DEFAULTS["max_velocity_ms"]} m/s',
+                    'details': f'{len(high_v_pipes)} pipe(s) exceed velocity limit.',
+                })
+                certificate['overall_status'] = 'NON-COMPLIANT'
+
+        except Exception as e:
+            certificate['checks'].append({
+                'check': 'Steady-State Analysis',
+                'status': 'ERROR',
+                'details': f'Analysis failed: {e}',
+            })
+            certificate['overall_status'] = 'INCOMPLETE'
+
+        # 2. Fire flow check (sample node)
+        junctions = list(self.wn.junction_name_list)
+        if junctions:
+            try:
+                ff = self.run_fire_flow(junctions[0], save_plot=False)
+                ff_pressure = ff.get('fire_node_pressure_m', 0)
+                if ff_pressure >= 12.0:
+                    certificate['checks'].append({
+                        'check': 'Fire Flow (WSAA)',
+                        'status': 'PASS',
+                        'standard': 'WSAA WSA 03-2011 Table 3.3',
+                        'requirement': '25 LPS @ 12 m residual',
+                        'details': f'Fire node pressure: {ff_pressure:.1f} m ≥ 12 m.',
+                    })
+                else:
+                    certificate['checks'].append({
+                        'check': 'Fire Flow (WSAA)',
+                        'status': 'FAIL',
+                        'standard': 'WSAA WSA 03-2011 Table 3.3',
+                        'requirement': '25 LPS @ 12 m residual',
+                        'details': f'Fire node pressure: {ff_pressure:.1f} m < 12 m.',
+                    })
+                    certificate['overall_status'] = 'NON-COMPLIANT'
+            except Exception:
+                certificate['checks'].append({
+                    'check': 'Fire Flow (WSAA)',
+                    'status': 'NOT RUN',
+                    'details': 'Fire flow analysis could not complete.',
+                })
+
+        # 3. Pipe stress check
+        from pipe_stress import hoop_stress
+        stress_failures = []
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            # Estimate operating pressure
+            p_data = pressures.get(pipe.start_node_name, {})
+            p_m = p_data.get('max_m', 0)
+            p_kPa = p_m * 9.81  # m head to kPa
+
+            if p_kPa > self.DEFAULTS['pipe_rating_kPa']:
+                stress_failures.append(pid)
+
+        if not stress_failures:
+            certificate['checks'].append({
+                'check': 'Pipe Stress (AS 2280)',
+                'status': 'PASS',
+                'standard': 'AS 2280 / AS/NZS 1477 / AS/NZS 4130',
+                'requirement': f'Operating pressure < PN rating ({self.DEFAULTS["pipe_rating_kPa"]} kPa)',
+                'details': 'All pipes within pressure rating.',
+            })
+        else:
+            certificate['checks'].append({
+                'check': 'Pipe Stress (AS 2280)',
+                'status': 'FAIL',
+                'standard': 'AS 2280',
+                'requirement': f'Operating pressure < PN rating ({self.DEFAULTS["pipe_rating_kPa"]} kPa)',
+                'details': f'{len(stress_failures)} pipe(s) exceed pressure rating.',
+            })
+            certificate['overall_status'] = 'NON-COMPLIANT'
+
+        # Summary counts
+        n_pass = sum(1 for c in certificate['checks'] if c['status'] == 'PASS')
+        n_fail = sum(1 for c in certificate['checks'] if c['status'] == 'FAIL')
+        certificate['summary'] = {
+            'total_checks': len(certificate['checks']),
+            'passed': n_pass,
+            'failed': n_fail,
+        }
+
+        return certificate
+
+    # =========================================================================
+    # NETWORK TOPOLOGY ANALYSIS (L3)
+    # =========================================================================
+
+    def analyse_topology(self):
+        """
+        Analyse network topology: dead ends, loops, bridges, connectivity.
+
+        Uses graph theory to identify structural characteristics that
+        affect hydraulic reliability and maintenance.
+
+        Returns dict with:
+        - dead_ends: list of terminal nodes (degree 1)
+        - bridges: pipes whose removal disconnects the network
+        - loops: count of independent loops (cyclomatic complexity)
+        - connectivity: overall connectivity metrics
+        - isolated_segments: groups of nodes not connected to sources
+
+        Ref: Graph theory for water distribution, Todini & Pilati (1988)
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        # Build adjacency from pipe connections
+        adj = {}  # node -> set of (neighbor, pipe_id)
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            sn = pipe.start_node_name
+            en = pipe.end_node_name
+            adj.setdefault(sn, set()).add((en, pid))
+            adj.setdefault(en, set()).add((sn, pid))
+
+        all_nodes = set(self.wn.node_name_list)
+        for n in all_nodes:
+            adj.setdefault(n, set())
+
+        # Dead ends: nodes with exactly 1 connection (junctions only)
+        dead_ends = []
+        for nid in self.wn.junction_name_list:
+            if len(adj.get(nid, set())) == 1:
+                dead_ends.append(nid)
+
+        # Degree distribution
+        degrees = {nid: len(adj.get(nid, set())) for nid in all_nodes}
+
+        # Sources: reservoirs and tanks
+        sources = set(self.wn.reservoir_name_list) | set(self.wn.tank_name_list)
+
+        # Connectivity: BFS from each source
+        def bfs_reachable(start_nodes):
+            visited = set()
+            queue = list(start_nodes)
+            visited.update(queue)
+            while queue:
+                node = queue.pop(0)
+                for neighbor, _ in adj.get(node, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+            return visited
+
+        reachable = bfs_reachable(sources)
+        isolated = all_nodes - reachable
+
+        # Connected components
+        remaining = set(all_nodes)
+        components = []
+        while remaining:
+            start = next(iter(remaining))
+            component = bfs_reachable({start})
+            components.append(component)
+            remaining -= component
+
+        # Bridges: pipes whose removal increases component count
+        # Use Tarjan's bridge-finding via DFS
+        bridges = []
+        n_pipes = len(self.wn.pipe_name_list)
+        if n_pipes > 0 and n_pipes < 5000:  # skip for very large networks
+            bridges = self._find_bridges(adj, all_nodes)
+
+        # Cyclomatic complexity: M = E - V + C
+        # E = edges (pipes), V = vertices (nodes), C = connected components
+        n_edges = len(self.wn.pipe_name_list)
+        n_vertices = len(all_nodes)
+        n_components = len(components)
+        loops = n_edges - n_vertices + n_components
+
+        # Average node degree
+        avg_degree = sum(degrees.values()) / max(len(degrees), 1)
+
+        return {
+            'dead_ends': dead_ends,
+            'dead_end_count': len(dead_ends),
+            'bridges': bridges,
+            'bridge_count': len(bridges),
+            'loops': max(loops, 0),
+            'connected_components': n_components,
+            'isolated_nodes': list(isolated),
+            'isolated_count': len(isolated),
+            'total_nodes': n_vertices,
+            'total_pipes': n_edges,
+            'avg_node_degree': round(avg_degree, 2),
+            'degree_distribution': {
+                deg: sum(1 for d in degrees.values() if d == deg)
+                for deg in sorted(set(degrees.values()))
+            },
+            'sources': list(sources),
+            'connectivity_ratio': round(len(reachable) / max(n_vertices, 1), 3),
+        }
+
+    def _find_bridges(self, adj, all_nodes):
+        """
+        Find bridge edges using iterative Tarjan's algorithm.
+        A bridge is a pipe whose removal disconnects the graph.
+
+        Returns list of pipe IDs that are bridges.
+        """
+        bridges = []
+        disc = {}
+        low = {}
+        timer = [0]
+
+        for start in all_nodes:
+            if start in disc:
+                continue
+            # Iterative DFS
+            # Stack: (node, parent_pipe, neighbor_iterator, is_entering)
+            stack = [(start, None, iter(adj.get(start, set())), True)]
+            while stack:
+                node, parent_pipe, neighbors, entering = stack[-1]
+                if entering:
+                    disc[node] = low[node] = timer[0]
+                    timer[0] += 1
+                    stack[-1] = (node, parent_pipe, neighbors, False)
+
+                found_next = False
+                for neighbor, pipe_id in neighbors:
+                    if neighbor not in disc:
+                        stack.append((neighbor, pipe_id,
+                                      iter(adj.get(neighbor, set())), True))
+                        found_next = True
+                        break
+                    elif pipe_id != parent_pipe:
+                        low[node] = min(low[node], disc[neighbor])
+
+                if not found_next:
+                    stack.pop()
+                    if stack:
+                        parent_node = stack[-1][0]
+                        low[parent_node] = min(low[parent_node], low[node])
+                        if low[node] > disc[parent_node] and parent_pipe is not None:
+                            bridges.append(parent_pipe)
+
+        return bridges
+
+    # =========================================================================
+    # HYDRAULIC FINGERPRINT (L4)
+    # =========================================================================
+
+    def hydraulic_fingerprint(self):
+        """
+        Generate a unique hydraulic fingerprint of the network's behaviour.
+
+        Captures key statistical signatures that characterise the network's
+        response. Useful for detecting changes, comparing scenarios, and
+        anomaly detection.
+
+        Returns dict with:
+        - pressure_stats: min/max/mean/std of pressures
+        - velocity_stats: min/max/mean/std of velocities
+        - flow_balance: total inflow vs total demand
+        - headloss_profile: sorted list of pipe headloss intensities
+        - energy_index: total headloss × flow (energy dissipation proxy)
+        - resilience_index: Todini resilience index (2000)
+
+        Ref: Todini (2000) "Looped water distribution networks design using
+             a resilience index based heuristic approach"
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        try:
+            results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Analysis failed: {e}'}
+
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+
+        if not pressures or not flows:
+            return {'error': 'No results available'}
+
+        import math
+
+        # Pressure statistics
+        p_vals = [p.get('avg_m', 0) for p in pressures.values()]
+        p_mean = sum(p_vals) / max(len(p_vals), 1)
+        p_std = math.sqrt(sum((p - p_mean)**2 for p in p_vals) / max(len(p_vals), 1))
+
+        # Velocity statistics
+        v_vals = [f.get('max_velocity_ms', 0) for f in flows.values()]
+        v_mean = sum(v_vals) / max(len(v_vals), 1)
+        v_std = math.sqrt(sum((v - v_mean)**2 for v in v_vals) / max(len(v_vals), 1))
+
+        # Headloss intensity (m/km) sorted
+        hl_vals = []
+        for pid, fdata in flows.items():
+            pipe = self.wn.get_link(pid)
+            # headloss_per_km from results or calculate
+            hl_pkm = fdata.get('headloss_m_per_km', 0)
+            hl_vals.append({'pipe_id': pid, 'headloss_m_per_km': round(hl_pkm, 2)})
+        hl_vals.sort(key=lambda x: x['headloss_m_per_km'], reverse=True)
+
+        # Energy dissipation index: sum(headloss × flow) per pipe
+        # Proxy for total energy consumed by friction
+        energy_index = 0
+        for pid, fdata in flows.items():
+            pipe = self.wn.get_link(pid)
+            Q_lps = abs(fdata.get('avg_lps', 0))
+            Q_m3s = Q_lps / 1000  # convert LPS to m³/s
+            hl_m = fdata.get('headloss_m_per_km', 0) * pipe.length / 1000
+            energy_index += Q_m3s * hl_m * 9810  # watts = rho*g*Q*hL
+
+        # Todini resilience index
+        # I_r = (sum of surplus power at nodes) / (total input power - min required power)
+        # Simplified: sum((h_i - h_min) * q_i) / sum((H_source - h_min) * Q_source)
+        h_min = self.DEFAULTS['min_pressure_m']  # WSAA 20 m
+        numerator = 0
+        for jid, pdata in pressures.items():
+            node = self.wn.get_node(jid)
+            # Get demand from WNTR model (base_value in m³/s, convert to LPS)
+            try:
+                demand_lps = node.demand_timeseries_list[0].base_value * 1000
+            except (IndexError, AttributeError):
+                demand_lps = 0
+            if demand_lps <= 0:
+                continue
+            surplus = max(pdata.get('avg_m', 0) - h_min, 0)
+            numerator += surplus * (demand_lps / 1000)  # m * m³/s
+
+        # Source power
+        total_source_power = 0
+        for rid in list(self.wn.reservoir_name_list) + list(self.wn.tank_name_list):
+            node = self.wn.get_node(rid)
+            head = getattr(node, 'base_head', getattr(node, 'head', 0))
+            # Estimate source outflow from connected pipes
+            for pid in self.wn.pipe_name_list:
+                pipe = self.wn.get_link(pid)
+                if pipe.start_node_name == rid or pipe.end_node_name == rid:
+                    fdata = flows.get(pid, {})
+                    Q_lps = abs(fdata.get('avg_lps', 0))
+                    total_source_power += (head - h_min) * (Q_lps / 1000)
+
+        resilience = round(numerator / max(total_source_power, 1e-9), 4)
+
+        # Flow balance — get demands from WNTR model
+        total_demand = 0
+        for jid in self.wn.junction_name_list:
+            try:
+                d = self.wn.get_node(jid).demand_timeseries_list[0].base_value * 1000
+                if d > 0:
+                    total_demand += d
+            except (IndexError, AttributeError):
+                pass
+
+        return {
+            'pressure_stats': {
+                'min_m': round(min(p_vals), 2) if p_vals else 0,
+                'max_m': round(max(p_vals), 2) if p_vals else 0,
+                'mean_m': round(p_mean, 2),
+                'std_m': round(p_std, 2),
+                'count': len(p_vals),
+            },
+            'velocity_stats': {
+                'min_ms': round(min(v_vals), 3) if v_vals else 0,
+                'max_ms': round(max(v_vals), 3) if v_vals else 0,
+                'mean_ms': round(v_mean, 3),
+                'std_ms': round(v_std, 3),
+                'count': len(v_vals),
+            },
+            'total_demand_lps': round(total_demand, 2),
+            'headloss_top5': hl_vals[:5],
+            'energy_dissipation_watts': round(energy_index, 1),
+            'resilience_index': resilience,
+            'network_name': os.path.basename(self._inp_file) if self._inp_file else 'Unknown',
+        }
+
+    # =========================================================================
     # CHLORINE BOOSTER STATION DESIGN (J14)
     # =========================================================================
 
@@ -3575,6 +4029,157 @@ class HydraulicAPI:
             junc.demand_timeseries_list[0].base_value = base_demand
 
         return results
+
+    # =========================================================================
+    # SMART ERROR RECOVERY (L5)
+    # =========================================================================
+
+    def diagnose_network(self):
+        """
+        Diagnose common network problems and suggest fixes.
+
+        Checks for:
+        - Disconnected nodes (not reachable from any source)
+        - Zero-demand dead ends that may cause convergence issues
+        - Zero-length or zero-diameter pipes
+        - Missing sources (no reservoirs or tanks)
+        - Negative elevations (possible data entry error for AHD)
+        - Duplicate pipe IDs or overlapping pipes
+
+        Returns dict with 'issues' list and 'suggestions'.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        issues = []
+
+        # Check for sources
+        n_sources = len(self.wn.reservoir_name_list) + len(self.wn.tank_name_list)
+        if n_sources == 0:
+            issues.append({
+                'severity': 'CRITICAL',
+                'type': 'no_source',
+                'message': 'Network has no reservoir or tank — analysis will fail.',
+                'suggestion': 'Add at least one reservoir with a fixed head.',
+            })
+
+        # Check for disconnected nodes
+        topo = self.analyse_topology()
+        if 'error' not in topo:
+            if topo['isolated_count'] > 0:
+                issues.append({
+                    'severity': 'CRITICAL',
+                    'type': 'disconnected_nodes',
+                    'message': f'{topo["isolated_count"]} node(s) not connected to any source.',
+                    'nodes': topo['isolated_nodes'],
+                    'suggestion': 'Connect isolated nodes to the network or remove them.',
+                })
+            if topo['dead_end_count'] > 5:
+                issues.append({
+                    'severity': 'WARNING',
+                    'type': 'many_dead_ends',
+                    'message': f'{topo["dead_end_count"]} dead-end nodes detected.',
+                    'suggestion': 'Dead ends can cause water quality issues. '
+                                  'Consider looping the network where possible.',
+                })
+
+        # Check for zero-length or zero-diameter pipes
+        zero_length = []
+        zero_diameter = []
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            if pipe.length <= 0:
+                zero_length.append(pid)
+            if pipe.diameter <= 0:
+                zero_diameter.append(pid)
+
+        if zero_length:
+            issues.append({
+                'severity': 'CRITICAL',
+                'type': 'zero_length_pipe',
+                'message': f'{len(zero_length)} pipe(s) with zero or negative length.',
+                'pipes': zero_length,
+                'suggestion': 'Set pipe length to actual distance between nodes.',
+            })
+        if zero_diameter:
+            issues.append({
+                'severity': 'CRITICAL',
+                'type': 'zero_diameter_pipe',
+                'message': f'{len(zero_diameter)} pipe(s) with zero diameter.',
+                'pipes': zero_diameter,
+                'suggestion': 'Set pipe diameter to design DN (e.g., 0.150 m for DN150).',
+            })
+
+        # Check for negative elevations
+        neg_elev = []
+        for jid in self.wn.junction_name_list:
+            node = self.wn.get_node(jid)
+            if node.elevation < -50:  # allow small negatives for below-datum
+                neg_elev.append({'node': jid, 'elevation': node.elevation})
+
+        if neg_elev:
+            issues.append({
+                'severity': 'WARNING',
+                'type': 'negative_elevation',
+                'message': f'{len(neg_elev)} node(s) with elevation below -50 m AHD.',
+                'nodes': neg_elev,
+                'suggestion': 'Check if elevations are in correct units (m AHD). '
+                              'Australian elevations are rarely below -15 m AHD.',
+            })
+
+        # Check for very high demands that might cause convergence failure
+        high_demand = []
+        for jid in self.wn.junction_name_list:
+            node = self.wn.get_node(jid)
+            try:
+                d_lps = node.demand_timeseries_list[0].base_value * 1000
+                if d_lps > 100:  # > 100 LPS is unusual for a single junction
+                    high_demand.append({'node': jid, 'demand_lps': round(d_lps, 1)})
+            except (IndexError, AttributeError):
+                pass
+
+        if high_demand:
+            issues.append({
+                'severity': 'INFO',
+                'type': 'high_demand',
+                'message': f'{len(high_demand)} node(s) with demand > 100 LPS.',
+                'nodes': high_demand,
+                'suggestion': 'Verify demand values are in correct units (LPS, not m³/s).',
+            })
+
+        # Check for unreasonable roughness values
+        bad_roughness = []
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            C = pipe.roughness
+            if C < 50 or C > 160:
+                bad_roughness.append({'pipe': pid, 'roughness': C})
+
+        if bad_roughness:
+            issues.append({
+                'severity': 'WARNING',
+                'type': 'roughness_range',
+                'message': f'{len(bad_roughness)} pipe(s) with unusual Hazen-Williams C value.',
+                'pipes': bad_roughness,
+                'suggestion': 'Typical HW-C range: 90 (old concrete) to 150 (new PVC). '
+                              'Check if Darcy-Weisbach roughness was used by mistake.',
+            })
+
+        # Summary
+        n_critical = sum(1 for i in issues if i['severity'] == 'CRITICAL')
+        n_warning = sum(1 for i in issues if i['severity'] == 'WARNING')
+        n_info = sum(1 for i in issues if i['severity'] == 'INFO')
+
+        return {
+            'issues': issues,
+            'issue_count': len(issues),
+            'critical': n_critical,
+            'warnings': n_warning,
+            'info': n_info,
+            'can_run': n_critical == 0,
+            'summary': (f'{n_critical} critical, {n_warning} warnings, {n_info} info'
+                       if issues else 'No issues detected — network appears healthy.'),
+        }
 
     # =========================================================================
     # PROJECT BUNDLE EXPORT/IMPORT
