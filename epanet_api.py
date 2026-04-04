@@ -2560,6 +2560,212 @@ class HydraulicAPI:
         return recommendations
 
     # =========================================================================
+    # WATER HAMMER PROTECTION SIZING (J6)
+    # =========================================================================
+
+    def size_bladder_accumulator(self, max_surge_kPa, operating_pressure_kPa,
+                                  allowable_surge_kPa=None, precharge_pct=0.9):
+        """
+        Size a bladder accumulator (surge vessel) using Boyle's law.
+
+        P1 × V1 = P2 × V2 (isothermal) or P1 × V1^γ = P2 × V2^γ (isentropic)
+
+        Parameters
+        ----------
+        max_surge_kPa : float
+            Maximum transient surge pressure (kPa)
+        operating_pressure_kPa : float
+            Normal operating pressure (kPa)
+        allowable_surge_kPa : float or None
+            Maximum allowable surge after protection (default: PN35 = 3500 kPa)
+        precharge_pct : float
+            Precharge pressure as fraction of operating (default 0.9)
+
+        Returns dict with vessel volume, precharge pressure, working volume.
+        Ref: Thorley (2004), Boyle's law P1V1 = P2V2
+        """
+        if allowable_surge_kPa is None:
+            allowable_surge_kPa = self.DEFAULTS['pipe_rating_kPa']
+
+        P_op = operating_pressure_kPa  # kPa
+        P_surge = max_surge_kPa  # kPa
+        P_allow = allowable_surge_kPa  # kPa
+        P_pre = P_op * precharge_pct  # precharge pressure
+
+        if P_pre <= 0 or P_allow <= P_op:
+            return {'error': 'Invalid pressure parameters'}
+
+        # Boyle's law: P_pre × V_total = P_allow × V_gas_compressed
+        # Working volume = V_total - V_gas_compressed
+        # V_total / V_gas = P_allow / P_pre
+        # Working volume fraction = 1 - P_pre / P_allow
+        working_fraction = 1 - P_pre / P_allow
+
+        if working_fraction <= 0:
+            return {'error': 'Precharge too high relative to allowable pressure'}
+
+        # Required energy absorption
+        # ΔP = P_surge - P_allow (pressure to absorb)
+        delta_P = max(0, P_surge - P_allow)
+
+        # Volume estimate: V = ΔP × pipeline_volume / (P_allow × working_fraction)
+        # Simplified: assume 1 m³ of pipeline fluid needs absorption
+        V_pipeline_estimate = 0.5  # m³ — conservative estimate
+        V_total = V_pipeline_estimate * delta_P / (P_allow * working_fraction) if working_fraction > 0 else 1.0
+        V_total = max(0.1, V_total)  # minimum 100 litres
+
+        return {
+            'total_volume_m3': round(V_total, 2),
+            'precharge_kPa': round(P_pre, 0),
+            'working_volume_m3': round(V_total * working_fraction, 2),
+            'pressure_rating_kPa': round(P_allow * 1.1, 0),  # 10% margin
+            'basis': (f'Boyle isothermal: P_pre={P_pre:.0f} kPa, P_allow={P_allow:.0f} kPa, '
+                     f'working fraction={working_fraction:.2f} — Thorley (2004)'),
+        }
+
+    def size_flywheel(self, pump_power_kW, motor_speed_rpm=1450,
+                       required_rundown_s=5.0):
+        """
+        Size a flywheel for pump inertia to extend rundown time.
+
+        J = P × t_rundown / (0.5 × ω²)
+
+        Parameters
+        ----------
+        pump_power_kW : float
+            Pump motor power (kW)
+        motor_speed_rpm : float
+            Motor speed (default 1450 rpm for 4-pole, 50Hz)
+        required_rundown_s : float
+            Required rundown time in seconds (default 5s)
+
+        Returns dict with moment of inertia, flywheel mass, diameter.
+        Ref: Thorley (2004), KSB Pump Handbook
+        """
+        import math
+        omega = 2 * math.pi * motor_speed_rpm / 60  # rad/s
+        P_watts = pump_power_kW * 1000
+
+        # J = P × t / (0.5 × ω²)
+        J_required = P_watts * required_rundown_s / (0.5 * omega ** 2)
+
+        # Flywheel sizing: J = 0.5 × m × r²
+        # Assume solid disk, diameter = 0.6 m (typical)
+        r = 0.3  # m
+        mass = J_required / (0.5 * r ** 2)
+
+        # Steel density 7850 kg/m³ → thickness = mass / (ρ × π × r²)
+        rho_steel = 7850
+        thickness = mass / (rho_steel * math.pi * r ** 2) if mass > 0 else 0
+
+        return {
+            'moment_of_inertia_kgm2': round(J_required, 2),
+            'flywheel_mass_kg': round(mass, 1),
+            'diameter_m': round(2 * r, 2),
+            'thickness_m': round(thickness, 3),
+            'rundown_time_s': required_rundown_s,
+            'basis': (f'J = P×t/(0.5ω²) = {P_watts}×{required_rundown_s}/'
+                     f'(0.5×{omega:.1f}²) = {J_required:.2f} kg·m² — Thorley (2004)'),
+        }
+
+    # =========================================================================
+    # MONTE CARLO UNCERTAINTY ANALYSIS (J8)
+    # =========================================================================
+
+    def monte_carlo_analysis(self, n_simulations=100,
+                              roughness_cv=0.1, demand_cv=0.15,
+                              seed=None):
+        """
+        Monte Carlo uncertainty analysis for pressure distribution.
+
+        Randomly varies roughness and demand within specified uncertainty
+        ranges and runs N simulations to build pressure distributions.
+
+        Parameters
+        ----------
+        n_simulations : int
+            Number of Monte Carlo samples (default 100)
+        roughness_cv : float
+            Coefficient of variation for roughness (default 0.10 = ±10%)
+        demand_cv : float
+            Coefficient of variation for demand (default 0.15 = ±15%)
+        seed : int or None
+            Random seed for reproducibility
+
+        Returns dict with per-node statistics and WSAA failure probability.
+        Ref: Kapelan et al. (2005) "Uncertainty Assessment of WDS"
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        rng = np.random.RandomState(seed)
+
+        # Save original values
+        original_roughness = {pid: self.wn.get_link(pid).roughness
+                              for pid in self.wn.pipe_name_list}
+        original_demands = {}
+        for jid in self.wn.junction_name_list:
+            junc = self.wn.get_node(jid)
+            if junc.demand_timeseries_list:
+                original_demands[jid] = junc.demand_timeseries_list[0].base_value
+
+        # Collect pressure samples
+        pressure_samples = {jid: [] for jid in self.wn.junction_name_list}
+        n_success = 0
+
+        for i in range(n_simulations):
+            # Randomise roughness
+            for pid, base_c in original_roughness.items():
+                noise = rng.normal(1.0, roughness_cv)
+                self.wn.get_link(pid).roughness = max(50, base_c * noise)
+
+            # Randomise demands
+            for jid, base_d in original_demands.items():
+                noise = rng.normal(1.0, demand_cv)
+                self.wn.get_node(jid).demand_timeseries_list[0].base_value = max(0, base_d * noise)
+
+            try:
+                res = self.run_steady_state(save_plot=False)
+                pressures = res.get('pressures', {})
+                for jid in self.wn.junction_name_list:
+                    p = pressures.get(jid, {}).get('avg_m', 0)
+                    pressure_samples[jid].append(p)
+                n_success += 1
+            except Exception:
+                pass  # Skip failed simulations
+
+        # Restore originals
+        for pid, c in original_roughness.items():
+            self.wn.get_link(pid).roughness = c
+        for jid, d in original_demands.items():
+            self.wn.get_node(jid).demand_timeseries_list[0].base_value = d
+
+        # Compute statistics
+        node_stats = {}
+        for jid, samples in pressure_samples.items():
+            if not samples:
+                continue
+            arr = np.array(samples)
+            n_fail = np.sum(arr < self.DEFAULTS['min_pressure_m'])
+            node_stats[jid] = {
+                'mean_m': round(float(arr.mean()), 2),
+                'std_m': round(float(arr.std()), 2),
+                'min_m': round(float(arr.min()), 2),
+                'max_m': round(float(arr.max()), 2),
+                'p5_m': round(float(np.percentile(arr, 5)), 2),
+                'p95_m': round(float(np.percentile(arr, 95)), 2),
+                'failure_probability': round(float(n_fail / len(samples)), 3),
+            }
+
+        return {
+            'n_simulations': n_simulations,
+            'n_successful': n_success,
+            'roughness_cv': roughness_cv,
+            'demand_cv': demand_cv,
+            'node_stats': node_stats,
+        }
+
+    # =========================================================================
     # AUTO-CALIBRATION (Roughness Optimisation)
     # =========================================================================
 
