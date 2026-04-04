@@ -40,6 +40,7 @@ from desktop.rehab_dialog import RehabDialog
 from desktop.split_canvas import SplitCanvas
 from desktop.surge_wizard import SurgeWizard
 from desktop.view_3d import View3D
+from desktop.report_scheduler import ReportSchedulerDialog
 
 
 class MainWindow(QMainWindow):
@@ -200,6 +201,10 @@ class MainWindow(QMainWindow):
         rehab_act = QAction("&Rehabilitation Prioritisation...", self)
         rehab_act.triggered.connect(self._on_rehabilitation)
         tools_menu.addAction(rehab_act)
+
+        schedule_act = QAction("&Schedule Reports...", self)
+        schedule_act.triggered.connect(self._on_schedule_reports)
+        tools_menu.addAction(schedule_act)
 
         tools_menu.addSeparator()
 
@@ -1329,6 +1334,10 @@ class MainWindow(QMainWindow):
                 "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
         dialog = RehabDialog(self.api, parent=self)
+        dialog.exec()
+
+    def _on_schedule_reports(self):
+        dialog = ReportSchedulerDialog(self.api, parent=self)
         dialog.exec()
 
     def _on_settings(self):
