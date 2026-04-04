@@ -93,10 +93,8 @@ def main():
     if len(sys.argv) > 1:
         filepath = sys.argv[1]
         if os.path.isfile(filepath) and filepath.endswith('.inp'):
-            window._current_file = filepath
-            import wntr as _wntr
-            window.api.wn = _wntr.network.WaterNetworkModel(filepath)
-            window.api._inp_file = filepath
+            window.api.load_network_from_path(os.path.abspath(filepath))
+            window._current_file = os.path.abspath(filepath)
             window._populate_explorer()
             window._update_status_bar()
             window.canvas.set_api(window.api)

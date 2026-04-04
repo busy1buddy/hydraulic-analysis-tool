@@ -354,11 +354,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            # Load directly from the full path
-            self.api.wn = None
-            self.api._inp_file = path
-            import wntr as _wntr
-            self.api.wn = _wntr.network.WaterNetworkModel(path)
+            self.api.load_network_from_path(path)
             self._current_file = path
             self._populate_explorer()
             self._update_status_bar()
@@ -664,18 +660,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Network", "Load a network first.")
             return
 
-        import copy
-        import wntr as _wntr
-
-        original_wn = self.api.wn
         self.status_bar.showMessage("Running all scenarios...")
         self.progress_bar.setVisible(True)
 
         for i, sc in enumerate(self.scenario_panel.scenarios):
             self.progress_bar.setValue(int((i / len(self.scenario_panel.scenarios)) * 100))
 
-            # Reset to original network
-            self.api.wn = _wntr.network.WaterNetworkModel(self.api._inp_file)
+            # Reset to original network via API
+            self.api.load_network_from_path(self.api._inp_file)
 
             # Apply demand multiplier
             if sc.demand_multiplier != 1.0:
@@ -689,8 +681,8 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 sc.results = {'error': str(e), 'pressures': {}, 'flows': {}, 'compliance': []}
 
-        # Restore original
-        self.api.wn = _wntr.network.WaterNetworkModel(self.api._inp_file)
+        # Restore original via API
+        self.api.load_network_from_path(self.api._inp_file)
 
         self.progress_bar.setVisible(False)
         self.scenario_panel.update_comparison()

@@ -69,6 +69,12 @@ class HydraulicAPI:
         self.wn = wntr.network.WaterNetworkModel(self._inp_file)
         return self.get_network_summary()
 
+    def load_network_from_path(self, abs_path):
+        """Load an EPANET .inp file from an absolute file path."""
+        self._inp_file = abs_path
+        self.wn = wntr.network.WaterNetworkModel(abs_path)
+        return self.get_network_summary()
+
     def create_network(self, name="network",
                        junctions=None, reservoirs=None, tanks=None,
                        pipes=None, valves=None,
