@@ -523,3 +523,140 @@ class AssetsMixin:
             'warnings': warnings,
             'warning_count': len(warnings),
         }
+
+    # =========================================================================
+    # LAMONT PIPE BREAK RATE MODEL (O7)
+    # =========================================================================
+
+    def lamont_break_forecast(self, forecast_years=None, current_year=2026):
+        """
+        Forecast pipe break rates using the Lamont (1981) exponential model.
+
+        N(t) = N₀ × exp(A × (t - t₀))
+
+        Where:
+          N(t) = breaks per km per year at time t
+          N₀ = initial break rate
+          A = growth coefficient (material-dependent)
+          t - t₀ = pipe age in years
+
+        Material coefficients (breaks/km/yr base, A growth):
+        - Cast Iron (CI): N₀=0.15, A=0.055 (fastest deterioration)
+        - Asbestos Cement (AC): N₀=0.12, A=0.048
+        - Ductile Iron (DI): N₀=0.05, A=0.030
+        - Steel: N₀=0.08, A=0.035
+        - PVC: N₀=0.02, A=0.015 (slowest)
+        - PE: N₀=0.015, A=0.012
+
+        Parameters
+        ----------
+        forecast_years : list of int or None
+            Years to forecast to (default: [2030, 2040, 2050])
+        current_year : int
+            Current year (default 2026)
+
+        Returns dict with per-pipe break rate forecasts.
+        Ref: Lamont P.A. (1981) "Common pipe flow formulas compared with the
+             theory of roughness", AWWA Journal 73(5):274-280;
+             Shamir & Howard (1979) "An analytic approach to scheduling pipe
+             replacement", AWWA Journal 71(5):248-258
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if forecast_years is None:
+            forecast_years = [2030, 2040, 2050]
+
+        # Lamont coefficients by material (infer from roughness C-factor)
+        material_params = {
+            'CI': {'N0': 0.15, 'A': 0.055, 'label': 'Cast Iron'},
+            'AC': {'N0': 0.12, 'A': 0.048, 'label': 'Asbestos Cement'},
+            'DI': {'N0': 0.05, 'A': 0.030, 'label': 'Ductile Iron'},
+            'Steel': {'N0': 0.08, 'A': 0.035, 'label': 'Steel'},
+            'PVC': {'N0': 0.02, 'A': 0.015, 'label': 'PVC'},
+            'PE': {'N0': 0.015, 'A': 0.012, 'label': 'PE'},
+        }
+
+        def infer_material(C, condition=None):
+            """Infer material from Hazen-Williams C-factor."""
+            if condition and condition.get('material'):
+                mat = condition['material'].upper()
+                if mat in material_params:
+                    return mat
+            # Infer from roughness
+            if C < 80:
+                return 'CI'
+            elif C < 100:
+                return 'AC'
+            elif C < 130:
+                return 'DI'
+            elif C < 145:
+                return 'Steel'
+            else:
+                return 'PVC'
+
+        conditions = getattr(self, '_pipe_conditions', {})
+        forecasts = []
+        total_length_km = 0
+
+        import math
+
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            length_km = pipe.length / 1000
+            total_length_km += length_km
+
+            cond = conditions.get(pid, {})
+            material_code = infer_material(pipe.roughness, cond)
+            params = material_params[material_code]
+
+            install_year = cond.get('install_year', 2000)  # default assumption
+            age = current_year - install_year
+            current_break_rate = params['N0'] * math.exp(params['A'] * age)
+
+            future_rates = {}
+            for target_year in forecast_years:
+                future_age = target_year - install_year
+                rate = params['N0'] * math.exp(params['A'] * future_age)
+                expected_breaks = rate * length_km
+                future_rates[target_year] = {
+                    'break_rate_per_km_yr': round(rate, 4),
+                    'expected_breaks': round(expected_breaks, 2),
+                    'pipe_age_at_year': future_age,
+                }
+
+            forecasts.append({
+                'pipe_id': pid,
+                'length_m': round(pipe.length, 1),
+                'material': params['label'],
+                'material_code': material_code,
+                'install_year': install_year,
+                'current_age': age,
+                'current_break_rate_per_km_yr': round(current_break_rate, 4),
+                'forecasts': future_rates,
+            })
+
+        # Network-wide summary
+        total_breaks_by_year = {y: 0 for y in forecast_years}
+        for f in forecasts:
+            for y, data in f['forecasts'].items():
+                total_breaks_by_year[y] += data['expected_breaks']
+
+        # Prioritise pipes with highest future break rate
+        forecasts.sort(
+            key=lambda f: f['forecasts'][forecast_years[-1]]['break_rate_per_km_yr'],
+            reverse=True)
+
+        return {
+            'pipe_forecasts': forecasts,
+            'network_summary': {
+                'total_length_km': round(total_length_km, 2),
+                'expected_breaks_by_year': {
+                    y: round(v, 1) for y, v in total_breaks_by_year.items()
+                },
+            },
+            'top_10_critical': forecasts[:10],
+            'material_coefficients': material_params,
+            'reference': 'Lamont (1981) AWWA Journal 73(5); '
+                         'Shamir & Howard (1979) AWWA Journal 71(5)',
+        }

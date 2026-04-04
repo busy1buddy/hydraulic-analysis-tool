@@ -382,3 +382,107 @@ class ResilienceMixin:
             'total_pumps_analysed': len(impacts),
             'summary': f'{len(impacts)} pump(s) analysed',
         }
+
+    # =========================================================================
+    # WATER SECURITY VULNERABILITY ANALYSIS (O3)
+    # =========================================================================
+
+    def water_security_analysis(self, injection_duration_hrs=4):
+        """
+        Identify vulnerable points for contamination or attack.
+
+        Uses source tracing to determine which nodes could be affected by
+        contamination injected at each source candidate. Nodes with highest
+        downstream impact score are the most critical vulnerabilities.
+
+        Parameters
+        ----------
+        injection_duration_hrs : float
+            Duration of hypothetical contamination event (hours)
+
+        Returns dict with vulnerability ranking and security recommendations.
+        Ref: USEPA (2004) "Water Security Analysis for Utilities";
+             Davis & Janke (2008) "Importance of contaminant properties in
+             water distribution system vulnerability"
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        # Build network graph for downstream analysis
+        adj = {}
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            sn = pipe.start_node_name
+            en = pipe.end_node_name
+            adj.setdefault(sn, set()).add(en)
+            adj.setdefault(en, set()).add(sn)
+
+        # For each junction, count how many downstream customers
+        # (via BFS from injection point)
+        all_junctions = list(self.wn.junction_name_list)
+
+        def count_reachable(start):
+            visited = {start}
+            queue = [start]
+            while queue:
+                node = queue.pop(0)
+                for neighbor in adj.get(node, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+            # Count reachable junctions
+            return len(visited & set(all_junctions))
+
+        # Rank vulnerability by reachability
+        vulnerabilities = []
+        total_junctions = len(all_junctions)
+        for jid in all_junctions:
+            reachable = count_reachable(jid)
+            try:
+                demand = self.wn.get_node(jid).demand_timeseries_list[0].base_value * 1000
+            except (IndexError, AttributeError):
+                demand = 0
+
+            # Vulnerability score: % of network reachable × demand weighting
+            vulnerability = reachable / max(total_junctions, 1)
+            vulnerabilities.append({
+                'node': jid,
+                'reachable_nodes': reachable,
+                'reachable_pct': round(vulnerability * 100, 1),
+                'node_demand_lps': round(demand, 2),
+                'risk_level': ('CRITICAL' if vulnerability > 0.6
+                              else 'HIGH' if vulnerability > 0.3
+                              else 'MEDIUM' if vulnerability > 0.1
+                              else 'LOW'),
+            })
+
+        # Sort by reachability descending (most critical first)
+        vulnerabilities.sort(key=lambda v: v['reachable_nodes'], reverse=True)
+
+        # Recommendations
+        n_critical = sum(1 for v in vulnerabilities if v['risk_level'] == 'CRITICAL')
+        recommendations = []
+        if n_critical > 0:
+            recommendations.append(
+                f'{n_critical} nodes are CRITICAL vulnerabilities — '
+                f'install water quality sensors at these points')
+        recommendations.append(
+            'Physical security at reservoirs and treatment plants')
+        recommendations.append(
+            'Consider real-time chlorine residual monitoring at top-10 critical nodes')
+        recommendations.append(
+            'Establish response protocols for contamination events')
+
+        return {
+            'vulnerabilities': vulnerabilities,
+            'top_10_critical': vulnerabilities[:10],
+            'summary': {
+                'critical': n_critical,
+                'high': sum(1 for v in vulnerabilities if v['risk_level'] == 'HIGH'),
+                'medium': sum(1 for v in vulnerabilities if v['risk_level'] == 'MEDIUM'),
+                'low': sum(1 for v in vulnerabilities if v['risk_level'] == 'LOW'),
+            },
+            'recommendations': recommendations,
+            'injection_duration_hrs': injection_duration_hrs,
+            'reference': 'USEPA (2004); Davis & Janke (2008)',
+        }

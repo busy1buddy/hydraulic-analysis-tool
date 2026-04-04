@@ -1394,3 +1394,466 @@ class AdvancedMixin:
 
         return result
 
+
+    # =========================================================================
+    # SMART NETWORK HEALTH SUMMARY (O6)
+    # =========================================================================
+
+    def network_health_summary(self):
+        """
+        Generate a plain English network health summary suitable for
+        pasting directly into an engineering report.
+
+        Returns dict with one-paragraph summary, key metrics, and
+        top 3 recommendations.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        summary = self.get_network_summary()
+        try:
+            results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Analysis failed: {e}'}
+
+        # Compute key metrics
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+        compliance = results.get('compliance', [])
+
+        p_vals = [p.get('avg_m', 0) for p in pressures.values()]
+        v_vals = [f.get('max_velocity_ms', 0) for f in flows.values()]
+
+        min_p = min(p_vals) if p_vals else 0
+        max_p = max(p_vals) if p_vals else 0
+        max_v = max(v_vals) if v_vals else 0
+
+        wsaa_issues = sum(1 for c in compliance if c.get('type') in ('WARNING', 'CRITICAL'))
+
+        # Get resilience and quality score
+        ri = self.compute_resilience_index(results)
+        qs = self.compute_quality_score(results)
+        topo = self.analyse_topology()
+
+        ri_val = ri.get('resilience_index', 0)
+        qs_val = qs.get('total_score', 0)
+        grade = qs.get('grade', '?')
+
+        total_length_km = sum(
+            self.wn.get_link(pid).length for pid in self.wn.pipe_name_list) / 1000
+        total_demand_lps = sum(
+            self.wn.get_node(jid).demand_timeseries_list[0].base_value * 1000
+            for jid in self.wn.junction_name_list
+            if self.wn.get_node(jid).demand_timeseries_list)
+
+        # Build prose paragraph
+        health_word = ('healthy' if qs_val >= 75 else
+                       'adequate' if qs_val >= 60 else
+                       'concerning' if qs_val >= 45 else 'poor')
+
+        compliance_text = ('fully compliant' if wsaa_issues == 0
+                          else f'has {wsaa_issues} WSAA compliance issue(s)')
+
+        paragraph = (
+            f"The network comprises {summary.get('junctions', 0)} junctions and "
+            f"{summary.get('pipes', 0)} pipes totalling {total_length_km:.1f} km, "
+            f"delivering {total_demand_lps:.1f} LPS total demand. "
+            f"Current overall health is {health_word} "
+            f"(quality score {qs_val:.0f}/100, grade {grade}). "
+            f"The network {compliance_text}, with pressures ranging from "
+            f"{min_p:.1f} m to {max_p:.1f} m and maximum pipe velocity of "
+            f"{max_v:.2f} m/s. Network resilience (Todini index) is "
+            f"{ri_val:.3f} ({ri.get('grade', '?')}), indicating "
+            f"{ri.get('interpretation', 'unknown').lower()}"
+        )
+
+        if topo.get('dead_end_count', 0) > 0 or topo.get('bridge_count', 0) > 0:
+            paragraph += (
+                f" Topology: {topo.get('loops', 0)} independent loops, "
+                f"{topo.get('dead_end_count', 0)} dead ends, "
+                f"{topo.get('bridge_count', 0)} single-point-of-failure pipes."
+            )
+
+        # Top 3 recommendations
+        recommendations = []
+        if wsaa_issues > 0:
+            recommendations.append(
+                f'Address {wsaa_issues} WSAA compliance issue(s) as top priority')
+        if ri_val < 0.3:
+            recommendations.append(
+                'Improve network redundancy — resilience below 0.3 target '
+                '(add looping pipes where possible)')
+        if topo.get('bridge_count', 0) > 0:
+            recommendations.append(
+                f'{topo["bridge_count"]} bridge pipes represent single points '
+                f'of failure — consider parallel connections')
+        if max_v > 2.0:
+            recommendations.append(
+                f'Peak velocity {max_v:.2f} m/s exceeds WSAA 2.0 m/s — upsize pipes')
+        if min_p < 20:
+            recommendations.append(
+                f'Low pressure detected ({min_p:.1f} m) — consider booster or pipe upsize')
+
+        if not recommendations:
+            recommendations.append('Network performing well — continue monitoring')
+
+        return {
+            'summary_paragraph': paragraph,
+            'recommendations': recommendations[:3],
+            'metrics': {
+                'quality_score': qs_val,
+                'grade': grade,
+                'resilience_index': ri_val,
+                'min_pressure_m': round(min_p, 1),
+                'max_pressure_m': round(max_p, 1),
+                'max_velocity_ms': round(max_v, 2),
+                'wsaa_issues': wsaa_issues,
+                'total_length_km': round(total_length_km, 1),
+                'total_demand_lps': round(total_demand_lps, 1),
+            },
+        }
+
+    # =========================================================================
+    # LEARNING MODE FOR GRADUATE ENGINEERS (O1)
+    # =========================================================================
+
+    def explain_analysis(self, results=None):
+        """
+        Generate educational explanations of analysis results for learning.
+
+        Produces a tutorial-style walkthrough explaining WHY results are
+        what they are, with references to hydraulic principles and
+        Australian standards.
+
+        Parameters
+        ----------
+        results : dict or None
+            Steady-state results. If None, runs analysis first.
+
+        Returns dict with lessons, explanations, and reference links.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if results is None:
+            try:
+                results = self.run_steady_state(save_plot=False)
+            except Exception as e:
+                return {'error': f'Analysis failed: {e}'}
+
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+
+        lessons = []
+
+        # Lesson 1: Pressure distribution
+        if pressures:
+            p_vals = [p.get('avg_m', 0) for p in pressures.values()]
+            max_p = max(p_vals)
+            min_p = min(p_vals)
+            max_node = max(pressures, key=lambda k: pressures[k].get('avg_m', 0))
+            min_node = min(pressures, key=lambda k: pressures[k].get('avg_m', 0))
+
+            lessons.append({
+                'topic': 'Pressure Distribution',
+                'observation': f'Pressures range from {min_p:.1f} m at {min_node} to '
+                               f'{max_p:.1f} m at {max_node}',
+                'explanation': (
+                    "Pressure at a node equals the total head (elevation + pressure head) "
+                    "from the source, minus accumulated headloss along the flow path. "
+                    "Higher elevation nodes have lower pressure. Nodes far from sources "
+                    "lose pressure to friction (Hazen-Williams: hL = 10.67 × L × Q^1.852 / "
+                    "(C^1.852 × D^4.87))."),
+                'standard': 'WSAA WSA 03-2011 Table 3.1: 20-50 m residential target',
+                'action': (
+                    f'If {min_node} is below 20 m, consider: (1) larger pipes on '
+                    'the critical path; (2) a booster pump; (3) raising reservoir '
+                    'level. If above 50 m, add a PRV.'),
+                'reference': 'WSAA WSA 03-2011 §3.2.1',
+            })
+
+        # Lesson 2: Pipe velocity
+        if flows:
+            v_vals = [f.get('max_velocity_ms', 0) for f in flows.values()]
+            if v_vals:
+                max_v = max(v_vals)
+                max_v_pipe = max(flows, key=lambda k: flows[k].get('max_velocity_ms', 0))
+                lessons.append({
+                    'topic': 'Pipe Velocity',
+                    'observation': f'Maximum velocity {max_v:.2f} m/s in pipe {max_v_pipe}',
+                    'explanation': (
+                        "Velocity = Q/A. High velocity causes erosion, noise, and large "
+                        "headloss (headloss ∝ V^1.85 for Hazen-Williams). Low velocity "
+                        "(< 0.6 m/s) allows sediment settling, especially for non-potable "
+                        "or slurry lines."),
+                    'standard': 'WSAA WSA 03-2011: max 2.0 m/s; min 0.6 m/s to prevent settling',
+                    'action': (
+                        'If velocity > 2.0 m/s, upsize pipe by one DN step. '
+                        'If < 0.6 m/s, consider flushing program or smaller pipe.'),
+                    'reference': 'WSAA WSA 03-2011 §3.2.3',
+                })
+
+        # Lesson 3: Headloss intensity
+        if flows:
+            hl_values = []
+            for pid, f in flows.items():
+                hl = f.get('headloss_m_per_km', None)
+                if hl is not None:
+                    hl_values.append((pid, hl))
+            if hl_values:
+                hl_values.sort(key=lambda x: x[1], reverse=True)
+                worst_pipe, worst_hl = hl_values[0]
+                lessons.append({
+                    'topic': 'Headloss Intensity',
+                    'observation': f'Highest headloss {worst_hl:.2f} m/km in pipe {worst_pipe}',
+                    'explanation': (
+                        "Headloss per km indicates hydraulic efficiency. Values above "
+                        "10 m/km indicate undersized pipes. Values below 1 m/km may "
+                        "indicate oversized pipes (capital inefficient)."),
+                    'standard': 'Industry rule of thumb: 1-5 m/km optimal design range',
+                    'action': (
+                        'If > 10 m/km, upsize pipe. If < 1 m/km, pipe may be oversized '
+                        'for current demand — check design horizon.'),
+                    'reference': 'White, Fluid Mechanics 8th ed. Ch. 6',
+                })
+
+        # Lesson 4: WSAA compliance
+        compliance = results.get('compliance', [])
+        n_issues = len(compliance) if isinstance(compliance, list) else 0
+        lessons.append({
+            'topic': 'WSAA Compliance',
+            'observation': f'{n_issues} compliance issues flagged',
+            'explanation': (
+                "WSAA WSA 03-2011 is the Australian design code. Non-compliance does "
+                "not mean the network fails, but it signals deviations from accepted "
+                "standards that must be justified in a design report."),
+            'standard': 'WSAA WSA 03-2011 (full standard)',
+            'action': (
+                'Review each flagged issue. Document approved deviations in the '
+                'design basis report with engineering justification.'),
+            'reference': 'WSAA WSA 03-2011',
+        })
+
+        return {
+            'n_lessons': len(lessons),
+            'lessons': lessons,
+            'note': (
+                'Learning Mode explains what the numbers mean, why they matter, '
+                'and what to do next — for graduate engineers building intuition.'),
+        }
+
+    # =========================================================================
+    # O4 — OPERATIONS DASHBOARD
+    # =========================================================================
+
+    def operations_dashboard(self, results=None):
+        """
+        Produce an operator-focused snapshot of current network state.
+
+        Returns the data an operations team wants on one screen:
+        - Tank levels (fill %, turnover)
+        - Pump status and duty
+        - Critical pressure nodes (lowest 5, highest 5)
+        - Active alerts (compliance violations)
+        - KPIs: total demand, total supply, headloss
+
+        Returns dict structured for a live dashboard view.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if results is None:
+            try:
+                results = self.run_steady_state(save_plot=False)
+            except Exception as e:
+                return {'error': f'Analysis failed: {e}'}
+
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+
+        # Pressure sort
+        p_sorted = sorted(
+            [(nid, p.get('avg_m', 0)) for nid, p in pressures.items()],
+            key=lambda x: x[1])
+        lowest_5 = [{'node': n, 'pressure_m': round(p, 1)} for n, p in p_sorted[:5]]
+        highest_5 = [{'node': n, 'pressure_m': round(p, 1)}
+                     for n, p in p_sorted[-5:][::-1]]
+
+        # Tanks
+        tanks = []
+        for tid in self.wn.tank_name_list:
+            t = self.wn.get_node(tid)
+            level = None
+            try:
+                level = float(t.init_level)
+            except Exception:
+                pass
+            fill_pct = None
+            try:
+                span = float(t.max_level) - float(t.min_level)
+                if span > 0:
+                    fill_pct = round((level - float(t.min_level)) / span * 100, 1)
+            except Exception:
+                pass
+            tanks.append({
+                'id': tid,
+                'level_m': round(level, 2) if level is not None else None,
+                'fill_pct': fill_pct,
+            })
+
+        # Pumps
+        pumps = []
+        for pid in self.wn.pump_name_list:
+            p = self.wn.get_link(pid)
+            status_val = getattr(p, 'initial_status', None)
+            status_str = str(status_val) if status_val is not None else 'Unknown'
+            pumps.append({
+                'id': pid,
+                'status': status_str,
+                'type': getattr(p, 'pump_type', 'POWER'),
+            })
+
+        # Alerts from compliance
+        compliance = results.get('compliance', [])
+        alerts = compliance if isinstance(compliance, list) else []
+
+        # KPIs
+        total_demand_lps = 0.0
+        for jid in self.wn.junction_name_list:
+            try:
+                d = self.wn.get_node(jid).demand_timeseries_list[0].base_value
+                total_demand_lps += d * 1000
+            except (IndexError, AttributeError):
+                pass
+
+        total_headloss_m = 0.0
+        for pid, f in flows.items():
+            hl = f.get('headloss_m', 0)
+            if hl:
+                total_headloss_m += hl
+
+        # Traffic-light status
+        n_alerts = len(alerts)
+        if n_alerts == 0:
+            status_light = 'green'
+        elif n_alerts <= 5:
+            status_light = 'amber'
+        else:
+            status_light = 'red'
+
+        return {
+            'status_light': status_light,
+            'kpis': {
+                'total_demand_lps': round(total_demand_lps, 1),
+                'total_headloss_m': round(total_headloss_m, 1),
+                'n_junctions': len(self.wn.junction_name_list),
+                'n_pipes': len(self.wn.pipe_name_list),
+                'n_active_alerts': n_alerts,
+            },
+            'lowest_pressures': lowest_5,
+            'highest_pressures': highest_5,
+            'tanks': tanks,
+            'pumps': pumps,
+            'alerts': alerts[:10],
+            'note': 'Operations snapshot — refresh after each steady-state run.',
+        }
+
+    # =========================================================================
+    # O5 — AUTOMATED NETWORK DOCUMENTATION
+    # =========================================================================
+
+    def generate_network_documentation(self):
+        """
+        Auto-generate a Markdown description of the network.
+
+        Produces a design-basis document suitable for engineering review:
+        - Network inventory (junctions, tanks, reservoirs, pipes, pumps, valves)
+        - Size distribution
+        - Material distribution (if known)
+        - Topology summary
+        - Operating assumptions
+
+        Returns dict with 'markdown' string ready to write to .md file.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        wn = self.wn
+        n_junc = len(wn.junction_name_list)
+        n_tank = len(wn.tank_name_list)
+        n_res = len(wn.reservoir_name_list)
+        n_pipe = len(wn.pipe_name_list)
+        n_pump = len(wn.pump_name_list)
+        n_valve = len(wn.valve_name_list)
+
+        # Pipe size distribution
+        dn_counts = {}
+        total_length = 0.0
+        for pid in wn.pipe_name_list:
+            p = wn.get_link(pid)
+            dn = int(round(p.diameter * 1000))  # m → mm
+            dn_counts[dn] = dn_counts.get(dn, 0) + 1
+            total_length += p.length
+
+        # Elevation range
+        elevs = []
+        for jid in wn.junction_name_list:
+            try:
+                elevs.append(wn.get_node(jid).elevation)
+            except Exception:
+                pass
+        elev_min = min(elevs) if elevs else 0
+        elev_max = max(elevs) if elevs else 0
+
+        # Build markdown
+        lines = []
+        lines.append(f'# Network Documentation — {wn.name or "Unnamed"}')
+        lines.append('')
+        lines.append('## 1. Inventory')
+        lines.append('')
+        lines.append('| Asset | Count |')
+        lines.append('|-------|-------|')
+        lines.append(f'| Junctions | {n_junc} |')
+        lines.append(f'| Tanks | {n_tank} |')
+        lines.append(f'| Reservoirs | {n_res} |')
+        lines.append(f'| Pipes | {n_pipe} |')
+        lines.append(f'| Pumps | {n_pump} |')
+        lines.append(f'| Valves | {n_valve} |')
+        lines.append('')
+        lines.append(f'Total pipe length: **{total_length / 1000:.2f} km**')
+        lines.append('')
+        lines.append('## 2. Elevation')
+        lines.append('')
+        lines.append(f'- Minimum: {elev_min:.1f} m AHD')
+        lines.append(f'- Maximum: {elev_max:.1f} m AHD')
+        lines.append(f'- Range: {elev_max - elev_min:.1f} m')
+        lines.append('')
+        lines.append('## 3. Pipe Size Distribution')
+        lines.append('')
+        lines.append('| DN (mm) | Count |')
+        lines.append('|---------|-------|')
+        for dn in sorted(dn_counts):
+            lines.append(f'| {dn} | {dn_counts[dn]} |')
+        lines.append('')
+        lines.append('## 4. Design Standards')
+        lines.append('')
+        lines.append('- WSAA WSA 03-2011 (Water Supply Code)')
+        lines.append(f'- Minimum pressure: {self.DEFAULTS["min_pressure_m"]} m head')
+        lines.append(f'- Maximum pressure: {self.DEFAULTS["max_pressure_m"]} m head')
+        lines.append(f'- Maximum velocity: {self.DEFAULTS["max_velocity_ms"]} m/s')
+        lines.append(f'- Minimum velocity: {self.DEFAULTS["min_velocity_ms"]} m/s')
+        lines.append('')
+        lines.append('## 5. Notes')
+        lines.append('')
+        lines.append('Auto-generated by EPANET Toolkit. Review all assumptions before '
+                     'issuing for construction.')
+        lines.append('')
+
+        markdown = '\n'.join(lines)
+        return {
+            'markdown': markdown,
+            'n_sections': 5,
+            'total_length_km': round(total_length / 1000, 2),
+            'elevation_range_m': round(elev_max - elev_min, 1),
+            'n_pipe_sizes': len(dn_counts),
+        }
