@@ -4002,6 +4002,132 @@ class HydraulicAPI:
 
         return result
 
+    def detailed_comparison(self, other_inp_path):
+        """
+        Enhanced network comparison with categorised change detection.
+
+        Extends compare_networks() with:
+        - Change categories: added (green), removed (red), resized (blue),
+          demand changed (yellow)
+        - Change log with detailed descriptions
+        - Demand comparison for common junctions
+
+        Parameters
+        ----------
+        other_inp_path : str
+            Path to the second .inp file
+
+        Returns dict with categorised changes and change log.
+        """
+        base = self.compare_networks(other_inp_path)
+        if 'error' in base:
+            return base
+
+        import wntr
+        wn2 = wntr.network.WaterNetworkModel(other_inp_path)
+
+        changelog = []
+
+        # Categorise: added pipes
+        for pid in base['topology']['added_pipes']:
+            p2 = wn2.get_link(pid)
+            changelog.append({
+                'type': 'added',
+                'element': 'pipe',
+                'id': pid,
+                'colour': 'green',
+                'description': f'Pipe {pid} added: DN{int(p2.diameter*1000)}, '
+                              f'{p2.length:.0f} m',
+            })
+
+        # Categorise: removed pipes
+        for pid in base['topology']['removed_pipes']:
+            p1 = self.wn.get_link(pid)
+            changelog.append({
+                'type': 'removed',
+                'element': 'pipe',
+                'id': pid,
+                'colour': 'red',
+                'description': f'Pipe {pid} removed: was DN{int(p1.diameter*1000)}, '
+                              f'{p1.length:.0f} m',
+            })
+
+        # Categorise: resized pipes (diameter change)
+        resized = []
+        demand_changed = []
+        for prop in base['properties']:
+            if 'pipe' in prop:
+                for c in prop['changes']:
+                    if 'diameter' in c:
+                        resized.append(prop['pipe'])
+                        changelog.append({
+                            'type': 'resized',
+                            'element': 'pipe',
+                            'id': prop['pipe'],
+                            'colour': 'blue',
+                            'description': f'Pipe {prop["pipe"]}: {c}',
+                        })
+                    elif 'roughness' in c:
+                        changelog.append({
+                            'type': 'modified',
+                            'element': 'pipe',
+                            'id': prop['pipe'],
+                            'colour': 'blue',
+                            'description': f'Pipe {prop["pipe"]}: {c}',
+                        })
+
+        # Demand changes for common junctions
+        common_juncs = set(self.wn.junction_name_list) & set(wn2.junction_name_list)
+        for jid in sorted(common_juncs):
+            n1 = self.wn.get_node(jid)
+            n2 = wn2.get_node(jid)
+            try:
+                d1 = n1.demand_timeseries_list[0].base_value
+                d2 = n2.demand_timeseries_list[0].base_value
+            except (IndexError, AttributeError):
+                continue
+            if abs(d1 - d2) > 0.0001:
+                d1_lps = round(d1 * 1000, 2)
+                d2_lps = round(d2 * 1000, 2)
+                demand_changed.append(jid)
+                changelog.append({
+                    'type': 'demand_changed',
+                    'element': 'junction',
+                    'id': jid,
+                    'colour': 'yellow',
+                    'description': f'Junction {jid}: demand {d1_lps} → {d2_lps} LPS',
+                })
+
+        # Added/removed nodes
+        for nid in base['topology']['added_nodes']:
+            changelog.append({
+                'type': 'added',
+                'element': 'node',
+                'id': nid,
+                'colour': 'green',
+                'description': f'Node {nid} added',
+            })
+        for nid in base['topology']['removed_nodes']:
+            changelog.append({
+                'type': 'removed',
+                'element': 'node',
+                'id': nid,
+                'colour': 'red',
+                'description': f'Node {nid} removed',
+            })
+
+        return {
+            'changelog': changelog,
+            'categories': {
+                'added': len(base['topology']['added_pipes']) + len(base['topology']['added_nodes']),
+                'removed': len(base['topology']['removed_pipes']) + len(base['topology']['removed_nodes']),
+                'resized': len(resized),
+                'demand_changed': len(demand_changed),
+            },
+            'total_changes': len(changelog),
+            'base_comparison': base,
+        }
+
     # =========================================================================
     # DEMAND FORECASTING
     # =========================================================================
@@ -4395,6 +4521,307 @@ class HydraulicAPI:
                 'at_risk': n_at_risk,
                 'safe': len(pipe_analysis) - n_below_critical - n_at_risk,
             },
+        }
+
+    # =========================================================================
+    # QUALITY SCORE SYSTEM (M9)
+    # =========================================================================
+
+    def compute_quality_score(self, results=None):
+        """
+        Compute an overall network quality score (0-100).
+
+        Scoring breakdown:
+        - Pressure compliance (20 pts): % of junctions within WSAA 20-50 m
+        - Velocity compliance (20 pts): % of pipes below 2.0 m/s
+        - Network resilience (15 pts): Todini index mapped to 0-15
+        - Pipe stress safety (15 pts): % of pipes within PN rating
+        - Data completeness (15 pts): pipes with material/roughness data
+        - Connectivity (15 pts): no isolated nodes, low dead-end ratio
+
+        Grade: A (90+), B (75+), C (60+), D (45+), F (<45)
+
+        Returns dict with total score, grade, and per-category breakdown.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if results is None:
+            try:
+                results = self.run_steady_state(save_plot=False)
+            except Exception as e:
+                return {'error': f'Analysis failed: {e}'}
+
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+        categories = []
+
+        # 1. Pressure compliance (20 pts)
+        if pressures:
+            n_junctions = len(pressures)
+            n_compliant = sum(1 for p in pressures.values()
+                             if self.DEFAULTS['min_pressure_m'] <= p.get('avg_m', 0)
+                             <= self.DEFAULTS['max_pressure_m'])
+            pct = n_compliant / max(n_junctions, 1)
+            score_p = round(pct * 20, 1)
+        else:
+            score_p = 0
+            pct = 0
+        categories.append({
+            'category': 'Pressure Compliance',
+            'max_points': 20,
+            'score': score_p,
+            'detail': f'{pct*100:.0f}% within WSAA 20-50 m',
+        })
+
+        # 2. Velocity compliance (20 pts)
+        if flows:
+            n_pipes = len(flows)
+            n_vel_ok = sum(1 for f in flows.values()
+                          if f.get('max_velocity_ms', 0) <= self.DEFAULTS['max_velocity_ms'])
+            pct_v = n_vel_ok / max(n_pipes, 1)
+            score_v = round(pct_v * 20, 1)
+        else:
+            score_v = 0
+            pct_v = 0
+        categories.append({
+            'category': 'Velocity Compliance',
+            'max_points': 20,
+            'score': score_v,
+            'detail': f'{pct_v*100:.0f}% below {self.DEFAULTS["max_velocity_ms"]} m/s',
+        })
+
+        # 3. Network resilience (15 pts)
+        ri = self.compute_resilience_index(results)
+        if 'error' not in ri:
+            # Map 0-0.5 to 0-15 (anything > 0.5 gets full marks)
+            ri_val = min(ri['resilience_index'], 0.5)
+            score_r = round((ri_val / 0.5) * 15, 1)
+        else:
+            score_r = 0
+        categories.append({
+            'category': 'Network Resilience',
+            'max_points': 15,
+            'score': score_r,
+            'detail': f'Todini Ir={ri.get("resilience_index", 0):.3f}',
+        })
+
+        # 4. Pipe stress safety (15 pts)
+        n_stress_ok = 0
+        n_total_pipes = len(self.wn.pipe_name_list)
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            p_data = pressures.get(pipe.start_node_name, {})
+            p_kPa = p_data.get('max_m', 0) * 9.81
+            if p_kPa <= self.DEFAULTS['pipe_rating_kPa']:
+                n_stress_ok += 1
+        pct_s = n_stress_ok / max(n_total_pipes, 1)
+        score_s = round(pct_s * 15, 1)
+        categories.append({
+            'category': 'Pipe Stress Safety',
+            'max_points': 15,
+            'score': score_s,
+            'detail': f'{pct_s*100:.0f}% within PN rating',
+        })
+
+        # 5. Data completeness (15 pts)
+        # Check that pipes have reasonable roughness values (proxy for having data)
+        n_data_ok = 0
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            if 50 <= pipe.roughness <= 160 and pipe.length > 0 and pipe.diameter > 0:
+                n_data_ok += 1
+        pct_d = n_data_ok / max(n_total_pipes, 1)
+        score_d = round(pct_d * 15, 1)
+        categories.append({
+            'category': 'Data Completeness',
+            'max_points': 15,
+            'score': score_d,
+            'detail': f'{pct_d*100:.0f}% pipes with valid properties',
+        })
+
+        # 6. Connectivity (15 pts)
+        topo = self.analyse_topology()
+        if 'error' not in topo:
+            conn_score = topo['connectivity_ratio'] * 10  # 10 pts for full connectivity
+            # Penalty for high dead-end ratio (max 5 pts)
+            de_ratio = topo['dead_end_count'] / max(topo['total_nodes'], 1)
+            de_score = max(0, 5 * (1 - de_ratio * 5))  # lose all 5 pts if >20% dead ends
+            score_c = round(min(conn_score + de_score, 15), 1)
+        else:
+            score_c = 0
+        categories.append({
+            'category': 'Connectivity',
+            'max_points': 15,
+            'score': score_c,
+            'detail': f'{topo.get("dead_end_count", "?")} dead ends, '
+                      f'{topo.get("loops", "?")} loops',
+        })
+
+        # Total
+        total = sum(c['score'] for c in categories)
+        total = round(min(total, 100), 1)
+
+        # Grade
+        if total >= 90:
+            grade = 'A'
+        elif total >= 75:
+            grade = 'B'
+        elif total >= 60:
+            grade = 'C'
+        elif total >= 45:
+            grade = 'D'
+        else:
+            grade = 'F'
+
+        return {
+            'total_score': total,
+            'grade': grade,
+            'categories': categories,
+            'max_possible': 100,
+        }
+
+    # =========================================================================
+    # AUTOMATED TUTORIAL GENERATOR (M8)
+    # =========================================================================
+
+    def generate_tutorial(self, output_dir=None):
+        """
+        Auto-generate a tutorial package for the current network.
+
+        Creates:
+        - README.md with network description, features, analysis steps
+        - Pre-computed results summary
+        - Suggested analysis workflow
+
+        Parameters
+        ----------
+        output_dir : str or None
+            Directory to write tutorial files. If None, uses
+            tutorials/{network_name}/
+
+        Returns dict with generated file paths.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        name = os.path.splitext(
+            os.path.basename(self._inp_file) if self._inp_file else 'network'
+        )[0].replace(' ', '_')
+
+        if output_dir is None:
+            output_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), 'tutorials', name)
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Gather data
+        summary = self.get_network_summary()
+        topo = self.analyse_topology()
+
+        try:
+            results = self.run_steady_state(save_plot=False)
+            pressures = results.get('pressures', {})
+            flows = results.get('flows', {})
+        except Exception:
+            results = None
+            pressures = {}
+            flows = {}
+
+        ri = self.compute_resilience_index(results) if results else {}
+        qs = self.compute_quality_score(results) if results else {}
+
+        # Build README
+        lines = [
+            f'# Tutorial: {name.replace("_", " ").title()}',
+            '',
+            '## Network Description',
+            '',
+            f'- **Junctions:** {summary.get("junctions", 0)}',
+            f'- **Pipes:** {summary.get("pipes", 0)}',
+            f'- **Reservoirs:** {summary.get("reservoirs", 0)}',
+            f'- **Tanks:** {summary.get("tanks", 0)}',
+            f'- **Pumps:** {summary.get("pumps", 0)}',
+        ]
+
+        if 'error' not in topo:
+            lines.extend([
+                '',
+                '## Topology',
+                '',
+                f'- Dead ends: {topo["dead_end_count"]}',
+                f'- Independent loops: {topo["loops"]}',
+                f'- Bridge pipes: {topo["bridge_count"]}',
+                f'- Connectivity ratio: {topo["connectivity_ratio"]}',
+            ])
+
+        if pressures:
+            p_vals = [p.get('avg_m', 0) for p in pressures.values()]
+            v_vals = [f.get('max_velocity_ms', 0) for f in flows.values()]
+            lines.extend([
+                '',
+                '## Expected Results (Steady-State)',
+                '',
+                f'- Pressure range: {min(p_vals):.1f} - {max(p_vals):.1f} m',
+                f'- Max velocity: {max(v_vals):.2f} m/s',
+            ])
+
+        if 'error' not in ri:
+            lines.extend([
+                f'- Resilience index: {ri["resilience_index"]:.3f} (Grade {ri["grade"]})',
+            ])
+
+        if 'error' not in qs:
+            lines.extend([
+                f'- Quality score: {qs["total_score"]:.0f}/100 (Grade {qs["grade"]})',
+            ])
+
+        lines.extend([
+            '',
+            '## Suggested Analysis Steps',
+            '',
+            '1. Open network: File > Open, select `network.inp`',
+            '2. Run steady-state: Analysis > Steady State (F5)',
+            '3. Check WSAA compliance in status bar',
+            '4. Try different colour modes: Pressure, Velocity, Headloss',
+            '5. Use Probe tool to inspect individual elements',
+            '6. Run fire flow analysis: Analysis > Fire Flow Wizard (F8)',
+            '7. Generate report: Reports > Generate Report (DOCX)',
+        ])
+
+        if summary.get('pumps', 0) > 0:
+            lines.append('8. Check pump operating points in Properties panel')
+
+        lines.extend([
+            '',
+            '## Key Features to Explore',
+            '',
+        ])
+
+        if topo.get('dead_end_count', 0) > 0:
+            lines.append(f'- **Dead ends**: {topo["dead_end_count"]} dead-end nodes '
+                        f'— check water quality implications')
+        if topo.get('loops', 0) > 0:
+            lines.append(f'- **Looped network**: {topo["loops"]} loops '
+                        f'provide path redundancy')
+        if summary.get('pumps', 0) > 0:
+            lines.append('- **Pump stations**: check operating point and BEP')
+
+        lines.extend([
+            '',
+            '---',
+            '*Auto-generated by Hydraulic Analysis Tool*',
+        ])
+
+        readme_path = os.path.join(output_dir, 'README.md')
+        with open(readme_path, 'w') as f:
+            f.write('\n'.join(lines))
+
+        return {
+            'output_dir': output_dir,
+            'readme_path': readme_path,
+            'network_name': name,
+            'summary': summary,
         }
 
     # =========================================================================

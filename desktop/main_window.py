@@ -518,6 +518,7 @@ class MainWindow(QMainWindow):
         self.pipes_label = QLabel("Pipes: 0")
         self.wsaa_label = QLabel("WSAA: --")
         self.resilience_label = QLabel("Ir: --")
+        self.quality_label = QLabel("Score: --")
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(150)
@@ -535,9 +536,16 @@ class MainWindow(QMainWindow):
             "Target > 0.3 for reliable distribution networks.\n"
             "Ref: Todini (2000), Urban Water 2(2):115-122"
         )
+        self.quality_label.setToolTip(
+            "Network Quality Score (0-100):\n"
+            "Pressure (20) + Velocity (20) + Resilience (15) +\n"
+            "Pipe Stress (15) + Data (15) + Connectivity (15)\n"
+            "Grade: A (90+), B (75+), C (60+), D (45+), F (<45)"
+        )
 
         for lbl in (self.analysis_label, self.nodes_label,
-                    self.pipes_label, self.wsaa_label, self.resilience_label):
+                    self.pipes_label, self.wsaa_label, self.resilience_label,
+                    self.quality_label):
             lbl.setFont(QFont("Consolas", 9))
             self.status_bar.addPermanentWidget(lbl)
 
@@ -873,6 +881,17 @@ class MainWindow(QMainWindow):
                 self.resilience_label.setStyleSheet("color: #f9e2af;")
             else:
                 self.resilience_label.setStyleSheet("color: #f38ba8;")
+
+        # Update quality score
+        qs = self.api.compute_quality_score(results)
+        if 'error' not in qs:
+            self.quality_label.setText(f"Score: {qs['total_score']:.0f}/100 ({qs['grade']})")
+            if qs['total_score'] >= 75:
+                self.quality_label.setStyleSheet("color: #a6e3a1;")
+            elif qs['total_score'] >= 60:
+                self.quality_label.setStyleSheet("color: #f9e2af;")
+            else:
+                self.quality_label.setStyleSheet("color: #f38ba8;")
 
         analysis_type = "Slurry" if self.slurry_act.isChecked() else "Hydraulic"
         if 'junctions' in results and 'max_surge_m' in results:
