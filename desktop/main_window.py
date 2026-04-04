@@ -25,6 +25,8 @@ from desktop.report_dialog import ReportDialog
 from desktop.audit_trail import AuditTrail
 from desktop.pipe_stress_panel import PipeStressPanel
 from desktop.canvas_editor import CanvasEditor
+from desktop.colourmap_widget import ColourMapWidget, ColourBar
+from desktop.animation_panel import AnimationPanel
 
 
 class MainWindow(QMainWindow):
@@ -150,6 +152,18 @@ class MainWindow(QMainWindow):
 
         view_menu.addSeparator()
 
+        self.scale_pipes_act = QAction("Scale Pipes by DN", self)
+        self.scale_pipes_act.setCheckable(True)
+        self.scale_pipes_act.toggled.connect(self._on_scale_pipes_toggled)
+        view_menu.addAction(self.scale_pipes_act)
+
+        self.scale_nodes_act = QAction("Scale Nodes by Demand", self)
+        self.scale_nodes_act.setCheckable(True)
+        self.scale_nodes_act.toggled.connect(self._on_scale_nodes_toggled)
+        view_menu.addAction(self.scale_nodes_act)
+
+        view_menu.addSeparator()
+
         self.toggle_explorer_act = QAction("Project &Explorer", self)
         self.toggle_explorer_act.setCheckable(True)
         self.toggle_explorer_act.setChecked(True)
@@ -194,6 +208,37 @@ class MainWindow(QMainWindow):
         # Insert into the canvas toolbar layout (after Labels button)
         toolbar_layout = self.canvas.layout().itemAt(0).layout()
         toolbar_layout.insertWidget(4, self.canvas.edit_btn)
+
+        # Values overlay toggle
+        self.values_btn = QPushButton("Values")
+        self.values_btn.setCheckable(True)
+        self.values_btn.setFont(QFont("Consolas", 9))
+        self.values_btn.toggled.connect(self._on_values_toggled)
+        toolbar_layout.insertWidget(5, self.values_btn)
+
+        # ColourBar widget (fixed sidebar next to canvas)
+        self._colourmap_widget = ColourMapWidget()
+        self._colourmap_widget.colour_map_changed.connect(self._on_colourmap_changed)
+        self._colour_bar = ColourBar(self._colourmap_widget)
+
+        # Embed ColourMap + ColourBar into a small vertical widget
+        cmap_container = QWidget()
+        cmap_vlayout = QVBoxLayout(cmap_container)
+        cmap_vlayout.setContentsMargins(2, 2, 2, 2)
+        cmap_vlayout.addWidget(self._colourmap_widget)
+        cmap_vlayout.addWidget(self._colour_bar)
+        cmap_vlayout.addStretch()
+
+        # Place it in the canvas area using a horizontal wrapper
+        canvas_wrapper = QWidget()
+        canvas_h = QHBoxLayout(canvas_wrapper)
+        canvas_h.setContentsMargins(0, 0, 0, 0)
+        canvas_h.setSpacing(0)
+        # The real canvas is already set as central — rebuild with wrapper
+        # We replace the central widget with a wrapper containing both
+        self.setCentralWidget(canvas_wrapper)
+        canvas_h.addWidget(self.canvas)
+        canvas_h.addWidget(cmap_container)
 
     # =====================================================================
     # DOCK PANELS
@@ -287,6 +332,19 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.scenario_dock)
         # Tab scenario behind explorer so explorer is the visible tab
         self.tabifyDockWidget(self.scenario_dock, self.explorer_dock)
+
+        # --- Bottom: Animation (tabbed with Results) ---
+        self.animation_dock = QDockWidget("Animation", self)
+        self.animation_dock.setObjectName("animation_dock")
+        self.animation_dock.setFeatures(_dock_features)
+        self.animation_panel = AnimationPanel()
+        self.animation_panel.frame_changed.connect(self._on_animation_frame)
+        self.animation_dock.setWidget(self.animation_panel)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.animation_dock)
+        # Tab animation alongside results
+        self.tabifyDockWidget(self.results_dock, self.animation_dock)
+        # Show results as the initially visible bottom tab
+        self.results_dock.raise_()
 
         # Wire tree selection
         self.explorer_tree.itemClicked.connect(self._on_tree_item_clicked)
@@ -636,6 +694,11 @@ class MainWindow(QMainWindow):
         # Update pipe stress panel
         self.pipe_stress_panel.update_results(self.api, results)
 
+        # Populate animation panel if transient data present
+        # Transient results include 'junctions' key with head arrays
+        if 'junctions' in results and isinstance(results['junctions'], dict):
+            self._populate_animation_panel(results)
+
         # Log to audit trail
         try:
             self.audit.log_run(
@@ -648,6 +711,101 @@ class MainWindow(QMainWindow):
             pass  # Audit trail failure is non-critical
 
         self.status_bar.showMessage("Analysis complete.", 5000)
+
+    def _populate_animation_panel(self, results):
+        """Load transient data into the AnimationPanel."""
+        import numpy as np
+
+        junctions = results.get('junctions', {})
+        # Build timestamps from the first junction's head array length
+        # HydraulicAPI transient results store head as ndarray per node
+        sample_node = next(iter(junctions.values()), None)
+        if sample_node is None:
+            return
+
+        head_arr = sample_node.get('head')
+        if head_arr is None or len(head_arr) == 0:
+            return
+
+        n_steps = len(head_arr)
+        # Use 'timestamps' from results if available, else synthesise from dt
+        if 'timestamps' in results:
+            timestamps = np.asarray(results['timestamps'])
+        else:
+            dt = results.get('dt', 0.1)
+            timestamps = np.arange(n_steps) * dt
+
+        # node_data: {node_id: {'head': np.ndarray}}
+        node_data = {nid: {'head': np.asarray(v['head'])}
+                     for nid, v in junctions.items()
+                     if 'head' in v}
+
+        # pipe_data: best-effort from 'pipes_transient' key
+        pipe_data = results.get('pipes_transient', {})
+
+        self.animation_panel.set_transient_data(timestamps, node_data, pipe_data)
+        # Raise the animation dock so the user can see it
+        self.animation_dock.raise_()
+
+    def _on_animation_frame(self, frame: int):
+        """
+        Handle AnimationPanel.frame_changed — extract a single-frame snapshot
+        and push it to the canvas as if it were steady-state results.
+        """
+        node_data = self.animation_panel.node_data
+        pipe_data = self.animation_panel.pipe_data
+        if not node_data:
+            return
+
+        # Build a pressures snapshot matching the steady-state dict format:
+        # {'node_id': {'avg_m': float, 'min_m': float, 'max_m': float}}
+        pressures = {}
+        for nid, nd in node_data.items():
+            head_arr = nd.get('head')
+            if head_arr is not None and frame < len(head_arr):
+                try:
+                    node = self.api.get_node(nid)
+                    elev = node.elevation
+                except Exception:
+                    elev = 0.0
+                p = float(head_arr[frame]) - elev
+                pressures[nid] = {'avg_m': p, 'min_m': p, 'max_m': p}
+
+        # Build a flows snapshot
+        flows = {}
+        for pid, pd in pipe_data.items():
+            vel_arr = pd.get('start_node_velocity') or pd.get('velocity')
+            flow_arr = pd.get('start_node_flowrate') or pd.get('flowrate')
+            v = float(vel_arr[frame]) if vel_arr is not None and frame < len(vel_arr) else 0.0
+            q = float(flow_arr[frame]) if flow_arr is not None and frame < len(flow_arr) else 0.0
+            flows[pid] = {
+                'avg_lps': q * 1000,
+                'max_velocity_ms': abs(v),
+                'min_velocity_ms': abs(v),
+            }
+
+        snapshot = {
+            'pressures': pressures,
+            'flows': flows,
+            'compliance': [],
+        }
+        self.canvas.set_results(snapshot)
+
+    def _on_colourmap_changed(self):
+        """Re-apply canvas colours when colourmap settings change."""
+        self.canvas.set_colourmap(self._colourmap_widget)
+
+    def _on_values_toggled(self, checked: bool):
+        """Toggle numeric value overlay on canvas elements."""
+        self.canvas.set_values_visible(checked)
+
+    def _on_scale_pipes_toggled(self, checked: bool):
+        """Toggle pipe width scaling by DN."""
+        self.canvas.set_pipe_scaling(checked)
+
+    def _on_scale_nodes_toggled(self, checked: bool):
+        """Toggle node size scaling by demand."""
+        self.canvas.set_node_scaling(checked)
 
     def _on_analysis_error(self, msg):
         self.progress_bar.setVisible(False)
@@ -830,6 +988,7 @@ class MainWindow(QMainWindow):
         self.explorer_dock.setVisible(True)
         self.properties_dock.setVisible(True)
         self.results_dock.setVisible(True)
+        self.animation_dock.setVisible(True)
 
     def _on_about(self):
         QMessageBox.about(
@@ -880,6 +1039,7 @@ class MainWindow(QMainWindow):
         self.properties_dock.setVisible(True)
         self.results_dock.setVisible(True)
         self.scenario_dock.setVisible(True)
+        self.animation_dock.setVisible(True)
 
         # Re-ensure canvas scene click handler is connected
         self.canvas.ensure_scene_connected()

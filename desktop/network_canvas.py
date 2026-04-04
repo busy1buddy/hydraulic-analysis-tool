@@ -153,6 +153,15 @@ class NetworkCanvas(QWidget):
         self._selected_id = None
         self._editor = None  # Set by CanvasEditor for edit mode routing
 
+        # FEA-style enhancements
+        self._colourmap_widget = None   # ColourMapWidget (optional, injected by MainWindow)
+        self._scale_pipes = False        # Width proportional to DN
+        self._scale_nodes = False        # Size proportional to demand
+        self._show_values = False        # Numeric overlay on elements
+        self._value_items = []           # List of pg.TextItem for value overlay
+        self._variable_name = None       # Currently displayed variable name
+        self._variable_data = {}         # {element_id: float} for custom variable
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -373,9 +382,9 @@ class NetworkCanvas(QWidget):
                 if mode == "WSAA Compliance":
                     color = _wsaa_pipe_color(v)
                 else:
-                    color = _interpolate_color(v, VELOCITY_COLORS) if v is not None else QColor(108, 112, 134)
+                    color = self._color_from_cmap(v, VELOCITY_COLORS) if v is not None else QColor(108, 112, 134)
                 if i < len(self._pipe_lines):
-                    self._pipe_lines[i].setPen(pg.mkPen(color=color, width=2))
+                    self._pipe_lines[i].setPen(pg.mkPen(color=color, width=self._pipe_pen_width(pid)))
         elif mode == "Pressure":
             # Color pipes by average of endpoint pressures
             for i, pid in enumerate(self._pipe_ids):
@@ -385,17 +394,21 @@ class NetworkCanvas(QWidget):
                     p2 = pressures.get(pipe.end_node_name, {}).get('avg_m')
                     if p1 is not None and p2 is not None:
                         avg = (p1 + p2) / 2
-                        color = _interpolate_color(avg, PRESSURE_COLORS)
+                        color = self._color_from_cmap(avg, PRESSURE_COLORS)
                     else:
                         color = QColor(108, 112, 134)
-                    self._pipe_lines[i].setPen(pg.mkPen(color=color, width=2))
+                    self._pipe_lines[i].setPen(pg.mkPen(color=color, width=self._pipe_pen_width(pid)))
         else:
             self._color_pipes_grey()
+
+        # Refresh value overlay if visible
+        if self._show_values:
+            self._draw_value_overlay()
 
         self._update_legend()
 
     def _recolor_nodes(self, brushes):
-        """Re-color node scatter with new brushes."""
+        """Re-color node scatter with new brushes, applying demand scaling if enabled."""
         if self.api is None or self.api.wn is None:
             return
         wn = self.api.wn
@@ -404,8 +417,9 @@ class NetworkCanvas(QWidget):
         for jid in wn.junction_name_list:
             x, y = self._node_positions.get(jid, (0, 0))
             brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
+            size = self._node_size(jid, base_size=10)
             spots.append({
-                'pos': (x, y), 'size': 10, 'symbol': SHAPE_JUNCTION,
+                'pos': (x, y), 'size': size, 'symbol': SHAPE_JUNCTION,
                 'brush': brush, 'pen': pg.mkPen('#313244', width=1),
                 'data': jid,
             })
@@ -431,9 +445,11 @@ class NetworkCanvas(QWidget):
         self.node_scatter.setData(spots)
 
     def _color_pipes_grey(self):
-        """Reset all pipes to grey (no results)."""
-        for line in self._pipe_lines:
-            line.setPen(pg.mkPen(color='#6c7086', width=2))
+        """Reset all pipes to grey (no results), respecting DN scaling."""
+        for i, line in enumerate(self._pipe_lines):
+            pid = self._pipe_ids[i] if i < len(self._pipe_ids) else None
+            width = self._pipe_pen_width(pid) if pid else 2
+            line.setPen(pg.mkPen(color='#6c7086', width=width))
 
     def _update_legend(self):
         mode = self.color_mode_combo.currentText()
@@ -515,6 +531,161 @@ class NetworkCanvas(QWidget):
         else:
             etype = 'node'
         self.element_selected.emit(nid, etype)
+
+    # ------------------------------------------------------------------
+    # FEA-style enhancements — public API
+    # ------------------------------------------------------------------
+
+    def set_colourmap(self, colourmap_widget):
+        """Inject a ColourMapWidget; re-apply colours immediately."""
+        self._colourmap_widget = colourmap_widget
+        self._apply_colors()
+
+    def set_variable(self, name: str, data_dict: dict):
+        """
+        Set a named scalar variable for colour mapping.
+
+        Parameters
+        ----------
+        name      : human-readable name used as ColourBar unit label
+        data_dict : {element_id: float}
+        """
+        self._variable_name = name
+        self._variable_data = data_dict
+
+        if self._colourmap_widget is not None:
+            # Auto-range from data
+            values = list(data_dict.values())
+            if values:
+                self._colourmap_widget.set_range(min(values), max(values))
+            self._colourmap_widget.set_unit(name)
+
+        self._apply_colors()
+
+    def set_pipe_scaling(self, enabled: bool):
+        """Enable/disable pipe width proportional to DN (mm / 100)."""
+        self._scale_pipes = enabled
+        self._apply_colors()
+
+    def set_node_scaling(self, enabled: bool):
+        """Enable/disable scatter size proportional to base demand."""
+        self._scale_nodes = enabled
+        self._apply_colors()
+
+    def set_values_visible(self, visible: bool):
+        """Show/hide numeric value overlay on elements."""
+        self._show_values = visible
+        if visible:
+            self._draw_value_overlay()
+        else:
+            self._clear_value_overlay()
+
+    # ------------------------------------------------------------------
+    # Value overlay
+    # ------------------------------------------------------------------
+
+    def _draw_value_overlay(self):
+        """Add TextItem per element showing its current variable value."""
+        self._clear_value_overlay()
+        if self.api is None or self.api.wn is None:
+            return
+
+        pressures = (self.results or {}).get('pressures', {})
+        flows = (self.results or {}).get('flows', {})
+
+        font = QFont("Consolas", 7)
+
+        # Node values (pressure)
+        for nid, (x, y) in self._node_positions.items():
+            pdata = pressures.get(nid) or pressures.get(str(nid))
+            if pdata is not None:
+                val = pdata.get('avg_m')
+                if val is not None:
+                    text = pg.TextItem(f"{val:.1f}", color='#f5c2e7', anchor=(0, 1))
+                    text.setPos(x, y)
+                    text.setFont(font)
+                    self.plot_widget.addItem(text)
+                    self._value_items.append(text)
+
+        # Pipe values (velocity) — place at midpoint
+        wn = self.api.wn
+        for pid in self._pipe_ids:
+            fdata = flows.get(pid) or flows.get(str(pid))
+            if fdata is None:
+                continue
+            v = fdata.get('max_velocity_ms')
+            if v is None:
+                continue
+            try:
+                pipe = wn.get_link(pid)
+                sn, en = pipe.start_node_name, pipe.end_node_name
+                if sn in self._node_positions and en in self._node_positions:
+                    x0, y0 = self._node_positions[sn]
+                    x1, y1 = self._node_positions[en]
+                    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+                    text = pg.TextItem(f"{v:.2f}", color='#a6e3a1', anchor=(0.5, 0.5))
+                    text.setPos(mx, my)
+                    text.setFont(font)
+                    self.plot_widget.addItem(text)
+                    self._value_items.append(text)
+            except Exception:
+                pass
+
+    def _clear_value_overlay(self):
+        """Remove all value overlay TextItems."""
+        for item in self._value_items:
+            try:
+                self.plot_widget.removeItem(item)
+            except Exception:
+                pass
+        self._value_items.clear()
+
+    # ------------------------------------------------------------------
+    # Pipe width helpers
+    # ------------------------------------------------------------------
+
+    def _pipe_pen_width(self, pid: str) -> int:
+        """Return pen width for a pipe: fixed 2 or DN-scaled."""
+        if not self._scale_pipes or self.api is None or self.api.wn is None:
+            return 2
+        try:
+            pipe = self.api.wn.get_link(pid)
+            # DN in mm, scale to pen width: 100mm → width 1, 300mm → width 3
+            dn_mm = pipe.diameter * 1000
+            return max(1, int(dn_mm / 100))
+        except Exception:
+            return 2
+
+    # ------------------------------------------------------------------
+    # Node size helpers
+    # ------------------------------------------------------------------
+
+    def _node_size(self, nid: str, base_size: int = 10) -> int:
+        """Return scatter point size for a junction, optionally demand-scaled."""
+        if not self._scale_nodes or self.api is None or self.api.wn is None:
+            return base_size
+        try:
+            node = self.api.wn.get_node(nid)
+            demand = 0.0
+            if node.demand_timeseries_list:
+                demand = abs(node.demand_timeseries_list[0].base_value) * 1000  # LPS
+            # Demand 0 → size 8, demand 10 LPS → size ~18
+            return max(6, min(24, base_size + int(demand * 0.8)))
+        except Exception:
+            return base_size
+
+    # ------------------------------------------------------------------
+    # Colour mapping via ColourMapWidget (when available)
+    # ------------------------------------------------------------------
+
+    def _color_from_cmap(self, value, fallback_color_map):
+        """
+        Return QColor for value: use ColourMapWidget if present, else
+        fall back to the legacy _interpolate_color logic.
+        """
+        if self._colourmap_widget is not None:
+            return self._colourmap_widget.map_value(value)
+        return _interpolate_color(value, fallback_color_map)
 
     def _on_scene_clicked(self, event):
         """Handle click on the plot scene — routing to editor or pipe hit-testing."""
