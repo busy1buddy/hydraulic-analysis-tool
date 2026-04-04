@@ -19,6 +19,16 @@
 - 618 tests passing (+78 from I-series), 12 xfailed
 - Zero TODOs/FIXMEs in codebase, all review blockers fixed
 
+## v1.4.0 J-Series (2026-04-04)
+- J1: Pipe profile longitudinal section — HGL, invert, pressure chart with path selection
+- J2: Pump operating point — pump curve + system curve intersection, BEP warnings
+- J4: Network skeletonisation — dead-end removal, series pipe merging, equivalent pipes
+- J5: Leakage detection — ILI index, WSAA performance category, MNF method
+- J7: Sensitivity analysis — one-at-a-time roughness/demand variation, impact ranking
+- J13: Network reliability — single-pipe failure simulation, criticality index
+- J15: Report template system — 3 defaults (Standard/Executive/Technical), save/load custom
+- 658 tests passing, 12 xfailed
+
 ## v1.3.0 Release (2026-04-04)
 - C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
 - C3: GIS background map — OpenStreetMap tile layer, MGA2020 + lat/lon coordinate detection, tile caching, basemap toggle in View menu
