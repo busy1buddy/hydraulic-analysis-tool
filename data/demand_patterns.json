@@ -1,0 +1,106 @@
+{
+  "_metadata": {
+    "description": "Demand pattern library for hydraulic analysis",
+    "version": "1.0",
+    "units": "Multiplier factors (dimensionless) — multiply by base demand to get actual demand",
+    "timestep": "1 hour (24 values = 24 hours, starting at midnight)"
+  },
+  "patterns": {
+    "residential_wsaa": {
+      "name": "Residential (WSAA)",
+      "source": "WSAA WSA 03-2011 Table 4.2 — typical residential diurnal demand pattern",
+      "description": "Australian residential demand with morning and evening peaks",
+      "category": "residential",
+      "multipliers": [
+        0.4, 0.3, 0.3, 0.3, 0.4, 0.6,
+        0.9, 1.3, 1.5, 1.4, 1.2, 1.1,
+        1.0, 1.0, 1.1, 1.2, 1.3, 1.5,
+        1.4, 1.2, 1.0, 0.8, 0.6, 0.5
+      ]
+    },
+    "commercial_wsaa": {
+      "name": "Commercial (WSAA)",
+      "source": "WSAA WSA 03-2011 — typical commercial/office demand pattern",
+      "description": "Business hours peak with minimal overnight demand",
+      "category": "commercial",
+      "multipliers": [
+        0.2, 0.1, 0.1, 0.1, 0.2, 0.3,
+        0.6, 1.0, 1.5, 1.6, 1.5, 1.4,
+        1.3, 1.4, 1.5, 1.5, 1.4, 1.0,
+        0.6, 0.4, 0.3, 0.2, 0.2, 0.2
+      ]
+    },
+    "industrial_constant": {
+      "name": "Industrial (Constant)",
+      "source": "Standard industrial assumption — 24/7 process water demand",
+      "description": "Near-constant demand with slight shift change variations",
+      "category": "industrial",
+      "multipliers": [
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0
+      ]
+    },
+    "irrigation_night": {
+      "name": "Irrigation (Night-Heavy)",
+      "source": "Australian irrigation practice — off-peak watering to reduce evaporation",
+      "description": "Heavy night/early morning irrigation, minimal daytime use",
+      "category": "irrigation",
+      "multipliers": [
+        1.8, 1.8, 1.8, 1.8, 1.5, 1.0,
+        0.3, 0.1, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.1, 0.3,
+        0.5, 0.8, 1.2, 1.5, 1.8, 1.8
+      ]
+    },
+    "hospital": {
+      "name": "Hospital",
+      "source": "WSAA guidelines — healthcare facility demand pattern",
+      "description": "Nearly flat with morning peak for sterilisation and laundry",
+      "category": "institutional",
+      "multipliers": [
+        0.7, 0.6, 0.6, 0.6, 0.7, 0.8,
+        1.0, 1.3, 1.5, 1.4, 1.3, 1.2,
+        1.1, 1.1, 1.2, 1.2, 1.1, 1.0,
+        0.9, 0.9, 0.8, 0.8, 0.7, 0.7
+      ]
+    },
+    "school_term": {
+      "name": "School (Term Time)",
+      "source": "Education facility demand — term time pattern",
+      "description": "School hours demand with lunch peak, zero overnight",
+      "category": "institutional",
+      "multipliers": [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.1,
+        0.3, 0.8, 1.5, 1.6, 1.5, 1.8,
+        1.8, 1.6, 1.5, 1.4, 0.8, 0.3,
+        0.1, 0.0, 0.0, 0.0, 0.0, 0.0
+      ]
+    },
+    "school_holiday": {
+      "name": "School (Holiday)",
+      "source": "Education facility demand — holiday/shutdown pattern",
+      "description": "Minimal maintenance demand only",
+      "category": "institutional",
+      "multipliers": [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.1, 0.2, 0.3, 0.3, 0.3, 0.2,
+        0.2, 0.3, 0.3, 0.2, 0.1, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+      ]
+    },
+    "mining_process": {
+      "name": "Mining Process Water",
+      "source": "Typical mining slurry operation — 24/7 with shift-change dips",
+      "description": "Continuous process with brief reductions at shift changes (6am, 2pm, 10pm)",
+      "category": "mining",
+      "multipliers": [
+        1.0, 1.0, 1.0, 1.0, 1.0, 0.8,
+        0.6, 1.0, 1.0, 1.0, 1.0, 1.0,
+        1.0, 0.8, 0.6, 1.0, 1.0, 1.0,
+        1.0, 1.0, 1.0, 0.8, 0.6, 1.0
+      ]
+    }
+  }
+}

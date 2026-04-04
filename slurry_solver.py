@@ -686,3 +686,129 @@ def concentration_profile(pipe_diameter_mm, velocity_ms, d_particle_mm,
         'settling_velocity_ms': w_s,
         'friction_velocity_ms': round(u_star, 4),
     }
+
+
+def wasp_critical_velocity(d_particle_mm, pipe_diameter_mm,
+                            rho_solid=2650, rho_fluid=1000,
+                            concentration_vol=0.1, mu_fluid=0.001):
+    """
+    Calculate critical deposition velocity using the Wasp et al. (1977) model.
+
+    Uses particle settling velocity and pipe properties to estimate
+    the minimum velocity to maintain heterogeneous flow.
+
+    V_c = 3.116 × C_v^0.186 × (d/D)^(-0.168) × (w_s/sqrt(gD))^0.364 × sqrt(2gD(S-1))
+
+    Parameters
+    ----------
+    d_particle_mm : float
+        Median particle diameter (d50) in mm
+    pipe_diameter_mm : float
+        Internal pipe diameter in mm
+    rho_solid : float
+        Solid particle density (kg/m³)
+    rho_fluid : float
+        Carrier fluid density (kg/m³)
+    concentration_vol : float
+        Volumetric solids concentration (0-1)
+    mu_fluid : float
+        Carrier fluid dynamic viscosity (Pa·s)
+
+    Returns dict with velocity_ms and calculation details.
+    Ref: Wasp, Kenny & Gandhi (1977) "Solid-Liquid Flow Slurry Pipeline
+         Transportation", Trans Tech Publications
+    """
+    g = 9.81
+    D = pipe_diameter_mm / 1000  # mm to m
+    d_p = d_particle_mm / 1000  # mm to m
+    S = rho_solid / rho_fluid
+
+    if D <= 0 or d_p <= 0 or S <= 1 or concentration_vol <= 0:
+        return {'velocity_ms': 0, 'method': 'wasp'}
+
+    # Get settling velocity
+    ws_result = settling_velocity(d_particle_mm, rho_solid, rho_fluid, mu_fluid)
+    w_s = ws_result['velocity_ms']
+
+    if w_s <= 0:
+        return {'velocity_ms': 0, 'method': 'wasp'}
+
+    # Wasp correlation
+    # V_c = 3.116 × Cv^0.186 × (d/D)^(-0.168) × (ws/sqrt(gD))^0.364 × sqrt(2gD(S-1))
+    term1 = 3.116
+    term2 = concentration_vol ** 0.186
+    term3 = (d_p / D) ** (-0.168)
+    term4 = (w_s / math.sqrt(g * D)) ** 0.364
+    term5 = math.sqrt(2 * g * D * (S - 1))
+
+    V_c = term1 * term2 * term3 * term4 * term5
+
+    return {
+        'velocity_ms': round(V_c, 2),
+        'settling_velocity_ms': round(w_s, 4),
+        'specific_gravity': round(S, 2),
+        'method': 'wasp',
+        'basis': f'Wasp et al. (1977): V_c = {V_c:.2f} m/s',
+    }
+
+
+def derate_pump_for_slurry(head_water_m, efficiency_water, concentration_vol,
+                            rho_solid=2650, rho_fluid=1000):
+    """
+    Derate pump head and efficiency for slurry service.
+
+    Slurry pumps deliver less head and have lower efficiency than water
+    pumps due to increased viscosity and density effects.
+
+    Head: H_slurry = H_water × C_H (correction factor)
+    Efficiency: η_slurry = η_water × C_η
+
+    Parameters
+    ----------
+    head_water_m : float
+        Pump head on water (m)
+    efficiency_water : float
+        Pump efficiency on water (0-1, e.g. 0.75)
+    concentration_vol : float
+        Volumetric solids concentration (0-1)
+    rho_solid : float
+        Solid density (kg/m³)
+    rho_fluid : float
+        Carrier fluid density (kg/m³)
+
+    Returns dict with derated head, efficiency, and correction factors.
+    Ref: Wilson, Addie & Clift "Slurry Transport Using Centrifugal Pumps"
+         3rd ed., Springer (2006), Chapter 7
+    """
+    S = rho_solid / rho_fluid
+    Cv = concentration_vol
+
+    # Mixture specific gravity
+    S_m = 1 + Cv * (S - 1)
+
+    # Head correction factor (Wilson et al.)
+    # C_H ≈ 1 - 0.8 × Cv for coarse particles
+    # C_H ≈ 1 - 0.3 × Cv for fine particles (<75μm)
+    # Use intermediate for general case
+    C_H = max(0.5, 1.0 - 0.5 * Cv)
+
+    # Efficiency correction
+    # C_η ≈ 1 - 0.6 × Cv (typical for centrifugal slurry pumps)
+    C_eta = max(0.4, 1.0 - 0.6 * Cv)
+
+    H_slurry = head_water_m * C_H
+    eta_slurry = efficiency_water * C_eta
+
+    # Power increase factor
+    # P_slurry = (S_m / S_water) × (H_water / H_slurry) × (η_water / η_slurry) × P_water
+    power_factor = S_m * (1.0 / C_H) * (1.0 / C_eta)
+
+    return {
+        'head_slurry_m': round(H_slurry, 1),
+        'efficiency_slurry': round(eta_slurry, 3),
+        'head_correction_CH': round(C_H, 3),
+        'efficiency_correction_Ceta': round(C_eta, 3),
+        'mixture_sg': round(S_m, 3),
+        'power_increase_factor': round(power_factor, 2),
+        'basis': 'Wilson, Addie & Clift (2006) Ch.7',
+    }
