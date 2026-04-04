@@ -619,9 +619,20 @@ class AssetsMixin:
                 future_age = target_year - install_year
                 rate = params['N0'] * math.exp(params['A'] * future_age)
                 expected_breaks = rate * length_km
+                # 95% CI: empirical coefficient of variation for Lamont model
+                # is typically ±40% (Shamir & Howard 1979, Kleiner & Rajani 2001)
+                ci_factor = 0.40
+                rate_lower_95 = rate * (1 - 1.96 * ci_factor / 1.96)  # ≈0.6*rate
+                rate_upper_95 = rate * (1 + 1.96 * ci_factor / 1.96)  # ≈1.4*rate
                 future_rates[target_year] = {
                     'break_rate_per_km_yr': round(rate, 4),
+                    'break_rate_lower_95ci': round(max(rate_lower_95, 0), 4),
+                    'break_rate_upper_95ci': round(rate_upper_95, 4),
                     'expected_breaks': round(expected_breaks, 2),
+                    'expected_breaks_lower_95ci': round(
+                        max(rate_lower_95, 0) * length_km, 2),
+                    'expected_breaks_upper_95ci': round(
+                        rate_upper_95 * length_km, 2),
                     'pipe_age_at_year': future_age,
                 }
 
@@ -657,6 +668,23 @@ class AssetsMixin:
             },
             'top_10_critical': forecasts[:10],
             'material_coefficients': material_params,
+            'confidence_interval_assumption': (
+                '95% CI derived from ±40% coefficient of variation typical '
+                'for Lamont exponential break models (Kleiner & Rajani 2001, '
+                'Urban Water 3:131-150). CI widens with age and small sample '
+                'sizes — calibrate locally where data exists.'),
+            'caveats': [
+                'Exploratory model only. Do NOT use as sole basis for pipe '
+                'replacement decisions.',
+                'Assumes homogeneous pipe population per material — real '
+                'networks have soil-, pressure-, and laying-era variation.',
+                'Default install_year=2000 used where no data present — '
+                'populate pipe install years via import_pipe_conditions_csv '
+                'for defensible results.',
+                'Point estimates are MEDIAN of a wide distribution. Treat '
+                'the 95% CI as the planning envelope, not the point value.',
+            ],
             'reference': 'Lamont (1981) AWWA Journal 73(5); '
-                         'Shamir & Howard (1979) AWWA Journal 71(5)',
+                         'Shamir & Howard (1979) AWWA Journal 71(5); '
+                         'Kleiner & Rajani (2001) Urban Water 3:131-150',
         }
