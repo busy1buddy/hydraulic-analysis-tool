@@ -40,8 +40,16 @@ class TestBenchmark1Joukowsky:
         )
 
     def test_pressure_rise(self):
-        # dP = rho * g * dH = rho * a * dV = 1000 * 1000 * 1.5 = 1,500,000 Pa = 1500 kPa
+        # dP = rho * a * dV = 1000 * 1000 * 1.5 = 1,500,000 Pa = 1500 kPa
         assert abs(self.result['pressure_rise_kPa'] - 1500) < 10
+
+    def test_slurry_pressure_rise(self):
+        """Slurry (rho=1500) pressure rise should be 50% higher than water."""
+        result_slurry = self.api.joukowsky(wave_speed=1000, velocity_change=1.5, density=1500)
+        # dP = 1500 * 1000 * 1.5 = 2,250,000 Pa = 2250 kPa
+        assert abs(result_slurry['pressure_rise_kPa'] - 2250) < 10
+        # Head rise is the same regardless of density
+        assert abs(result_slurry['head_rise_m'] - self.result['head_rise_m']) < 0.1
 
 
 # =========================================================================

@@ -1,5 +1,15 @@
 # Build Progress
 
+## Continuous Improvement (2026-04-04)
+- Fixed Joukowsky pressure rise: now uses actual fluid density (was hardcoded rho=1000). Slurry pressure rise is proportionally higher. Added density parameter + slurry benchmark test.
+- Added minimum velocity compliance check: 0.6 m/s per WSAA, flags sediment deposition risk as INFO
+- Fixed Herschel-Bulkley + Power Law laminar friction: Fanning (16/Re) → Darcy (64/Re), Dodge-Metzner turbulent × 4
+- Default wave speed: 1000 → 1100 m/s (AS 2280 minimum for DI)
+- Canvas render performance: 8236ms → 68ms (121x speedup via batched pipe rendering)
+- Enriched reviewer prompt with all domain knowledge from validation work
+- Formula audit: 21 items verified against published standards (docs/validation/formula_audit.md)
+- 468 tests passing
+
 ## A5 — Probe Tool (2026-04-04)
 - Created desktop/probe_tooltip.py: ProbeTooltip(QWidget) with dark semi-transparent background (#1e1e2e, 0.9 opacity) and rounded corners
 - Shows all result variables: junction (Type, ID, Elevation, Demand, Pressure min/avg/max, Head, WSAA Status) and pipe (Type, ID, DN, Length, Velocity, Flow, Headloss, Roughness)

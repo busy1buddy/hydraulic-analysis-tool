@@ -38,6 +38,7 @@ class HydraulicAPI:
         'min_pressure_m': 20,          # WSAA minimum pressure (m)
         'max_pressure_m': 50,          # WSAA maximum static pressure (m)
         'max_velocity_ms': 2.0,        # Maximum pipe velocity (m/s)
+        'min_velocity_ms': 0.6,        # Minimum velocity to prevent sediment (WSAA)
         'pipe_rating_kPa': 3500,       # PN35 ductile iron
         'wave_speed_ms': 1100,         # AS 2280 minimum for ductile iron — conservative default
     }
@@ -381,6 +382,16 @@ class HydraulicAPI:
                     'type': 'WARNING',
                     'element': pipe_name,
                     'message': f'Velocity {v_max:.2f} m/s > {self.DEFAULTS["max_velocity_ms"]} m/s limit',
+                })
+            # Minimum velocity check — WSAA: avoid sediment deposition
+            v_avg = abs(float(flows[pipe_name].mean())) / area
+            if v_avg < self.DEFAULTS['min_velocity_ms'] and v_avg > 0.01:
+                results['compliance'].append({
+                    'type': 'INFO',
+                    'element': pipe_name,
+                    'message': (f'Low velocity {v_avg:.2f} m/s < '
+                                f'{self.DEFAULTS["min_velocity_ms"]} m/s '
+                                f'(sediment risk — WSAA)'),
                 })
 
         if not results['compliance']:
@@ -1497,19 +1508,26 @@ class HydraulicAPI:
             return [f for f in os.listdir(self.model_dir) if f.endswith('.inp')]
         return []
 
-    def joukowsky(self, wave_speed, velocity_change):
+    def joukowsky(self, wave_speed, velocity_change, density=1000):
         """
         Calculate Joukowsky pressure rise.
-        dH = (a * dV) / g
+
+        dH = (a * dV) / g          — head rise (metres of fluid)
+        dP = rho * a * dV          — pressure rise (Pa)
+
+        For slurry (rho > 1000), the pressure rise is proportionally
+        higher even though the head rise is the same.
         """
         g = 9.81
         dH = (wave_speed * velocity_change) / g
-        dP_kPa = dH * g
+        # Pressure rise uses actual fluid density — Joukowsky (1898)
+        dP_kPa = density * wave_speed * velocity_change / 1000
         return {
             'head_rise_m': round(dH, 1),
             'pressure_rise_kPa': round(dP_kPa, 0),
             'wave_speed_ms': wave_speed,
             'velocity_change_ms': velocity_change,
+            'density_kgm3': density,
         }
 
 
