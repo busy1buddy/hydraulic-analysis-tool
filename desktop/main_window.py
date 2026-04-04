@@ -35,6 +35,8 @@ from desktop.probe_tooltip import ProbeTooltip
 from desktop.calibration_dialog import CalibrationDialog
 from desktop.statistics_panel import StatisticsPanel
 from desktop.preferences import load_preferences, save_preferences
+from desktop.pressure_zone_dialog import PressureZoneDialog
+from desktop.rehab_dialog import RehabDialog
 
 
 class MainWindow(QMainWindow):
@@ -178,6 +180,16 @@ class MainWindow(QMainWindow):
         quality_act.triggered.connect(self._on_quality_review)
         tools_menu.addAction(quality_act)
 
+        zones_act = QAction("&Pressure Zones...", self)
+        zones_act.triggered.connect(self._on_pressure_zones)
+        tools_menu.addAction(zones_act)
+
+        rehab_act = QAction("&Rehabilitation Prioritisation...", self)
+        rehab_act.triggered.connect(self._on_rehabilitation)
+        tools_menu.addAction(rehab_act)
+
+        tools_menu.addSeparator()
+
         settings_act = QAction("&Settings", self)
         settings_act.triggered.connect(self._on_settings)
         tools_menu.addAction(settings_act)
@@ -211,6 +223,11 @@ class MainWindow(QMainWindow):
         self.scale_nodes_act.setCheckable(True)
         self.scale_nodes_act.toggled.connect(self._on_scale_nodes_toggled)
         view_menu.addAction(self.scale_nodes_act)
+
+        self.basemap_act = QAction("GIS &Basemap (OpenStreetMap)", self)
+        self.basemap_act.setCheckable(True)
+        self.basemap_act.toggled.connect(self._on_basemap_toggled)
+        view_menu.addAction(self.basemap_act)
 
         view_menu.addSeparator()
 
@@ -950,6 +967,10 @@ class MainWindow(QMainWindow):
         """Toggle node size scaling by demand."""
         self.canvas.set_node_scaling(checked)
 
+    def _on_basemap_toggled(self, checked: bool):
+        """Toggle GIS basemap overlay."""
+        self.canvas.toggle_basemap(checked)
+
     def _on_analysis_error(self, msg):
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "Analysis Error", msg)
@@ -1187,6 +1208,22 @@ class MainWindow(QMainWindow):
 
     def _on_quality_review(self):
         self.status_bar.showMessage("Quality review triggered.", 3000)
+
+    def _on_pressure_zones(self):
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        dialog = PressureZoneDialog(self.api, canvas=self.canvas, parent=self)
+        dialog.exec()
+
+    def _on_rehabilitation(self):
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        dialog = RehabDialog(self.api, parent=self)
+        dialog.exec()
 
     def _on_settings(self):
         self.status_bar.showMessage("Settings not yet implemented.", 3000)

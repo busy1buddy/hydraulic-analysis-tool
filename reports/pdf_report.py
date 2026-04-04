@@ -102,6 +102,11 @@ def _generate_fpdf_report(results, network_summary, output_path,
     pdf.cell(0, 8, 'Analysis per WSAA Guidelines', align='C',
              new_x='LMARGIN', new_y='NEXT')
 
+    # ----- EXECUTIVE SUMMARY -----
+    pdf.add_page()
+    _section_heading(pdf, 'Executive Summary')
+    _write_pdf_executive_summary(pdf, results, network_summary)
+
     # ----- SECTION 1: NETWORK DESCRIPTION -----
     pdf.add_page()
     _section_heading(pdf, '1. Network Description')
@@ -261,6 +266,71 @@ def _generate_fpdf_report(results, network_summary, output_path,
 # FPDF helpers
 # =========================================================================
 
+def _write_pdf_executive_summary(pdf, results, network_summary):
+    """Write executive summary section in PDF."""
+    n_junctions = network_summary.get('junctions', 0)
+    n_pipes = network_summary.get('pipes', 0)
+    n_reservoirs = network_summary.get('reservoirs', 0)
+    n_tanks = network_summary.get('tanks', 0)
+
+    pdf.set_font('Helvetica', '', 10)
+    pdf.multi_cell(0, 6,
+        f'This report presents the hydraulic analysis of a water distribution network '
+        f'comprising {n_junctions} junctions, {n_pipes} pipes, '
+        f'{n_reservoirs} reservoir(s), and {n_tanks} tank(s). '
+        f'Analysis was performed in accordance with WSAA WSA 03-2011 guidelines.')
+    pdf.ln(4)
+
+    # Compliance overview
+    all_compliance = _collect_compliance(results)
+    warn_count = sum(1 for c in all_compliance if c.get('type') == 'WARNING')
+    crit_count = sum(1 for c in all_compliance if c.get('type') == 'CRITICAL')
+
+    _sub_heading(pdf, 'Compliance Status')
+    if crit_count == 0 and warn_count == 0:
+        pdf.set_font('Helvetica', 'B', 11)
+        pdf.set_text_color(0, 128, 0)
+        pdf.cell(0, 8, 'PASS', new_x='LMARGIN', new_y='NEXT')
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font('Helvetica', '', 10)
+        pdf.multi_cell(0, 6,
+            'All parameters within WSAA guideline limits: minimum pressure (20 m), '
+            'maximum pressure (50 m), and velocity (<2.0 m/s).')
+    else:
+        if crit_count:
+            pdf.set_font('Helvetica', 'B', 10)
+            pdf.set_text_color(204, 0, 0)
+            pdf.cell(0, 7, f'{crit_count} CRITICAL issue(s)', new_x='LMARGIN', new_y='NEXT')
+        if warn_count:
+            pdf.set_font('Helvetica', 'B', 10)
+            pdf.set_text_color(204, 122, 0)
+            pdf.cell(0, 7, f'{warn_count} WARNING(s)', new_x='LMARGIN', new_y='NEXT')
+        pdf.set_text_color(0, 0, 0)
+    pdf.ln(4)
+
+    # Key metrics table
+    steady = results.get('steady_state')
+    if steady:
+        pressures = steady.get('pressures', {})
+        flows = steady.get('flows', {})
+        if pressures:
+            _sub_heading(pdf, 'Key Hydraulic Metrics')
+            all_min = [d.get('min_m', 0) for d in pressures.values()]
+            all_max = [d.get('max_m', 0) for d in pressures.values()]
+            metrics = [
+                ['Pressure Range', f'{min(all_min):.1f} - {max(all_max):.1f} m'],
+                ['WSAA Min (20 m)', 'PASS' if min(all_min) >= 20 else 'FAIL'],
+                ['WSAA Max (50 m)', 'PASS' if max(all_max) <= 50 else 'FAIL'],
+            ]
+            if flows:
+                all_vel = [d.get('max_velocity_ms', 0) for d in flows.values()]
+                metrics.append(
+                    ['Max Velocity', f'{max(all_vel):.2f} m/s '
+                     f'({"PASS" if max(all_vel) <= 2.0 else "FAIL"})']
+                )
+            _pdf_table(pdf, ['Metric', 'Value'], metrics)
+
+
 def _section_heading(pdf, text):
     pdf.set_font('Helvetica', 'B', 14)
     pdf.set_text_color(46, 64, 87)
@@ -278,7 +348,7 @@ def _sub_heading(pdf, text):
 
 
 def _pdf_table(pdf, headers, rows):
-    """Draw a simple table with header shading."""
+    """Draw a styled table with header shading and alternating row colours."""
     n_cols = len(headers)
     usable = pdf.w - pdf.l_margin - pdf.r_margin
     col_w = usable / n_cols
@@ -292,16 +362,40 @@ def _pdf_table(pdf, headers, rows):
         pdf.cell(col_w, row_h, h, border=1, fill=True, align='C')
     pdf.ln(row_h)
 
-    # Data
+    # Data rows with alternating background
     pdf.set_font('Helvetica', '', 9)
-    pdf.set_text_color(0, 0, 0)
-    for row in rows:
+    for r_idx, row in enumerate(rows):
         # Check for page break
         if pdf.get_y() + row_h > pdf.h - pdf.b_margin:
             pdf.add_page()
-        for val in row:
-            pdf.cell(col_w, row_h, str(val)[:40], border=1, align='C')
+
+        # Alternating row background
+        if r_idx % 2 == 0:
+            pdf.set_fill_color(244, 246, 248)
+            fill = True
+        else:
+            fill = False
+
+        for c_idx, val in enumerate(row):
+            val_str = str(val)[:40]
+            # Colour-code compliance status values
+            if val_str in ('PASS', 'OK'):
+                pdf.set_text_color(0, 128, 0)
+                pdf.set_font('Helvetica', 'B', 9)
+            elif val_str in ('FAIL', 'CRITICAL'):
+                pdf.set_text_color(204, 0, 0)
+                pdf.set_font('Helvetica', 'B', 9)
+            elif val_str == 'WARNING':
+                pdf.set_text_color(204, 122, 0)
+                pdf.set_font('Helvetica', 'B', 9)
+            else:
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font('Helvetica', '', 9)
+
+            pdf.cell(col_w, row_h, val_str, border=1, fill=fill, align='C')
+
         pdf.ln(row_h)
+    pdf.set_text_color(0, 0, 0)
     pdf.ln(4)
 
 

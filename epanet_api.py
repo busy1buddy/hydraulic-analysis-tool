@@ -1508,6 +1508,290 @@ class HydraulicAPI:
             return [f for f in os.listdir(self.model_dir) if f.endswith('.inp')]
         return []
 
+    # =========================================================================
+    # PRESSURE ZONE MANAGEMENT
+    # =========================================================================
+
+    def __init_zones(self):
+        """Lazy-init zone storage."""
+        if not hasattr(self, '_pressure_zones'):
+            self._pressure_zones = {}  # {zone_name: {'nodes': set(), 'color': str}}
+
+    def assign_pressure_zone(self, zone_name, node_ids, color='#89b4fa'):
+        """
+        Assign nodes to a named pressure zone.
+
+        Parameters
+        ----------
+        zone_name : str
+            Zone identifier (e.g., 'Zone A - High Level')
+        node_ids : list of str
+            Junction IDs to assign to this zone
+        color : str
+            Hex colour for canvas overlay
+        """
+        self.__init_zones()
+        self._pressure_zones[zone_name] = {
+            'nodes': set(node_ids),
+            'color': color,
+        }
+
+    def remove_pressure_zone(self, zone_name):
+        """Remove a pressure zone definition."""
+        self.__init_zones()
+        self._pressure_zones.pop(zone_name, None)
+
+    def get_pressure_zones(self):
+        """Return all pressure zone definitions."""
+        self.__init_zones()
+        return {name: {'nodes': list(z['nodes']), 'color': z['color']}
+                for name, z in self._pressure_zones.items()}
+
+    def get_node_zone(self, node_id):
+        """Return the zone name for a node, or None if unassigned."""
+        self.__init_zones()
+        for zone_name, z in self._pressure_zones.items():
+            if node_id in z['nodes']:
+                return zone_name
+        return None
+
+    def analyze_pressure_zones(self, results=None):
+        """
+        Analyse pressure balance across defined zones.
+
+        Returns dict with per-zone statistics: demand, pressure range,
+        node count, and PRV recommendations.
+        """
+        self.__init_zones()
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+        if results is None:
+            results = self.run_steady_state(save_plot=False)
+
+        pressures = results.get('pressures', {})
+        zone_report = {}
+
+        for zone_name, z in self._pressure_zones.items():
+            zone_nodes = z['nodes']
+            zone_pressures = []
+            zone_demand_lps = 0.0
+
+            for nid in zone_nodes:
+                if nid in pressures:
+                    p = pressures[nid]
+                    zone_pressures.append(p.get('avg_m', 0))
+
+                try:
+                    node = self.wn.get_node(nid)
+                    if hasattr(node, 'demand_timeseries_list') and node.demand_timeseries_list:
+                        # Convert m³/s to LPS
+                        zone_demand_lps += node.demand_timeseries_list[0].base_value * 1000
+                except Exception:
+                    pass
+
+            if zone_pressures:
+                min_p = min(zone_pressures)
+                max_p = max(zone_pressures)
+                avg_p = sum(zone_pressures) / len(zone_pressures)
+            else:
+                min_p = max_p = avg_p = 0.0
+
+            # PRV recommendation: if max pressure > 50 m (WSAA WSA 03-2011)
+            prv_recommended = max_p > self.DEFAULTS['max_pressure_m']
+            # WSAA compliance
+            wsaa_pass = min_p >= self.DEFAULTS['min_pressure_m'] and max_p <= self.DEFAULTS['max_pressure_m']
+
+            zone_report[zone_name] = {
+                'node_count': len(zone_nodes),
+                'total_demand_lps': round(zone_demand_lps, 2),
+                'min_pressure_m': round(min_p, 1),
+                'max_pressure_m': round(max_p, 1),
+                'avg_pressure_m': round(avg_p, 1),
+                'pressure_range_m': round(max_p - min_p, 1),
+                'wsaa_compliant': wsaa_pass,
+                'prv_recommended': prv_recommended,
+                'color': z['color'],
+            }
+
+        # Unassigned nodes
+        all_zone_nodes = set()
+        for z in self._pressure_zones.values():
+            all_zone_nodes.update(z['nodes'])
+        unassigned = [n for n in self.wn.junction_name_list if n not in all_zone_nodes]
+        if unassigned:
+            zone_report['_unassigned'] = {
+                'node_count': len(unassigned),
+                'nodes': unassigned,
+            }
+
+        return zone_report
+
+    # =========================================================================
+    # REHABILITATION PRIORITISATION
+    # =========================================================================
+
+    def set_pipe_condition(self, pipe_id, install_year=None, condition_score=None,
+                           break_history=0, material=None):
+        """
+        Set asset condition data for a pipe.
+
+        Parameters
+        ----------
+        pipe_id : str
+            Pipe ID in the network
+        install_year : int or None
+            Year of installation
+        condition_score : float or None
+            Condition grade 1 (new) to 5 (failed) per WSAA
+        break_history : int
+            Number of recorded breaks/failures
+        material : str or None
+            Pipe material (e.g., 'AC', 'CI', 'DI', 'PVC', 'PE')
+        """
+        if not hasattr(self, '_pipe_conditions'):
+            self._pipe_conditions = {}
+        self._pipe_conditions[pipe_id] = {
+            'install_year': install_year,
+            'condition_score': condition_score,
+            'break_history': break_history,
+            'material': material,
+        }
+
+    def get_pipe_conditions(self):
+        """Return all pipe condition data."""
+        if not hasattr(self, '_pipe_conditions'):
+            self._pipe_conditions = {}
+        return dict(self._pipe_conditions)
+
+    def import_pipe_conditions_csv(self, csv_path):
+        """
+        Import pipe condition data from CSV.
+
+        Expected columns: pipe_id, install_year, condition_score,
+        break_history, material
+        """
+        import csv
+        if not hasattr(self, '_pipe_conditions'):
+            self._pipe_conditions = {}
+
+        count = 0
+        with open(csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                pid = row.get('pipe_id', '').strip()
+                if not pid:
+                    continue
+                self._pipe_conditions[pid] = {
+                    'install_year': int(row['install_year']) if row.get('install_year') else None,
+                    'condition_score': float(row['condition_score']) if row.get('condition_score') else None,
+                    'break_history': int(row.get('break_history', 0) or 0),
+                    'material': row.get('material', '').strip() or None,
+                }
+                count += 1
+        return count
+
+    def prioritize_rehabilitation(self, results=None, current_year=None):
+        """
+        Score and rank pipes for rehabilitation based on:
+        - Age (years since installation)
+        - Condition score (1-5 WSAA scale)
+        - Break history (number of failures)
+        - Hydraulic performance (headloss, velocity)
+
+        Returns list of dicts sorted by priority score (highest = most urgent).
+
+        Scoring formula:
+          priority = (age_score × 0.25) + (condition_score × 0.30)
+                   + (break_score × 0.25) + (hydraulic_score × 0.20)
+
+        All component scores normalised to 0-100 range.
+        Ref: WSAA Asset Management Guidelines, IPWEA Practice Note 7
+        """
+        if not hasattr(self, '_pipe_conditions'):
+            self._pipe_conditions = {}
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if current_year is None:
+            from datetime import date
+            current_year = date.today().year
+
+        if results is None:
+            results = self.run_steady_state(save_plot=False)
+
+        flows = results.get('flows', {})
+        pipe_scores = []
+
+        for pid in self.wn.pipe_name_list:
+            cond = self._pipe_conditions.get(pid, {})
+            pipe = self.wn.get_link(pid)
+
+            # Age score (0-100): assume 100-year design life
+            install_year = cond.get('install_year')
+            if install_year:
+                age = current_year - install_year
+                age_score = min(100, (age / 100) * 100)
+            else:
+                age_score = 50  # unknown age = medium risk
+
+            # Condition score (0-100): 1=new(0), 5=failed(100)
+            cs = cond.get('condition_score')
+            if cs is not None:
+                condition_norm = (cs - 1) / 4 * 100
+            else:
+                condition_norm = 50  # unknown = medium risk
+
+            # Break score (0-100): 5+ breaks = max score
+            breaks = cond.get('break_history', 0)
+            break_score = min(100, breaks * 20)
+
+            # Hydraulic score (0-100): based on velocity ratio to max
+            fdata = flows.get(pid, {})
+            v_max = fdata.get('max_velocity_ms', 0)
+            # Penalise both high velocity (>2.0 m/s) and very low (<0.3 m/s)
+            if v_max > self.DEFAULTS['max_velocity_ms']:
+                hydraulic_score = min(100, (v_max / self.DEFAULTS['max_velocity_ms']) * 80)
+            elif v_max < 0.3 and v_max > 0:
+                hydraulic_score = 60  # stagnation risk
+            else:
+                hydraulic_score = max(0, (v_max / self.DEFAULTS['max_velocity_ms']) * 30)
+
+            # Weighted priority score — WSAA Asset Management Guidelines
+            priority = (age_score * 0.25 + condition_norm * 0.30
+                       + break_score * 0.25 + hydraulic_score * 0.20)
+
+            # Risk category
+            if priority >= 75:
+                risk = 'CRITICAL'
+            elif priority >= 50:
+                risk = 'HIGH'
+            elif priority >= 25:
+                risk = 'MEDIUM'
+            else:
+                risk = 'LOW'
+
+            pipe_scores.append({
+                'pipe_id': pid,
+                'diameter_mm': int(pipe.diameter * 1000),
+                'length_m': round(pipe.length, 1),
+                'material': cond.get('material', 'Unknown'),
+                'install_year': install_year,
+                'age_years': current_year - install_year if install_year else None,
+                'condition_score': cs,
+                'break_history': breaks,
+                'velocity_ms': round(v_max, 2),
+                'priority_score': round(priority, 1),
+                'risk_category': risk,
+                'age_component': round(age_score, 1),
+                'condition_component': round(condition_norm, 1),
+                'break_component': round(break_score, 1),
+                'hydraulic_component': round(hydraulic_score, 1),
+            })
+
+        # Sort by priority (highest first)
+        pipe_scores.sort(key=lambda x: x['priority_score'], reverse=True)
+        return pipe_scores
+
     def joukowsky(self, wave_speed, velocity_change, density=1000):
         """
         Calculate Joukowsky pressure rise.

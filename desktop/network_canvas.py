@@ -877,3 +877,180 @@ class NetworkCanvas(QWidget):
         x_range = view_range[0][1] - view_range[0][0]
         y_range = view_range[1][1] - view_range[1][0]
         return max(x_range, y_range) * 0.02
+
+    # ------------------------------------------------------------------
+    # Pressure zone overlay
+    # ------------------------------------------------------------------
+
+    def set_zone_overlay(self, zone_colors):
+        """
+        Apply pressure zone colour overlay to nodes.
+
+        Parameters
+        ----------
+        zone_colors : dict
+            {node_id: '#hex_color'} mapping for each assigned node
+        """
+        if self.api is None or self.api.wn is None:
+            return
+
+        wn = self.api.wn
+        default_color = QColor(108, 112, 134)  # grey for unassigned
+
+        brushes = []
+        for jid in wn.junction_name_list:
+            hex_color = zone_colors.get(jid)
+            if hex_color:
+                brushes.append(pg.mkBrush(QColor(hex_color)))
+            else:
+                brushes.append(pg.mkBrush(default_color))
+
+        for rid in wn.reservoir_name_list:
+            hex_color = zone_colors.get(rid)
+            brushes.append(pg.mkBrush(QColor(hex_color) if hex_color else default_color))
+
+        for tid in wn.tank_name_list:
+            hex_color = zone_colors.get(tid)
+            brushes.append(pg.mkBrush(QColor(hex_color) if hex_color else default_color))
+
+        self._recolor_nodes(brushes)
+
+    # ------------------------------------------------------------------
+    # GIS basemap overlay (C3)
+    # ------------------------------------------------------------------
+
+    def toggle_basemap(self, enabled: bool):
+        """Toggle OpenStreetMap basemap behind the network."""
+        if not enabled:
+            self._remove_basemap()
+            return
+
+        if self.api is None or self.api.wn is None:
+            return
+
+        from desktop.gis_basemap import (
+            detect_coordinate_system, compute_basemap_bounds,
+            fetch_basemap_tiles, mga_to_latlon,
+        )
+
+        # Detect coordinate system
+        coord_sys = detect_coordinate_system(self._node_positions)
+        if coord_sys == 'arbitrary':
+            # Can't place OSM tiles on arbitrary coordinates
+            # Show a text note on canvas instead
+            self._basemap_note = pg.TextItem(
+                "Basemap unavailable — network uses local coordinates.\n"
+                "Use MGA2020 or lat/lon coordinates for GIS overlay.",
+                color='#a6adc8', anchor=(0.5, 0.5)
+            )
+            self._basemap_note.setFont(QFont("Consolas", 10))
+            vr = self.plot_widget.plotItem.vb.viewRange()
+            cx = (vr[0][0] + vr[0][1]) / 2
+            cy = (vr[1][0] + vr[1][1]) / 2
+            self._basemap_note.setPos(cx, cy)
+            self.plot_widget.addItem(self._basemap_note)
+            return
+
+        bounds = compute_basemap_bounds(self._node_positions, coord_sys)
+        if bounds is None:
+            return
+
+        try:
+            tiles = fetch_basemap_tiles(bounds)
+        except Exception:
+            return
+
+        if not tiles:
+            return
+
+        self._basemap_items = []
+        for tile in tiles:
+            try:
+                from PyQt6.QtGui import QImage, QPixmap
+                img = QImage()
+                img.loadFromData(tile['data'])
+                if img.isNull():
+                    continue
+
+                # Convert tile lat/lon bounds to network coordinates
+                if coord_sys == 'mga':
+                    # For MGA, the canvas uses easting/northing directly
+                    # We need to convert tile corners back to MGA
+                    # This is approximate — tiles won't align perfectly
+                    # without proper reprojection
+                    pass
+                else:
+                    # lat/lon: canvas X=lon, Y=lat
+                    x1 = tile['lon_tl']
+                    y1 = tile['lat_br']  # bottom
+                    x2 = tile['lon_br']
+                    y2 = tile['lat_tl']  # top
+
+                import pyqtgraph as pg
+                img_item = pg.ImageItem()
+                # Convert QImage to numpy array
+                img_rgba = img.convertToFormat(QImage.Format.Format_RGBA8888)
+                ptr = img_rgba.bits()
+                ptr.setsize(img_rgba.sizeInBytes())
+                arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
+                    img_rgba.height(), img_rgba.width(), 4
+                ).copy()
+                # Flip vertically (pyqtgraph Y axis is up)
+                arr = arr[::-1]
+
+                img_item.setImage(arr)
+                img_item.setRect(x1, y1, x2 - x1, y2 - y1)
+                img_item.setOpacity(0.4)
+                img_item.setZValue(-100)  # Behind everything
+                self.plot_widget.addItem(img_item)
+                self._basemap_items.append(img_item)
+
+            except Exception:
+                continue
+
+    def _remove_basemap(self):
+        """Remove basemap tiles from canvas."""
+        if hasattr(self, '_basemap_items'):
+            for item in self._basemap_items:
+                try:
+                    self.plot_widget.removeItem(item)
+                except Exception:
+                    pass
+            self._basemap_items = []
+        if hasattr(self, '_basemap_note'):
+            try:
+                self.plot_widget.removeItem(self._basemap_note)
+            except Exception:
+                pass
+            self._basemap_note = None
+
+    def set_variable_overlay(self, name, data):
+        """
+        Set a named variable overlay on nodes for highlighting.
+
+        Parameters
+        ----------
+        name : str
+            Variable name to display
+        data : dict
+            {node_id: float_value} for each node to highlight
+        """
+        self._variable_name = name
+        self._variable_data = data
+        # Highlight: assigned nodes get bright colour, others grey
+        if self.api is None or self.api.wn is None:
+            return
+
+        wn = self.api.wn
+        brushes = []
+        highlight = QColor(250, 227, 175)  # warm yellow
+        default = QColor(108, 112, 134)
+
+        for jid in wn.junction_name_list:
+            brushes.append(pg.mkBrush(highlight if jid in data else default))
+        for rid in wn.reservoir_name_list:
+            brushes.append(pg.mkBrush(highlight if rid in data else default))
+        for tid in wn.tank_name_list:
+            brushes.append(pg.mkBrush(highlight if tid in data else default))
+
+        self._recolor_nodes(brushes)

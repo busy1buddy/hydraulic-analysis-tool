@@ -145,6 +145,13 @@ def generate_docx_report(results, network_summary, output_path,
     doc.add_page_break()
 
     # =====================================================================
+    # EXECUTIVE SUMMARY
+    # =====================================================================
+    doc.add_heading('Executive Summary', level=1)
+    _write_executive_summary(doc, results, network_summary)
+    doc.add_page_break()
+
+    # =====================================================================
     # SECTION 1: NETWORK DESCRIPTION
     # =====================================================================
     doc.add_heading('1. Network Description', level=1)
@@ -405,6 +412,158 @@ def generate_docx_report(results, network_summary, output_path,
     # Save
     doc.save(output_path)
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# Executive summary (C5)
+# ---------------------------------------------------------------------------
+
+def _write_executive_summary(doc, results, network_summary):
+    """
+    Generate a concise executive summary covering key findings,
+    compliance status, and recommended actions.
+    """
+    # Network overview paragraph
+    n_junctions = network_summary.get('junctions', 0)
+    n_pipes = network_summary.get('pipes', 0)
+    n_reservoirs = network_summary.get('reservoirs', 0)
+    n_tanks = network_summary.get('tanks', 0)
+    doc.add_paragraph(
+        f'This report presents the hydraulic analysis of a water distribution network '
+        f'comprising {n_junctions} junctions, {n_pipes} pipes, '
+        f'{n_reservoirs} reservoir(s), and {n_tanks} tank(s). '
+        f'Analysis was performed in accordance with WSAA WSA 03-2011 guidelines '
+        f'for Australian water supply systems.'
+    )
+
+    # Compliance summary
+    all_compliance = _collect_compliance(results)
+    ok_count = sum(1 for c in all_compliance if c.get('type') == 'OK')
+    warn_count = sum(1 for c in all_compliance if c.get('type') == 'WARNING')
+    info_count = sum(1 for c in all_compliance if c.get('type') == 'INFO')
+    crit_count = sum(1 for c in all_compliance if c.get('type') == 'CRITICAL')
+
+    doc.add_heading('Compliance Overview', level=2)
+
+    if crit_count == 0 and warn_count == 0:
+        p = doc.add_paragraph()
+        run = p.add_run('PASS — ')
+        run.bold = True
+        run.font.color.rgb = RGBColor(0x00, 0x80, 0x00)
+        p.add_run(
+            'All parameters are within WSAA guideline limits. '
+            'The network meets minimum service pressure (20 m), '
+            'maximum pressure (50 m), and velocity (<2.0 m/s) requirements.'
+        )
+    else:
+        if crit_count:
+            p = doc.add_paragraph()
+            run = p.add_run(f'{crit_count} CRITICAL issue(s) — ')
+            run.bold = True
+            run.font.color.rgb = RGBColor(0xCC, 0x00, 0x00)
+            p.add_run('Immediate engineering attention required.')
+
+        if warn_count:
+            p = doc.add_paragraph()
+            run = p.add_run(f'{warn_count} WARNING(s) — ')
+            run.bold = True
+            run.font.color.rgb = RGBColor(0xCC, 0x7A, 0x00)
+            p.add_run('Items requiring review and remediation.')
+
+    if info_count:
+        doc.add_paragraph(
+            f'{info_count} informational item(s) noted (e.g., low velocity warnings).'
+        )
+
+    # Key metrics
+    steady = results.get('steady_state')
+    if steady:
+        pressures = steady.get('pressures', {})
+        flows = steady.get('flows', {})
+
+        if pressures:
+            all_min = [d.get('min_m', 0) for d in pressures.values()]
+            all_max = [d.get('max_m', 0) for d in pressures.values()]
+            doc.add_heading('Key Hydraulic Metrics', level=2)
+
+            metrics = [
+                ['Pressure Range', f'{min(all_min):.1f} – {max(all_max):.1f} m'],
+                ['WSAA Min (20 m)', 'PASS' if min(all_min) >= 20 else 'FAIL'],
+                ['WSAA Max (50 m)', 'PASS' if max(all_max) <= 50 else 'FAIL'],
+            ]
+
+            if flows:
+                all_vel = [d.get('max_velocity_ms', 0) for d in flows.values()]
+                metrics.append(
+                    ['Max Velocity', f'{max(all_vel):.2f} m/s '
+                     f'({"PASS" if max(all_vel) <= 2.0 else "FAIL"} — limit 2.0 m/s)']
+                )
+
+            _add_styled_table(doc, ['Metric', 'Value'], metrics)
+
+    # Transient summary
+    transient = results.get('transient')
+    if transient:
+        doc.add_heading('Transient (Water Hammer)', level=2)
+        surge = transient.get('max_surge_m', 0)
+        doc.add_paragraph(
+            f'Maximum transient surge: {surge} m. '
+            f'Refer to Section 4 for detailed surge data and mitigation.'
+        )
+
+    # Recommended actions
+    doc.add_heading('Recommended Actions', level=2)
+    actions = _build_recommended_actions(results)
+    if actions:
+        for action in actions:
+            doc.add_paragraph(action, style='List Bullet')
+    else:
+        doc.add_paragraph(
+            'No immediate actions required. Continue routine monitoring.'
+        )
+
+
+def _build_recommended_actions(results):
+    """Generate a list of recommended engineering actions from results."""
+    actions = []
+    all_compliance = _collect_compliance(results)
+
+    # Pressure issues
+    low_pressure_nodes = [c['element'] for c in all_compliance
+                          if c.get('type') == 'WARNING' and 'Min pressure' in c.get('message', '')]
+    if low_pressure_nodes:
+        actions.append(
+            f'Investigate low pressure at {", ".join(low_pressure_nodes[:5])}'
+            f'{" and others" if len(low_pressure_nodes) > 5 else ""}. '
+            f'Consider booster pump station or supply augmentation.'
+        )
+
+    high_pressure_nodes = [c['element'] for c in all_compliance
+                           if c.get('type') == 'WARNING' and 'Max pressure' in c.get('message', '')]
+    if high_pressure_nodes:
+        actions.append(
+            f'Install pressure reducing valve(s) for nodes: '
+            f'{", ".join(high_pressure_nodes[:5])}. '
+            f'Exceeds WSAA 50 m static pressure limit.'
+        )
+
+    velocity_pipes = [c['element'] for c in all_compliance
+                      if c.get('type') == 'WARNING' and 'Velocity' in c.get('message', '')]
+    if velocity_pipes:
+        actions.append(
+            f'Review pipe sizing for {", ".join(velocity_pipes[:5])} '
+            f'— velocity exceeds WSAA 2.0 m/s limit. '
+            f'Consider upsizing or parallel main.'
+        )
+
+    transient = results.get('transient')
+    if transient and transient.get('max_surge_m', 0) > 50:
+        actions.append(
+            'Implement transient protection (surge vessel, slow-closing valve, '
+            'or air valve) — surge exceeds 50 m.'
+        )
+
+    return actions
 
 
 # ---------------------------------------------------------------------------
