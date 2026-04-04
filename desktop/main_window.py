@@ -29,6 +29,7 @@ from desktop.colourmap_widget import ColourMapWidget, ColourBar
 from desktop.animation_panel import AnimationPanel
 from desktop.pattern_editor import PatternEditorDialog
 from desktop.eps_dialog import EPSConfigDialog
+from desktop.fire_flow_dialog import FireFlowDialog
 
 
 class MainWindow(QMainWindow):
@@ -120,6 +121,11 @@ class MainWindow(QMainWindow):
         eps_act.setShortcut("F7")
         eps_act.triggered.connect(self._on_run_eps)
         analysis_menu.addAction(eps_act)
+
+        fire_act = QAction("&Fire Flow Wizard...", self)
+        fire_act.setShortcut("F8")
+        fire_act.triggered.connect(self._on_fire_flow)
+        analysis_menu.addAction(fire_act)
 
         analysis_menu.addSeparator()
 
@@ -1000,6 +1006,13 @@ class MainWindow(QMainWindow):
     # =====================================================================
     # DEMAND PATTERNS / EPS
     # =====================================================================
+
+    def _on_fire_flow(self):
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network", "Load a network first.")
+            return
+        dialog = FireFlowDialog(self.api, canvas=self.canvas, parent=self)
+        dialog.exec()
 
     def _on_demand_patterns(self):
         if self.api.wn is None:

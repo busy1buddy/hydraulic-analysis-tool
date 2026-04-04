@@ -48,6 +48,15 @@
 - Desktop shortcut, Start Menu entry, uninstaller
 - All 185 tests pass, 12 xfail (known TSNet pump stability)
 
+## Track 2.5 — Fire Flow Wizard UI (2026-04-04)
+- Created desktop/fire_flow_dialog.py: WSAA fire flow analysis wizard
+- Single-node mode: select junction, specify flow (25 LPS) and min residual (12 m), run
+- Sweep mode: test all junctions, build fire flow availability map
+- Results table: junction, residual pressure, required, PASS/FAIL with colour coding
+- Canvas integration: sweep results update canvas colour variable
+- Menu: Analysis > Fire Flow Wizard (F8)
+- Tested on fire_flow_demand tutorial: 9/10 nodes pass at 25 LPS / 12 m
+
 ## Track 1.3 — Error Handling Sweep (2026-04-04)
 - Tested 15 crash paths: malformed .inp, binary garbage, non-existent file, no-network steady/transient/EPS/report/patterns, negative elevation, zero-length pipe, zero-diameter pipe, save with no file, error handler, editor with no network, undo empty stack
 - 15/15 PASS — no crashes on any boundary condition
