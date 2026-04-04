@@ -31,6 +31,7 @@ from desktop.pattern_editor import PatternEditorDialog
 from desktop.eps_dialog import EPSConfigDialog
 from desktop.fire_flow_dialog import FireFlowDialog
 from desktop.water_quality_dialog import WaterQualityDialog
+from desktop.probe_tooltip import ProbeTooltip
 
 
 class MainWindow(QMainWindow):
@@ -43,6 +44,7 @@ class MainWindow(QMainWindow):
         self._current_file = None
         self._hap_file = None
         self._last_results = None
+        self._probe_tooltip = None  # Created lazily
 
         self.setWindowTitle("Hydraulic Analysis Tool")
         self.setMinimumSize(QSize(1200, 800))
@@ -52,6 +54,9 @@ class MainWindow(QMainWindow):
         self._setup_central_widget()
         self._setup_dock_panels()
         self._setup_status_bar()
+
+        # Enable drag-and-drop of .inp files onto the main window
+        self.setAcceptDrops(True)
 
     # =====================================================================
     # MENUS
@@ -72,6 +77,10 @@ class MainWindow(QMainWindow):
         open_act.setShortcut("Ctrl+O")
         open_act.triggered.connect(self._on_open_inp)
         file_menu.addAction(open_act)
+
+        tutorial_act = QAction("Open &Tutorial...", self)
+        tutorial_act.triggered.connect(self._on_open_tutorial)
+        file_menu.addAction(tutorial_act)
 
         file_menu.addSeparator()
 
@@ -220,6 +229,11 @@ class MainWindow(QMainWindow):
         about_act.triggered.connect(self._on_about)
         help_menu.addAction(about_act)
 
+        shortcuts_act = QAction("&Keyboard Shortcuts", self)
+        shortcuts_act.setShortcut("F1")
+        shortcuts_act.triggered.connect(self._on_keyboard_shortcuts)
+        help_menu.addAction(shortcuts_act)
+
     # =====================================================================
     # CENTRAL WIDGET
     # =====================================================================
@@ -238,17 +252,41 @@ class MainWindow(QMainWindow):
         self.canvas.edit_btn = QPushButton("Edit")
         self.canvas.edit_btn.setCheckable(True)
         self.canvas.edit_btn.setFont(QFont("Consolas", 9))
+        self.canvas.edit_btn.setToolTip(
+            "Edit Mode — add/move/delete nodes and pipes on the canvas"
+        )
         self.canvas.edit_btn.toggled.connect(self._on_edit_mode_toggled)
         # Insert into the canvas toolbar layout (after Labels button)
         toolbar_layout = self.canvas.layout().itemAt(0).layout()
+
+        # Add tooltips to the existing canvas toolbar buttons
+        self.canvas.fit_btn.setToolTip("Fit — zoom to show all network elements (Ctrl+F)")
+        self.canvas.labels_btn.setToolTip("Labels — toggle node/pipe ID labels on the canvas")
+
         toolbar_layout.insertWidget(4, self.canvas.edit_btn)
 
         # Values overlay toggle
         self.values_btn = QPushButton("Values")
         self.values_btn.setCheckable(True)
         self.values_btn.setFont(QFont("Consolas", 9))
+        self.values_btn.setToolTip(
+            "Values — show numeric pressure/velocity labels on every element"
+        )
         self.values_btn.toggled.connect(self._on_values_toggled)
         toolbar_layout.insertWidget(5, self.values_btn)
+
+        # Probe tool button
+        self.probe_btn = QPushButton("Probe")
+        self.probe_btn.setCheckable(True)
+        self.probe_btn.setFont(QFont("Consolas", 9))
+        self.probe_btn.setToolTip(
+            "Probe — click any element to inspect all hydraulic result variables"
+        )
+        self.probe_btn.toggled.connect(self._on_probe_mode_toggled)
+        toolbar_layout.insertWidget(6, self.probe_btn)
+
+        # Wire probe signal from canvas
+        self.canvas.probe_requested.connect(self._on_probe_requested)
 
         # ColourBar widget (fixed sidebar next to canvas)
         self._colourmap_widget = ColourMapWidget()
@@ -401,6 +439,12 @@ class MainWindow(QMainWindow):
         self.progress_bar.setMaximumHeight(16)
         self.progress_bar.setVisible(False)
         self.status_bar.addWidget(self.progress_bar)
+
+        self.wsaa_label.setToolTip(
+            "WSAA Compliance — PASS: all nodes 20–50 m pressure, all pipes <2.0 m/s velocity.\n"
+            "FAIL: one or more elements outside WSAA WSA 03-2011 Table 3.1 limits.\n"
+            "Run Analysis > Steady State (F5) to compute WSAA status."
+        )
 
         for lbl in (self.analysis_label, self.nodes_label,
                     self.pipes_label, self.wsaa_label):
@@ -664,7 +708,8 @@ class MainWindow(QMainWindow):
 
     def _on_run_steady(self):
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network", "Load a network first.")
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
         atype = 'slurry' if self.slurry_act.isChecked() else 'steady'
         params = {}
@@ -678,7 +723,8 @@ class MainWindow(QMainWindow):
 
     def _on_run_transient(self):
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network", "Load a network first.")
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
         self._run_analysis('transient')
 
@@ -895,7 +941,8 @@ class MainWindow(QMainWindow):
     def _on_run_all_scenarios(self):
         """Run all scenarios sequentially and update comparison table."""
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network", "Load a network first.")
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
 
         self.status_bar.showMessage("Running all scenarios...")
@@ -1026,7 +1073,8 @@ class MainWindow(QMainWindow):
 
     def _on_fire_flow(self):
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network", "Load a network first.")
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
         dialog = FireFlowDialog(self.api, canvas=self.canvas, parent=self)
         dialog.exec()
@@ -1038,7 +1086,8 @@ class MainWindow(QMainWindow):
     def _open_water_quality_dialog(self, mode):
         """Open WaterQualityDialog in the specified mode."""
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network", "Load a network first.")
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
         dialog = WaterQualityDialog(
             self.api, canvas=self.canvas, mode=mode, parent=self
@@ -1056,14 +1105,16 @@ class MainWindow(QMainWindow):
 
     def _on_demand_patterns(self):
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network", "Load a network first.")
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
         dialog = PatternEditorDialog(self.api, parent=self)
         dialog.exec()
 
     def _on_run_eps(self):
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network", "Load a network first.")
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
 
         dialog = EPSConfigDialog(self)
@@ -1099,9 +1150,12 @@ class MainWindow(QMainWindow):
             self.editor.redo()
 
     def keyPressEvent(self, event):
-        """Handle Escape to cancel pipe creation in edit mode."""
-        if event.key() == Qt.Key.Key_Escape and hasattr(self, 'editor') and self.editor.edit_mode:
-            self.editor.cancel_pipe_start()
+        """Handle Escape to cancel pipe creation in edit mode or hide probe tooltip."""
+        if event.key() == Qt.Key.Key_Escape:
+            if self._probe_tooltip and self._probe_tooltip.isVisible():
+                self._probe_tooltip.hide()
+            if hasattr(self, 'editor') and self.editor.edit_mode:
+                self.editor.cancel_pipe_start()
         else:
             super().keyPressEvent(event)
 
@@ -1147,6 +1201,137 @@ class MainWindow(QMainWindow):
             "AS/NZS 4130, AS 4058\n\n"
             "Powered by WNTR + TSNet"
         )
+
+    # =====================================================================
+    # PROBE TOOL
+    # =====================================================================
+
+    def _on_probe_mode_toggled(self, checked: bool):
+        """Enable/disable probe mode on the canvas."""
+        self.canvas.set_probe_mode(checked)
+        if not checked and self._probe_tooltip:
+            self._probe_tooltip.hide()
+
+    def _on_probe_requested(self, element_id: str, element_type: str, gx: int, gy: int):
+        """Show ProbeTooltip for the clicked element."""
+        # Lazy-create the tooltip
+        if self._probe_tooltip is None:
+            self._probe_tooltip = ProbeTooltip()
+
+        # Hide first so geometry is recalculated after content changes
+        self._probe_tooltip.hide()
+
+        try:
+            if element_type == 'junction':
+                node = self.api.get_node(element_id)
+                pdata = (self._last_results or {}).get('pressures', {}).get(element_id)
+                self._probe_tooltip.show_junction(element_id, node, pdata)
+            elif element_type == 'reservoir':
+                node = self.api.get_node(element_id)
+                self._probe_tooltip.show_reservoir(element_id, node)
+            elif element_type == 'tank':
+                node = self.api.get_node(element_id)
+                self._probe_tooltip.show_tank(element_id, node)
+            elif element_type == 'pipe':
+                pipe = self.api.get_link(element_id)
+                fdata = (self._last_results or {}).get('flows', {}).get(element_id)
+                self._probe_tooltip.show_pipe(element_id, pipe, fdata)
+            else:
+                return
+        except Exception:
+            return
+
+        self._probe_tooltip.move_near(gx, gy)
+
+    # =====================================================================
+    # TUTORIAL / SHORTCUTS
+    # =====================================================================
+
+    def _on_open_tutorial(self):
+        """Open a file dialog starting in the tutorials/ directory."""
+        tutorials_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "tutorials"
+        )
+        if not os.path.isdir(tutorials_dir):
+            tutorials_dir = ""
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Tutorial Network", tutorials_dir,
+            "EPANET Files (*.inp);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            self.api.load_network_from_path(path)
+            self._current_file = path
+            self._populate_explorer()
+            self._update_status_bar()
+            self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
+            self.canvas.set_api(self.api)
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error",
+                                 f"Could not load tutorial file.\n\n{type(e).__name__}: {e}")
+
+    def _on_keyboard_shortcuts(self):
+        """Show all keyboard shortcuts in a QMessageBox."""
+        shortcuts = (
+            "Keyboard Shortcuts\n"
+            "==================\n\n"
+            "File\n"
+            "  Ctrl+N          New project\n"
+            "  Ctrl+O          Open .inp file\n"
+            "  Ctrl+S          Save\n"
+            "  Ctrl+Shift+S    Save As (.hap)\n"
+            "  Ctrl+Q          Exit\n\n"
+            "Edit\n"
+            "  Ctrl+Z          Undo\n"
+            "  Ctrl+Y          Redo\n"
+            "  Escape          Cancel pipe creation / hide probe tooltip\n\n"
+            "Analysis\n"
+            "  F5              Run Steady State\n"
+            "  F6              Run Transient\n"
+            "  F7              Run Extended Period (EPS)\n"
+            "  F8              Fire Flow Wizard\n\n"
+            "Help\n"
+            "  F1              Keyboard Shortcuts (this dialog)\n"
+        )
+        QMessageBox.information(self, "Keyboard Shortcuts", shortcuts)
+
+    # =====================================================================
+    # DRAG AND DROP
+    # =====================================================================
+
+    def dragEnterEvent(self, event):
+        """Accept drag if it contains .inp file URLs."""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if any(u.toLocalFile().lower().endswith('.inp') for u in urls):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dropEvent(self, event):
+        """Load the first .inp file dropped onto the window."""
+        urls = event.mimeData().urls()
+        for url in urls:
+            path = url.toLocalFile()
+            if path.lower().endswith('.inp'):
+                try:
+                    self.api.load_network_from_path(path)
+                    self._current_file = path
+                    self._populate_explorer()
+                    self._update_status_bar()
+                    self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
+                    self.canvas.set_api(self.api)
+                    event.acceptProposedAction()
+                    self.status_bar.showMessage(f"Loaded {os.path.basename(path)}", 3000)
+                except Exception as e:
+                    QMessageBox.critical(self, "Load Error",
+                                         f"Could not load dropped file.\n\n{type(e).__name__}: {e}")
+                return
+        event.ignore()
 
     # =====================================================================
     # WINDOW STATE PRESERVATION

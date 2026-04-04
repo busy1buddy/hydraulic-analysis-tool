@@ -1,5 +1,29 @@
 # Build Progress
 
+## A5 — Probe Tool (2026-04-04)
+- Created desktop/probe_tooltip.py: ProbeTooltip(QWidget) with dark semi-transparent background (#1e1e2e, 0.9 opacity) and rounded corners
+- Shows all result variables: junction (Type, ID, Elevation, Demand, Pressure min/avg/max, Head, WSAA Status) and pipe (Type, ID, DN, Length, Velocity, Flow, Headloss, Roughness)
+- Fixed-width Consolas font, white/coloured text; value colours reflect WSAA compliance (green/amber/red)
+- Disappears on Escape or next probe click; positions near click point avoiding screen edges
+- Added "Probe" checkable button to canvas toolbar with tooltip
+- Wired probe_requested signal in NetworkCanvas; canvas.set_probe_mode() routes clicks to ProbeTooltip instead of Properties panel
+- ProbeTooltip lazy-created in MainWindow._probe_tooltip
+
+## A6 — UX Polish (2026-04-04)
+- Added tooltips to all canvas toolbar buttons: Fit, Labels, Edit, Values, Probe
+- Added File > Open Tutorial... (opens QFileDialog starting in tutorials/ directory)
+- Added Help > Keyboard Shortcuts (F1) showing all shortcuts in a QMessageBox
+- All "Load a network first" error messages updated to actionable form: "No network loaded. Use File > Open (Ctrl+O) to load an .inp file."
+- Added setToolTip to WSAA status label explaining PASS/FAIL and how to compute it
+- Added drag-and-drop .inp file support: dragEnterEvent/dropEvent on MainWindow
+
+## A7 — Escape / Probe Dismiss (2026-04-04)
+- keyPressEvent updated: Escape hides probe tooltip (if visible) before cancelling pipe creation
+- Probe mode toggle button deactivation also hides tooltip
+
+## A8 — Docs Update (2026-04-04)
+- Updated docs/progress.md with A5–A8 entries
+
 ## Phase -1 — Expanded CLAUDE.md (2026-04-04)
 - Rewrote CLAUDE.md with all 8 sections: Project Identity, Architecture Layers, Unit Conventions, Hydraulic Domain Rules, GodMode Orchestration, Code Conventions, Known Deferred Items, File/Path Conventions
 - Established PyQt6 as target UI framework (replacing NiceGUI)

@@ -140,6 +140,7 @@ class NetworkCanvas(QWidget):
     """Interactive 2D network canvas using PyQtGraph."""
 
     element_selected = pyqtSignal(str, str)  # (element_id, element_type)
+    probe_requested = pyqtSignal(str, str, int, int)  # (element_id, element_type, global_x, global_y)
 
     COLOR_MODES = ["WSAA Compliance", "Pressure", "Velocity", "Headloss", "Status",
                     "Pressure Min (EPS)", "Pressure Max (EPS)"]
@@ -153,6 +154,9 @@ class NetworkCanvas(QWidget):
         self._pipe_ids = []
         self._selected_id = None
         self._editor = None  # Set by CanvasEditor for edit mode routing
+
+        # Probe mode
+        self._probe_mode = False  # When True, clicks show ProbeTooltip
 
         # FEA-style enhancements
         self._colourmap_widget = None   # ColourMapWidget (optional, injected by MainWindow)
@@ -549,6 +553,10 @@ class NetworkCanvas(QWidget):
             pos = vb.mapSceneToView(scene_pos)
             self._editor.handle_mouse_move(pos.x(), pos.y())
 
+    def set_probe_mode(self, enabled: bool):
+        """Enable or disable probe mode (clicks emit probe_requested instead of element_selected)."""
+        self._probe_mode = enabled
+
     def _on_node_clicked(self, scatter, points, *args):
         """Handle click on a node scatter point."""
         if not points:
@@ -569,7 +577,13 @@ class NetworkCanvas(QWidget):
             etype = 'tank'
         else:
             etype = 'node'
-        self.element_selected.emit(nid, etype)
+
+        if self._probe_mode:
+            # Convert node position to global screen coordinates
+            cursor_pos = self.plot_widget.cursor().pos()
+            self.probe_requested.emit(nid, etype, cursor_pos.x(), cursor_pos.y())
+        else:
+            self.element_selected.emit(nid, etype)
 
     # ------------------------------------------------------------------
     # FEA-style enhancements — public API
@@ -766,7 +780,11 @@ class NetworkCanvas(QWidget):
 
         if best_pid is not None and best_dist < hit_threshold:
             self._selected_id = best_pid
-            self.element_selected.emit(best_pid, 'pipe')
+            if self._probe_mode:
+                cursor_pos = self.plot_widget.cursor().pos()
+                self.probe_requested.emit(best_pid, 'pipe', cursor_pos.x(), cursor_pos.y())
+            else:
+                self.element_selected.emit(best_pid, 'pipe')
 
     def _click_threshold(self):
         """Compute a reasonable click threshold in data coordinates."""
