@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLabel,
     QToolBar, QPushButton,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QEvent, QPointF
 from PyQt6.QtGui import QFont, QColor, QAction
 
 
@@ -202,6 +202,10 @@ class NetworkCanvas(QWidget):
         self.plot_widget.hideAxis('bottom')
         # Enable mouse click events on the plot for pipe hit-testing
         self.plot_widget.scene().sigMouseClicked.connect(self._on_scene_clicked)
+        # Mouse move tracking for drag-to-move in edit mode
+        self.plot_widget.scene().sigMouseMoved.connect(self._on_scene_mouse_moved)
+        # Install event filter for press/release (sigMouseClicked only fires on release)
+        self.plot_widget.viewport().installEventFilter(self)
         layout.addWidget(self.plot_widget)
 
         # Legend
@@ -509,6 +513,34 @@ class NetworkCanvas(QWidget):
         for item in self._label_items:
             self.plot_widget.removeItem(item)
         self._label_items.clear()
+
+    # ------------------------------------------------------------------
+    # Drag-to-move support (event filter on viewport)
+    # ------------------------------------------------------------------
+
+    def eventFilter(self, obj, event):
+        """Intercept mouse press/release on viewport for edit-mode drag."""
+        if self._editor and self._editor.edit_mode:
+            if event.type() == QEvent.Type.MouseButtonPress:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    pos = self.plot_widget.plotItem.vb.mapSceneToView(
+                        self.plot_widget.mapToScene(event.pos()))
+                    if self._editor.handle_mouse_press(pos.x(), pos.y()):
+                        return True  # consume event — we're starting a drag
+            elif event.type() == QEvent.Type.MouseButtonRelease:
+                if event.button() == Qt.MouseButton.LeftButton and self._editor.is_dragging:
+                    pos = self.plot_widget.plotItem.vb.mapSceneToView(
+                        self.plot_widget.mapToScene(event.pos()))
+                    self._editor.handle_mouse_release(pos.x(), pos.y())
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _on_scene_mouse_moved(self, scene_pos):
+        """Handle mouse move for drag preview in edit mode."""
+        if self._editor and self._editor.is_dragging:
+            vb = self.plot_widget.plotItem.vb
+            pos = vb.mapSceneToView(scene_pos)
+            self._editor.handle_mouse_move(pos.x(), pos.y())
 
     def _on_node_clicked(self, scatter, points, *args):
         """Handle click on a node scatter point."""

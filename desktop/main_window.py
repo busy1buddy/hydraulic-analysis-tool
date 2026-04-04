@@ -27,6 +27,8 @@ from desktop.pipe_stress_panel import PipeStressPanel
 from desktop.canvas_editor import CanvasEditor
 from desktop.colourmap_widget import ColourMapWidget, ColourBar
 from desktop.animation_panel import AnimationPanel
+from desktop.pattern_editor import PatternEditorDialog
+from desktop.eps_dialog import EPSConfigDialog
 
 
 class MainWindow(QMainWindow):
@@ -114,7 +116,16 @@ class MainWindow(QMainWindow):
         transient_act.triggered.connect(self._on_run_transient)
         analysis_menu.addAction(transient_act)
 
+        eps_act = QAction("Run &Extended Period (EPS)", self)
+        eps_act.setShortcut("F7")
+        eps_act.triggered.connect(self._on_run_eps)
+        analysis_menu.addAction(eps_act)
+
         analysis_menu.addSeparator()
+
+        pattern_act = QAction("&Demand Patterns...", self)
+        pattern_act.triggered.connect(self._on_demand_patterns)
+        analysis_menu.addAction(pattern_act)
 
         self.slurry_act = QAction("Slurry &Mode", self)
         self.slurry_act.setCheckable(True)
@@ -699,6 +710,14 @@ class MainWindow(QMainWindow):
         if 'junctions' in results and isinstance(results['junctions'], dict):
             self._populate_animation_panel(results)
 
+        # EPS results: populate animation from raw WNTR data if multi-timestep
+        raw = self.api.get_steady_results()
+        if raw is not None and 'pressures' in results:
+            import numpy as np
+            n_timesteps = len(raw.node['pressure'].index)
+            if n_timesteps > 1:
+                self._populate_eps_animation(raw)
+
         # Log to audit trail
         try:
             self.audit.log_run(
@@ -745,6 +764,40 @@ class MainWindow(QMainWindow):
 
         self.animation_panel.set_transient_data(timestamps, node_data, pipe_data)
         # Raise the animation dock so the user can see it
+        self.animation_dock.raise_()
+
+    def _populate_eps_animation(self, raw_results):
+        """Load EPS multi-timestep data into AnimationPanel."""
+        import numpy as np
+
+        pressures = raw_results.node['pressure']
+        flows = raw_results.link['flowrate']
+        velocities = raw_results.link.get('velocity')
+
+        timestamps = np.array(pressures.index, dtype=float)
+        n_steps = len(timestamps)
+        if n_steps < 2:
+            return
+
+        # node_data: head = pressure + elevation
+        node_data = {}
+        for nid in pressures.columns:
+            try:
+                elev = self.api.get_node(nid).elevation
+            except Exception:
+                elev = 0
+            head_arr = np.array(pressures[nid].values, dtype=float) + elev
+            node_data[nid] = {'head': head_arr}
+
+        # pipe_data: velocity and flow
+        pipe_data = {}
+        for lid in flows.columns:
+            pd = {'start_node_flowrate': np.array(flows[lid].values, dtype=float)}
+            if velocities is not None and lid in velocities.columns:
+                pd['start_node_velocity'] = np.array(velocities[lid].values, dtype=float)
+            pipe_data[lid] = pd
+
+        self.animation_panel.set_transient_data(timestamps, node_data, pipe_data)
         self.animation_dock.raise_()
 
     def _on_animation_frame(self, frame: int):
@@ -939,6 +992,39 @@ class MainWindow(QMainWindow):
 
     def _on_slurry_toggle(self, checked):
         self._update_status_bar()
+
+    # =====================================================================
+    # DEMAND PATTERNS / EPS
+    # =====================================================================
+
+    def _on_demand_patterns(self):
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network", "Load a network first.")
+            return
+        dialog = PatternEditorDialog(self.api, parent=self)
+        dialog.exec()
+
+    def _on_run_eps(self):
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network", "Load a network first.")
+            return
+
+        dialog = EPSConfigDialog(self)
+        if not dialog.exec():
+            return
+
+        duration_hrs = dialog.get_duration_hours()
+        timestep_s = dialog.get_timestep_seconds()
+
+        # Configure WNTR model
+        self.api.wn.options.time.duration = duration_hrs * 3600
+        self.api.wn.options.time.hydraulic_timestep = timestep_s
+        self.api.wn.options.time.pattern_timestep = timestep_s
+
+        self.status_bar.showMessage(f"Running EPS ({duration_hrs}h, {timestep_s}s step)...")
+
+        # Run steady state (which is actually EPS when duration > 0)
+        self._run_analysis('steady')
 
     # =====================================================================
     # EDIT MODE / UNDO / REDO

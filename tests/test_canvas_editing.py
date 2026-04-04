@@ -117,6 +117,97 @@ class TestMoveNode:
         assert window.canvas._node_positions['J2'] == (35.0, 50.0)
 
 
+class TestDragToMove:
+    """Test mouse drag to move nodes in edit mode."""
+
+    def test_drag_updates_node_coordinates(self, window, app):
+        """Simulate press → move → release and verify coordinates."""
+        window.canvas.edit_btn.setChecked(True)
+        app.processEvents()
+
+        # Get J3's original position
+        orig = window.api.get_node('J3').coordinates
+        ox, oy = orig
+
+        # Simulate drag: press on J3, move, release
+        window.editor.handle_mouse_press(ox, oy)
+        assert window.editor.is_dragging
+
+        window.editor.handle_mouse_move(ox + 5, oy + 3)
+        window.editor.handle_mouse_move(ox + 10, oy + 6)
+        window.editor.handle_mouse_move(ox + 15, oy + 10)
+        window.editor.handle_mouse_release(ox + 15, oy + 10)
+        app.processEvents()
+
+        # Verify coordinates updated
+        new_coords = window.api.get_node('J3').coordinates
+        assert abs(new_coords[0] - (ox + 15)) < 0.1
+        assert abs(new_coords[1] - (oy + 10)) < 0.1
+
+    def test_undo_drag_restores_position(self, window, app):
+        """After undo, node returns to original position."""
+        window.canvas.edit_btn.setChecked(True)
+        app.processEvents()
+
+        orig = window.api.get_node('J5').coordinates
+        ox, oy = orig
+
+        window.editor.handle_mouse_press(ox, oy)
+        window.editor.handle_mouse_move(ox + 20, oy + 20)
+        window.editor.handle_mouse_release(ox + 20, oy + 20)
+        app.processEvents()
+
+        # Undo
+        window.editor.undo()
+        app.processEvents()
+
+        restored = window.api.get_node('J5').coordinates
+        assert abs(restored[0] - ox) < 0.1
+        assert abs(restored[1] - oy) < 0.1
+
+    def test_connected_pipes_follow_drag(self, window, app):
+        """Pipes connected to dragged node update on canvas."""
+        window.canvas.edit_btn.setChecked(True)
+        app.processEvents()
+
+        orig = window.api.get_node('J1').coordinates
+        ox, oy = orig
+
+        window.editor.handle_mouse_press(ox, oy)
+        window.editor.handle_mouse_move(ox + 10, oy + 10)
+        app.processEvents()
+
+        # Canvas position should reflect the mid-drag state
+        assert window.canvas._node_positions['J1'] == (ox + 10, oy + 10)
+
+        window.editor.handle_mouse_release(ox + 10, oy + 10)
+        app.processEvents()
+
+    def test_drag_not_started_on_empty_space(self, window, app):
+        """Pressing on empty canvas should not start a drag."""
+        window.canvas.edit_btn.setChecked(True)
+        app.processEvents()
+
+        # Click far from any node
+        result = window.editor.handle_mouse_press(999, 999)
+        assert not result
+        assert not window.editor.is_dragging
+
+    def test_cursor_changes_during_drag(self, window, app):
+        """Cursor should be ClosedHandCursor during drag."""
+        window.canvas.edit_btn.setChecked(True)
+        app.processEvents()
+
+        orig = window.api.get_node('J2').coordinates
+        window.editor.handle_mouse_press(orig[0], orig[1])
+
+        cursor = window.canvas.plot_widget.cursor()
+        assert cursor.shape() == Qt.CursorShape.ClosedHandCursor
+
+        window.editor.handle_mouse_release(orig[0], orig[1])
+        app.processEvents()
+
+
 class TestDeletePipe:
 
     def test_delete_pipe_removes_from_api(self, window, app):

@@ -210,6 +210,11 @@ class CanvasEditor:
         self._pipe_start_node = None  # for two-click pipe creation
         self.undo_stack = UndoStack()
 
+        # Drag state
+        self._dragging_node = None     # node ID being dragged
+        self._drag_start_pos = None    # (x, y) before drag began
+        self._drag_just_ended = False  # suppress click after drag release
+
     @property
     def edit_mode(self):
         return self._edit_mode
@@ -229,6 +234,11 @@ class CanvasEditor:
         """Called when canvas is clicked in edit mode."""
         if not self._edit_mode or self.api.wn is None:
             return False
+
+        # Suppress the click that follows a drag release
+        if self._drag_just_ended:
+            self._drag_just_ended = False
+            return True
 
         # Check if click is on an existing node
         hit_node = self._find_nearest_node(mx, my)
@@ -533,6 +543,74 @@ class CanvasEditor:
         if not title.endswith('*'):
             self.mw.setWindowTitle(title + ' *')
         self.mw.status_bar.showMessage("Run analysis to update compliance", 3000)
+
+    # ----- Drag-to-move -----
+
+    def handle_mouse_press(self, mx, my):
+        """Begin drag if press is on a node in edit mode."""
+        if not self._edit_mode or self.api.wn is None:
+            return False
+
+        hit_node = self._find_nearest_node(mx, my)
+        if hit_node:
+            node = self.api.get_node(hit_node)
+            self._dragging_node = hit_node
+            self._drag_start_pos = node.coordinates
+            self.canvas.plot_widget.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
+            return True
+        return False
+
+    def handle_mouse_move(self, mx, my):
+        """Move the dragged node to follow the cursor (live preview)."""
+        if self._dragging_node is None:
+            return False
+
+        try:
+            node = self.api.get_node(self._dragging_node)
+            node.coordinates = (mx, my)
+            # Update canvas position dict and re-render for live preview
+            self.canvas._node_positions[self._dragging_node] = (mx, my)
+            self.canvas.render()
+        except Exception:
+            pass
+        return True
+
+    def handle_mouse_release(self, mx, my):
+        """Finalise drag — push to undo stack."""
+        if self._dragging_node is None:
+            return False
+
+        nid = self._dragging_node
+        old_pos = self._drag_start_pos
+        new_pos = (mx, my)
+        self._dragging_node = None
+        self._drag_start_pos = None
+        self._drag_just_ended = True  # suppress the click that follows
+
+        # Restore crosshair cursor
+        self.canvas.plot_widget.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+
+        # Only push undo if position actually changed
+        if old_pos and (abs(old_pos[0] - new_pos[0]) > 0.01 or
+                        abs(old_pos[1] - new_pos[1]) > 0.01):
+            try:
+                node = self.api.get_node(nid)
+                node.coordinates = new_pos
+            except Exception:
+                pass
+
+            self.undo_stack.push(EditAction(
+                'move_node', f'Move {nid}',
+                {'id': nid, 'old': old_pos, 'new': new_pos}
+            ))
+            self._mark_modified()
+            self.canvas.render()
+
+        return True
+
+    @property
+    def is_dragging(self):
+        return self._dragging_node is not None
 
     def cancel_pipe_start(self):
         """Cancel pipe creation (Escape key)."""
