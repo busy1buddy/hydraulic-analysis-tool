@@ -1,5 +1,17 @@
 # Build Progress
 
+## v1.3.0 Autonomous Development (2026-04-04)
+- Review cycle: 5 agents, 43 findings, 7 BLOCKERs fixed (wave speed, UI units, error messages)
+- I2: Split-screen scenario comparison — dual canvas, linked viewports, difference mode (A-B)
+- I3: GIF/MP4 animation export — Pillow GIF, imageio MP4, progress dialog, cancellation
+- I4: Auto-calibration — scipy.optimize roughness optimisation by material group, R² improvement verified
+- I5: Surge protection wizard — vessel sizing (Wylie & Streeter), air valves (AS/NZS 2566), slow-closing valve (Thorley)
+- I6: Percentile clip on colourbar — exclude top/bottom N% from colour range
+- I7: Fire flow sweep QThread — replaced processEvents() with proper background worker
+- I9: Project bundle — .hydraulic ZIP export/import with .inp, .hap, scenarios, audit
+- PyInstaller rebuilt for v1.3.0-release (94 MB exe, all new modules included)
+- 576 tests passing (+36 from I-series), 12 xfailed
+
 ## v1.3.0 Release (2026-04-04)
 - C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
 - C3: GIS background map — OpenStreetMap tile layer, MGA2020 + lat/lon coordinate detection, tile caching, basemap toggle in View menu

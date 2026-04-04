@@ -2103,6 +2103,214 @@ class HydraulicAPI:
         return groups
 
     # =========================================================================
+    # NETWORK COMPARISON
+    # =========================================================================
+
+    def compare_networks(self, other_inp_path):
+        """
+        Compare current network with another .inp file.
+
+        Returns dict with topology differences, pipe size changes,
+        and (if both have results) pressure/velocity differences.
+
+        Useful for before/after rehabilitation comparison.
+
+        Parameters
+        ----------
+        other_inp_path : str
+            Path to the second .inp file for comparison.
+
+        Returns dict with 'topology', 'properties', 'summary'.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded (current)'}
+
+        import wntr
+        try:
+            wn2 = wntr.network.WaterNetworkModel(other_inp_path)
+        except Exception as e:
+            return {'error': f'Could not load comparison network: {e}'}
+
+        wn1 = self.wn
+        result = {
+            'topology': {'added_nodes': [], 'removed_nodes': [],
+                         'added_pipes': [], 'removed_pipes': []},
+            'properties': [],
+            'summary': {},
+        }
+
+        # Topology comparison
+        nodes1 = set(wn1.junction_name_list) | set(wn1.reservoir_name_list) | set(wn1.tank_name_list)
+        nodes2 = set(wn2.junction_name_list) | set(wn2.reservoir_name_list) | set(wn2.tank_name_list)
+        pipes1 = set(wn1.pipe_name_list)
+        pipes2 = set(wn2.pipe_name_list)
+
+        result['topology']['added_nodes'] = sorted(nodes2 - nodes1)
+        result['topology']['removed_nodes'] = sorted(nodes1 - nodes2)
+        result['topology']['added_pipes'] = sorted(pipes2 - pipes1)
+        result['topology']['removed_pipes'] = sorted(pipes1 - pipes2)
+
+        # Property comparison for common pipes
+        common_pipes = pipes1 & pipes2
+        for pid in sorted(common_pipes):
+            p1 = wn1.get_link(pid)
+            p2 = wn2.get_link(pid)
+            changes = []
+            if abs(p1.diameter - p2.diameter) > 0.0001:
+                changes.append(f'diameter: {int(p1.diameter*1000)} mm → {int(p2.diameter*1000)} mm')
+            if abs(p1.length - p2.length) > 0.1:
+                changes.append(f'length: {p1.length:.1f} m → {p2.length:.1f} m')
+            if abs(p1.roughness - p2.roughness) > 0.1:
+                changes.append(f'roughness: {p1.roughness:.0f} → {p2.roughness:.0f}')
+            if changes:
+                result['properties'].append({
+                    'pipe': pid,
+                    'changes': changes,
+                })
+
+        # Elevation comparison for common junctions
+        common_juncs = set(wn1.junction_name_list) & set(wn2.junction_name_list)
+        for jid in sorted(common_juncs):
+            n1 = wn1.get_node(jid)
+            n2 = wn2.get_node(jid)
+            if abs(n1.elevation - n2.elevation) > 0.1:
+                result['properties'].append({
+                    'node': jid,
+                    'changes': [f'elevation: {n1.elevation:.1f} m → {n2.elevation:.1f} m'],
+                })
+
+        # Summary
+        result['summary'] = {
+            'nodes_added': len(result['topology']['added_nodes']),
+            'nodes_removed': len(result['topology']['removed_nodes']),
+            'pipes_added': len(result['topology']['added_pipes']),
+            'pipes_removed': len(result['topology']['removed_pipes']),
+            'properties_changed': len(result['properties']),
+            'identical': (len(result['topology']['added_nodes']) == 0 and
+                         len(result['topology']['removed_nodes']) == 0 and
+                         len(result['topology']['added_pipes']) == 0 and
+                         len(result['topology']['removed_pipes']) == 0 and
+                         len(result['properties']) == 0),
+        }
+
+        return result
+
+    # =========================================================================
+    # DEMAND FORECASTING
+    # =========================================================================
+
+    def forecast_demand(self, growth_model='linear', growth_rate=0.02,
+                        base_year=2026, forecast_years=None):
+        """
+        Project demands forward to future years and check when WSAA
+        standards will be exceeded.
+
+        Parameters
+        ----------
+        growth_model : str
+            'linear', 'exponential', or 'logistic'
+        growth_rate : float
+            Annual growth rate (e.g., 0.02 = 2% per year)
+        base_year : int
+            Year of current demand data
+        forecast_years : list of int or None
+            Years to forecast (default: [2030, 2040, 2050])
+
+        Returns dict with per-year results and first failure year.
+        Ref: WSAA Demand Forecasting Guidelines
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if forecast_years is None:
+            forecast_years = [2030, 2040, 2050]
+
+        # Save original demands
+        original_demands = {}
+        for jid in self.wn.junction_name_list:
+            junc = self.wn.get_node(jid)
+            if junc.demand_timeseries_list:
+                original_demands[jid] = junc.demand_timeseries_list[0].base_value
+
+        results = {
+            'base_year': base_year,
+            'growth_model': growth_model,
+            'growth_rate': growth_rate,
+            'forecasts': {},
+            'first_failure_year': None,
+        }
+
+        for year in sorted(forecast_years):
+            dt = year - base_year
+            if dt < 0:
+                continue
+
+            # Compute growth multiplier
+            if growth_model == 'linear':
+                multiplier = 1 + growth_rate * dt
+            elif growth_model == 'exponential':
+                multiplier = (1 + growth_rate) ** dt
+            elif growth_model == 'logistic':
+                # Logistic: asymptote at 2× current (carrying capacity)
+                import math
+                K = 2.0  # carrying capacity multiplier
+                multiplier = K / (1 + (K - 1) * math.exp(-growth_rate * dt))
+            else:
+                multiplier = 1 + growth_rate * dt
+
+            # Apply multiplied demands
+            for jid, base_demand in original_demands.items():
+                junc = self.wn.get_node(jid)
+                junc.demand_timeseries_list[0].base_value = base_demand * multiplier
+
+            # Run analysis
+            try:
+                year_results = self.run_steady_state(save_plot=False)
+            except Exception as e:
+                year_results = {'error': str(e), 'pressures': {}, 'flows': {},
+                               'compliance': []}
+
+            # Check for WSAA failures
+            pressures = year_results.get('pressures', {})
+            failures = []
+            for jid, p in pressures.items():
+                min_p = p.get('min_m', 0)
+                if min_p < self.DEFAULTS['min_pressure_m']:
+                    failures.append({
+                        'node': jid,
+                        'pressure_m': min_p,
+                        'issue': f'Pressure {min_p:.1f} m < {self.DEFAULTS["min_pressure_m"]} m (WSAA)',
+                    })
+
+            flows = year_results.get('flows', {})
+            for pid, f in flows.items():
+                v = f.get('max_velocity_ms', 0)
+                if v > self.DEFAULTS['max_velocity_ms']:
+                    failures.append({
+                        'pipe': pid,
+                        'velocity_ms': v,
+                        'issue': f'Velocity {v:.2f} m/s > {self.DEFAULTS["max_velocity_ms"]} m/s (WSAA)',
+                    })
+
+            results['forecasts'][year] = {
+                'multiplier': round(multiplier, 3),
+                'total_demand_lps': round(
+                    sum(d * multiplier * 1000 for d in original_demands.values()), 1),
+                'n_failures': len(failures),
+                'failures': failures[:10],  # limit to 10 for readability
+            }
+
+            if failures and results['first_failure_year'] is None:
+                results['first_failure_year'] = year
+
+        # Restore original demands
+        for jid, base_demand in original_demands.items():
+            junc = self.wn.get_node(jid)
+            junc.demand_timeseries_list[0].base_value = base_demand
+
+        return results
+
+    # =========================================================================
     # PROJECT BUNDLE EXPORT/IMPORT
     # =========================================================================
 
