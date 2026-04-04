@@ -42,6 +42,7 @@ from desktop.surge_wizard import SurgeWizard
 from desktop.view_3d import View3D
 from desktop.report_scheduler import ReportSchedulerDialog
 from desktop.pipe_profile_dialog import PipeProfileDialog
+from desktop.dashboard_widget import DashboardWidget
 
 
 class MainWindow(QMainWindow):
@@ -470,8 +471,17 @@ class MainWindow(QMainWindow):
         self.animation_panel.frame_changed.connect(self._on_animation_frame)
         self.animation_dock.setWidget(self.animation_panel)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.animation_dock)
-        # Tab animation alongside results
+        # --- Bottom: Dashboard (tabbed with Results) ---
+        self.dashboard_dock = QDockWidget("Dashboard", self)
+        self.dashboard_dock.setObjectName("dashboard_dock")
+        self.dashboard_dock.setFeatures(_dock_features)
+        self.dashboard_widget = DashboardWidget()
+        self.dashboard_dock.setWidget(self.dashboard_widget)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dashboard_dock)
+
+        # Tab animation and dashboard alongside results
         self.tabifyDockWidget(self.results_dock, self.animation_dock)
+        self.tabifyDockWidget(self.results_dock, self.dashboard_dock)
         # Show results as the initially visible bottom tab
         self.results_dock.raise_()
 
@@ -553,6 +563,7 @@ class MainWindow(QMainWindow):
             self._update_status_bar()
             self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
             self.canvas.set_api(self.api)
+            self.dashboard_widget.update_dashboard(self.api)
         except Exception as e:
             QMessageBox.critical(self, "Load Error",
                                 f"Could not load network file.\n\n{type(e).__name__}: {e}")
@@ -862,6 +873,9 @@ class MainWindow(QMainWindow):
             )
         except Exception:
             pass  # Audit trail failure is non-critical
+
+        # Update dashboard
+        self.dashboard_widget.update_dashboard(self.api, results)
 
         self.status_bar.showMessage("Analysis complete.", 5000)
 
