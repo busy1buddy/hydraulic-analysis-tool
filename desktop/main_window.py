@@ -34,6 +34,7 @@ from desktop.water_quality_dialog import WaterQualityDialog
 from desktop.probe_tooltip import ProbeTooltip
 from desktop.calibration_dialog import CalibrationDialog
 from desktop.statistics_panel import StatisticsPanel
+from desktop.preferences import load_preferences, save_preferences
 
 
 class MainWindow(QMainWindow):
@@ -1396,3 +1397,40 @@ class MainWindow(QMainWindow):
 
         # Re-ensure canvas scene click handler is connected
         self.canvas.ensure_scene_connected()
+
+    def closeEvent(self, event):
+        """Save preferences on window close."""
+        prefs = {
+            'last_file': self._current_file or '',
+            'window_width': self.width(),
+            'window_height': self.height(),
+            'slurry_mode': self.slurry_act.isChecked(),
+            'colour_mode': self.canvas.color_mode_combo.currentText(),
+        }
+        save_preferences(prefs)
+        super().closeEvent(event)
+
+    def _restore_session(self):
+        """Restore last session from preferences."""
+        prefs = load_preferences()
+        last_file = prefs.get('last_file', '')
+        if last_file and os.path.exists(last_file):
+            try:
+                self.api.load_network_from_path(last_file)
+                self._current_file = last_file
+                self._populate_explorer()
+                self._update_status_bar()
+                self.canvas.set_api(self.api)
+                self.setWindowTitle(
+                    f"Hydraulic Analysis Tool — {os.path.basename(last_file)}")
+            except Exception:
+                pass
+        w = prefs.get('window_width')
+        h = prefs.get('window_height')
+        if w and h:
+            self.resize(w, h)
+        if prefs.get('slurry_mode'):
+            self.slurry_act.setChecked(True)
+        cm = prefs.get('colour_mode')
+        if cm and cm in self.canvas.COLOR_MODES:
+            self.canvas.color_mode_combo.setCurrentText(cm)
