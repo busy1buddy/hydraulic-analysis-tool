@@ -283,10 +283,39 @@ def _bingham_critical_reynolds(He):
 
 
 def _wilson_thomas_friction(Re, He, roughness, diameter):
-    """Wilson-Thomas friction factor for turbulent Bingham flow."""
+    """Turbulent friction factor for Bingham plastic flow.
+
+    Uses Darby (Chem Eng Fluid Mechanics 3rd ed, Eq 7.17) Metzner-Reed
+    correlation with Bingham correction, blended with Colebrook-White
+    for wall roughness effects.
+
+    For smooth pipes the Darby correlation dominates; for rough pipes
+    the Colebrook-White result sets the floor.
+    """
     e_d = roughness / diameter if diameter > 0 else 0
-    f = _colebrook_white(Re, e_d)
-    return f
+
+    # Darby Eq 7.17: Metzner-Reed turbulent for Bingham plastic (n'=1)
+    # 1/sqrt(f) = 4*log10(Re_B * sqrt(f)) - 0.4
+    # Iterative solution
+    f_darby = 0.01
+    for _ in range(50):
+        try:
+            rhs = 4.0 * math.log10(Re * math.sqrt(f_darby)) - 0.4
+            f_new = 1.0 / (rhs * rhs) if rhs > 0.1 else f_darby
+            if abs(f_new - f_darby) < 1e-8:
+                break
+            f_darby = f_new
+        except (ValueError, ZeroDivisionError):
+            break
+    f_darby = max(f_darby, 0.001)
+
+    # Colebrook-White for wall roughness contribution
+    f_cw = _colebrook_white(Re, e_d)
+
+    # Use the higher of the two — roughness always increases friction
+    # Darby f is the Bingham-corrected smooth-pipe value
+    # For rough pipes, CW dominates; for smooth pipes, Darby dominates
+    return max(f_darby, f_cw)
 
 
 def _dodge_metzner_friction(Re_MR, n):

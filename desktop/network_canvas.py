@@ -707,7 +707,11 @@ class NetworkCanvas(QWidget):
     # ------------------------------------------------------------------
 
     def _draw_value_overlay(self):
-        """Add TextItem per element showing its current variable value."""
+        """Add TextItem per visible element showing its current variable value.
+
+        Only creates labels for elements within the current viewport bounds,
+        avoiding O(n) TextItem creation for large networks.
+        """
         self._clear_value_overlay()
         if self.api is None or self.api.wn is None:
             return
@@ -715,10 +719,17 @@ class NetworkCanvas(QWidget):
         pressures = (self.results or {}).get('pressures', {})
         flows = (self.results or {}).get('flows', {})
 
+        # Get visible viewport bounds for lazy rendering
+        vr = self.plot_widget.plotItem.vb.viewRange()
+        x_lo, x_hi = vr[0][0], vr[0][1]
+        y_lo, y_hi = vr[1][0], vr[1][1]
+
         font = QFont("Consolas", 7)
 
-        # Node values (pressure)
+        # Node values (pressure) — only for visible nodes
         for nid, (x, y) in self._node_positions.items():
+            if x < x_lo or x > x_hi or y < y_lo or y > y_hi:
+                continue  # skip off-screen nodes
             pdata = pressures.get(nid) or pressures.get(str(nid))
             if pdata is not None:
                 val = pdata.get('avg_m')
@@ -745,6 +756,9 @@ class NetworkCanvas(QWidget):
                     x0, y0 = self._node_positions[sn]
                     x1, y1 = self._node_positions[en]
                     mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+                    # Skip off-screen pipe midpoints
+                    if mx < x_lo or mx > x_hi or my < y_lo or my > y_hi:
+                        continue
                     text = pg.TextItem(f"{v:.2f}", color='#a6e3a1', anchor=(0.5, 0.5))
                     text.setPos(mx, my)
                     text.setFont(font)

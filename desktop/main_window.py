@@ -759,11 +759,16 @@ class MainWindow(QMainWindow):
         # Update WSAA status
         compliance = results.get('compliance', [])
         fails = sum(1 for c in compliance if c.get('type') in ('WARNING', 'CRITICAL'))
-        if fails == 0:
+        infos = sum(1 for c in compliance if c.get('type') == 'INFO')
+        if fails == 0 and infos == 0:
             self.wsaa_label.setText("WSAA: PASS")
             self.wsaa_label.setStyleSheet("color: #a6e3a1;")
+        elif fails == 0:
+            self.wsaa_label.setText(f"WSAA: PASS ({infos} info)")
+            self.wsaa_label.setStyleSheet("color: #a6e3a1;")
         else:
-            self.wsaa_label.setText(f"WSAA: {fails} issue(s)")
+            info_str = f", {infos} info" if infos > 0 else ""
+            self.wsaa_label.setText(f"WSAA: {fails} issue(s){info_str}")
             self.wsaa_label.setStyleSheet("color: #f38ba8;")
 
         analysis_type = "Slurry" if self.slurry_act.isChecked() else "Hydraulic"

@@ -66,3 +66,32 @@ class TestBuckinghamReinerValidation:
         r = bingham_plastic_headloss(0.001, 0.1, 100, 1200, 1, 0.05)
         if r['regime'] == 'laminar':
             assert r['friction_factor'] >= 64 / r['reynolds'] - 0.001
+
+    def test_turbulent_bingham_darby_correction(self):
+        """Turbulent Bingham friction >= Colebrook-White (Darby correction)."""
+        from slurry_solver import _colebrook_white
+        # Near-transition turbulent: Re just above Re_crit
+        r = bingham_plastic_headloss(0.01, 0.1, 100, 1200, 1, 0.02, 0.05)
+        if r['regime'] == 'turbulent':
+            f_cw = _colebrook_white(r['reynolds'], 0.05/1000/0.1)
+            # Wilson-Thomas (Darby) should be >= CW (never underestimates)
+            assert r['friction_factor'] >= f_cw * 0.99, (
+                f"Darby f={r['friction_factor']:.6f} < CW f={f_cw:.6f}"
+            )
+
+    def test_all_three_models_use_darcy(self):
+        """Bingham, Herschel-Bulkley, Power Law all use Darcy convention."""
+        from slurry_solver import power_law_headloss, herschel_bulkley_headloss
+        # Same pipe, laminar flow — all should give f = 64/Re for Newtonian limit
+        Q, D, L, rho = 0.0001, 0.05, 10, 1000
+        r_b = bingham_plastic_headloss(Q, D, L, rho, tau_y=0.001, mu_p=0.001)
+        r_p = power_law_headloss(Q, D, L, rho, K=0.001, n=1.0)
+        r_h = herschel_bulkley_headloss(Q, D, L, rho, tau_y=0.001, K=0.001, n=1.0)
+        # All should produce similar headloss (Newtonian limit)
+        assert r_b['headloss_m'] > 0
+        assert r_p['headloss_m'] > 0
+        assert r_h['headloss_m'] > 0
+        # All within 50% of each other (different formulations but same physics)
+        avg = (r_b['headloss_m'] + r_p['headloss_m'] + r_h['headloss_m']) / 3
+        for r in [r_b, r_p, r_h]:
+            assert abs(r['headloss_m'] - avg) / avg < 0.5

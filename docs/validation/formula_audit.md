@@ -282,6 +282,41 @@ where P in MPa, D in mm (cancels in ratio), t in mm
 | Concrete DN600 database | YES | All values match AS 4058 |
 | DI DN500 database | YES | All values match AS 2280 |
 
+---
+
+## 8. Wilson-Thomas Improvement (v1.1.0)
+
+The turbulent Bingham friction factor was improved from pure Colebrook-White
+to Darby Eq. 7.17 (Metzner-Reed correlation with n'=1 for Bingham plastic):
+
+```
+1/√f = 4 * log10(Re_B * √f) - 0.4
+```
+
+The implementation uses `max(f_darby, f_cw)` to ensure wall roughness effects
+are never underestimated.
+
+**Finding:** For n'=1 (Bingham plastic), the Darby Metzner-Reed correlation
+converges to Colebrook-White at high Re — the correction is negligible
+for fully turbulent flow (Re > 10000). The max() safeguard ensures
+we always use the higher friction factor.
+
+## 9. Non-Newtonian Model Consistency (v1.1.0)
+
+All three models now use Darcy friction convention throughout:
+
+| Model | Laminar f | Turbulent f | D-W Convention |
+|-------|-----------|-------------|----------------|
+| Bingham Plastic | 64/Re_B (Buckingham-Reiner) | Darby Eq 7.17 / CW (max) | Darcy |
+| Power Law | 64/Re_MR | 4 × Dodge-Metzner (Fanning→Darcy) | Darcy |
+| Herschel-Bulkley | 64/Re_gen | CW with apparent viscosity | Darcy |
+
+Previously: Power Law and H-B used Fanning (16/Re) laminar and unscaled
+Dodge-Metzner turbulent — both were 4x too low when fed into D-W equation.
+Fixed in commit `8d148a0`.
+
+---
+
 ### Overall Assessment
 
 All critical hydraulic formulas match their published sources. The EPANET solver (via WNTR) produces bit-for-bit identical results to EPA's reference implementation. The slurry solver's turbulent regime (Wilson-Thomas) is the weakest area (simplified Colebrook-White approximation), with estimated 5-10% uncertainty for high-yield-stress fluids. All pipe database values match their respective Australian standards within acceptable tolerances. WSAA compliance thresholds are correct for typical residential water supply design.

@@ -66,6 +66,16 @@ class PipeStressPanel(QWidget):
         self.summary_label.setStyleSheet("color: #a6adc8;")
         layout.addWidget(self.summary_label)
 
+        disclaimer = QLabel(
+            "SF (PN/P) = rated pressure / operating pressure. "
+            "Pressure class utilisation indicator only. "
+            "Not a substitute for AS 2280 code compliance check."
+        )
+        disclaimer.setFont(QFont("Consolas", 7))
+        disclaimer.setStyleSheet("color: #585b70;")
+        disclaimer.setWordWrap(True)
+        layout.addWidget(disclaimer)
+
     def update_results(self, api, results):
         """Calculate and display pipe stress for all pipes.
 
