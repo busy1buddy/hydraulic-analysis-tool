@@ -2824,6 +2824,23 @@ class HydraulicAPI:
             })
             certificate['overall_status'] = 'NON-COMPLIANT'
 
+        # 4. Resilience index (Todini)
+        ri = self.compute_resilience_index(results)
+        if 'error' not in ri:
+            ri_val = ri['resilience_index']
+            ri_status = 'PASS' if ri_val >= 0.15 else 'FAIL'
+            certificate['checks'].append({
+                'check': 'Network Resilience (Todini)',
+                'status': ri_status,
+                'standard': 'Todini (2000), target > 0.15',
+                'requirement': 'Resilience index > 0.15',
+                'details': f'Todini index: {ri_val:.3f} (Grade {ri["grade"]}). '
+                           f'{ri["interpretation"]}',
+            })
+            if ri_status == 'FAIL':
+                certificate['overall_status'] = 'NON-COMPLIANT'
+            certificate['resilience'] = ri
+
         # Summary counts
         n_pass = sum(1 for c in certificate['checks'] if c['status'] == 'PASS')
         n_fail = sum(1 for c in certificate['checks'] if c['status'] == 'FAIL')
@@ -2991,6 +3008,103 @@ class HydraulicAPI:
         return bridges
 
     # =========================================================================
+    # TODINI RESILIENCE INDEX (M1)
+    # =========================================================================
+
+    def compute_resilience_index(self, results=None):
+        """
+        Compute the Todini resilience index for the current network.
+
+        I_r = sum((h_i - h_min) * q_i) / sum((H_source - h_min) * Q_source)
+
+        Where h_i is pressure at node i, h_min is minimum required (WSAA 20 m),
+        q_i is demand at node i, H_source is source head, Q_source is source outflow.
+
+        Parameters
+        ----------
+        results : dict or None
+            Steady-state results from run_steady_state(). If None, runs analysis.
+
+        Returns dict with 'resilience_index', 'grade', 'interpretation'.
+
+        Ref: Todini E. (2000) "Looped water distribution networks design using
+             a resilience index based heuristic approach". Urban Water 2(2):115-122
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if results is None:
+            try:
+                results = self.run_steady_state(save_plot=False)
+            except Exception as e:
+                return {'error': f'Analysis failed: {e}'}
+
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+
+        if not pressures or not flows:
+            return {'error': 'No results available'}
+
+        h_min = self.DEFAULTS['min_pressure_m']  # WSAA 20 m
+
+        # Numerator: sum of surplus power at demand nodes
+        numerator = 0
+        for jid, pdata in pressures.items():
+            try:
+                node = self.wn.get_node(jid)
+                demand_m3s = node.demand_timeseries_list[0].base_value
+            except (IndexError, AttributeError, KeyError):
+                continue
+            if demand_m3s <= 0:
+                continue
+            surplus = max(pdata.get('avg_m', 0) - h_min, 0)
+            numerator += surplus * demand_m3s  # m * m³/s
+
+        # Denominator: total source input power minus minimum required
+        denominator = 0
+        for rid in list(self.wn.reservoir_name_list) + list(self.wn.tank_name_list):
+            node = self.wn.get_node(rid)
+            head = getattr(node, 'base_head', getattr(node, 'head', 0))
+            for pid in self.wn.pipe_name_list:
+                pipe = self.wn.get_link(pid)
+                if pipe.start_node_name == rid or pipe.end_node_name == rid:
+                    fdata = flows.get(pid, {})
+                    Q_m3s = abs(fdata.get('avg_lps', 0)) / 1000
+                    denominator += (head - h_min) * Q_m3s
+
+        # Cap at 1.0 — values > 1 indicate surplus energy far exceeds minimum
+        # requirement, which is physically valid but practically meaningless
+        raw_index = numerator / max(denominator, 1e-12)
+        index = round(min(raw_index, 1.0), 4)
+
+        # Grade and interpretation
+        # Ref: Prasad & Park (2004) suggest >0.3 for reliable networks
+        if index >= 0.5:
+            grade = 'A'
+            interpretation = 'Excellent redundancy — network is highly resilient.'
+        elif index >= 0.3:
+            grade = 'B'
+            interpretation = 'Good redundancy — meets reliability targets.'
+        elif index >= 0.15:
+            grade = 'C'
+            interpretation = 'Moderate redundancy — consider improving connectivity.'
+        elif index >= 0.05:
+            grade = 'D'
+            interpretation = 'Low redundancy — vulnerable to pipe failures.'
+        else:
+            grade = 'F'
+            interpretation = 'Very low redundancy — critical infrastructure risk.'
+
+        return {
+            'resilience_index': index,
+            'grade': grade,
+            'interpretation': interpretation,
+            'numerator_power': round(numerator, 6),
+            'denominator_power': round(denominator, 6),
+            'min_pressure_target_m': h_min,
+        }
+
+    # =========================================================================
     # HYDRAULIC FINGERPRINT (L4)
     # =========================================================================
 
@@ -3058,37 +3172,10 @@ class HydraulicAPI:
             hl_m = fdata.get('headloss_m_per_km', 0) * pipe.length / 1000
             energy_index += Q_m3s * hl_m * 9810  # watts = rho*g*Q*hL
 
-        # Todini resilience index
-        # I_r = (sum of surplus power at nodes) / (total input power - min required power)
-        # Simplified: sum((h_i - h_min) * q_i) / sum((H_source - h_min) * Q_source)
-        h_min = self.DEFAULTS['min_pressure_m']  # WSAA 20 m
-        numerator = 0
-        for jid, pdata in pressures.items():
-            node = self.wn.get_node(jid)
-            # Get demand from WNTR model (base_value in m³/s, convert to LPS)
-            try:
-                demand_lps = node.demand_timeseries_list[0].base_value * 1000
-            except (IndexError, AttributeError):
-                demand_lps = 0
-            if demand_lps <= 0:
-                continue
-            surplus = max(pdata.get('avg_m', 0) - h_min, 0)
-            numerator += surplus * (demand_lps / 1000)  # m * m³/s
-
-        # Source power
-        total_source_power = 0
-        for rid in list(self.wn.reservoir_name_list) + list(self.wn.tank_name_list):
-            node = self.wn.get_node(rid)
-            head = getattr(node, 'base_head', getattr(node, 'head', 0))
-            # Estimate source outflow from connected pipes
-            for pid in self.wn.pipe_name_list:
-                pipe = self.wn.get_link(pid)
-                if pipe.start_node_name == rid or pipe.end_node_name == rid:
-                    fdata = flows.get(pid, {})
-                    Q_lps = abs(fdata.get('avg_lps', 0))
-                    total_source_power += (head - h_min) * (Q_lps / 1000)
-
-        resilience = round(numerator / max(total_source_power, 1e-9), 4)
+        # Todini resilience index — delegate to standalone method
+        # Ref: Todini (2000), Urban Water 2(2):115-122
+        ri_result = self.compute_resilience_index(results)
+        resilience = ri_result.get('resilience_index', 0) if 'error' not in ri_result else 0
 
         # Flow balance — get demands from WNTR model
         total_demand = 0

@@ -167,3 +167,35 @@ class DashboardWidget(QWidget):
             "WSAA Compliance", wsaa_text,
             f"{infos} info" if infos else "All clear", wsaa_status,
             "WSAA WSA 03-2011 compliance check"), 1, 3)
+
+        # Row 2: Resilience index (Todini)
+        ri = api.compute_resilience_index(results)
+        if 'error' not in ri:
+            ri_val = ri['resilience_index']
+            if ri_val >= 0.3:
+                ri_status = 'ok'
+            elif ri_val >= 0.15:
+                ri_status = 'warning'
+            else:
+                ri_status = 'fail'
+            self.grid.addWidget(_kpi_widget(
+                "Resilience", f"{ri_val:.3f}", f"Grade {ri['grade']}", ri_status,
+                "Todini Index: 0.0 = no redundancy, 1.0 = full redundancy.\n"
+                "Target > 0.3 for reliable distribution networks.\n"
+                f"{ri['interpretation']}"), 2, 0)
+
+        # Network topology summary
+        topo = api.analyse_topology()
+        if 'error' not in topo:
+            de_status = 'ok' if topo['dead_end_count'] <= 3 else (
+                'warning' if topo['dead_end_count'] <= 10 else 'fail')
+            self.grid.addWidget(_kpi_widget(
+                "Dead Ends", str(topo['dead_end_count']), "nodes", de_status,
+                "Dead-end nodes can cause water quality issues"), 2, 1)
+            self.grid.addWidget(_kpi_widget(
+                "Loops", str(topo['loops']), "independent", 'info',
+                "Higher loop count = better redundancy"), 2, 2)
+            br_status = 'ok' if topo['bridge_count'] == 0 else 'warning'
+            self.grid.addWidget(_kpi_widget(
+                "Bridges", str(topo['bridge_count']), "critical pipes", br_status,
+                "Bridge pipes disconnect the network if removed"), 2, 3)
