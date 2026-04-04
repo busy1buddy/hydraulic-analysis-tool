@@ -4352,6 +4352,95 @@ class HydraulicAPI:
         return results
 
     # =========================================================================
+    # FIELD DATA TEMPLATE (N7)
+    # =========================================================================
+
+    def generate_field_template(self, output_path):
+        """
+        Generate a pre-filled Excel template for field data collection.
+
+        Sheets:
+        - Nodes: all junction IDs, space for measured pressure
+        - Pipes: all pipe IDs, space for condition/age/breaks
+        - Hydrants: fire flow test template
+
+        Parameters
+        ----------
+        output_path : str
+            Path to save the .xlsx file
+
+        Returns dict with template path and element counts.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        try:
+            import pandas as pd
+        except ImportError:
+            return {'error': 'pandas required (pip install pandas openpyxl)'}
+
+        # Nodes sheet
+        node_rows = []
+        for jid in self.wn.junction_name_list:
+            node = self.wn.get_node(jid)
+            node_rows.append({
+                'node_id': jid,
+                'elevation_m': round(node.elevation, 1),
+                'model_demand_lps': round(
+                    node.demand_timeseries_list[0].base_value * 1000
+                    if node.demand_timeseries_list else 0, 2),
+                'measured_pressure_m': '',
+                'measurement_date': '',
+                'measurement_time': '',
+                'notes': '',
+            })
+        nodes_df = pd.DataFrame(node_rows)
+
+        # Pipes sheet
+        pipe_rows = []
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            pipe_rows.append({
+                'pipe_id': pid,
+                'start_node': pipe.start_node_name,
+                'end_node': pipe.end_node_name,
+                'diameter_mm': int(pipe.diameter * 1000),
+                'length_m': round(pipe.length, 1),
+                'roughness_C': pipe.roughness,
+                'install_year': '',
+                'material': '',
+                'condition_score_1to5': '',
+                'break_count': '',
+                'notes': '',
+            })
+        pipes_df = pd.DataFrame(pipe_rows)
+
+        # Hydrants sheet
+        hydrant_rows = []
+        for jid in self.wn.junction_name_list:
+            hydrant_rows.append({
+                'hydrant_id': jid,
+                'static_pressure_m': '',
+                'test_flow_lps': '',
+                'residual_pressure_m': '',
+                'test_date': '',
+                'tested_by': '',
+            })
+        hydrants_df = pd.DataFrame(hydrant_rows)
+
+        with pd.ExcelWriter(output_path) as writer:
+            nodes_df.to_excel(writer, sheet_name='Nodes', index=False)
+            pipes_df.to_excel(writer, sheet_name='Pipes', index=False)
+            hydrants_df.to_excel(writer, sheet_name='Hydrants', index=False)
+
+        return {
+            'template_path': output_path,
+            'junctions': len(node_rows),
+            'pipes': len(pipe_rows),
+            'hydrants': len(hydrant_rows),
+        }
+
+    # =========================================================================
     # SCENARIO DIFFERENCE REPORT (N8)
     # =========================================================================
 
@@ -5618,6 +5707,150 @@ class HydraulicAPI:
                 zf.extract(af, extract_dir)
 
         return result
+
+    def calculate_safe_closure_time(self, pipe_length_m, wave_speed_ms=1100):
+        """
+        Calculate minimum safe valve closure time to prevent full Joukowsky surge.
+
+        Slow closure means tc > 2L/a (wave reflection time).
+        For gradual reduction, recommend tc = 5 × 2L/a for < 20% surge.
+
+        Parameters
+        ----------
+        pipe_length_m : float
+            Pipeline length (m)
+        wave_speed_ms : float
+            Pressure wave speed (m/s, default: 1100 AS 2280 DI minimum)
+
+        Returns dict with closure times and expected surge reduction.
+        Ref: Thorley A.R.D. (2004) "Fluid Transients in Pipeline Systems",
+             2nd ed., Palgrave Macmillan, Chapter 3
+        """
+        if pipe_length_m <= 0 or wave_speed_ms <= 0:
+            return {'error': 'Pipe length and wave speed must be positive'}
+
+        # Critical time: 2L/a — round-trip wave travel time
+        tc_critical = 2 * pipe_length_m / wave_speed_ms
+
+        # Surge reduction for different closure multiples
+        # Rapid closure (tc < 2L/a): full Joukowsky surge
+        # Slow closure: surge ≈ Joukowsky × (2L/a) / tc  (for linear closure)
+        recommendations = {
+            'critical_time_s': round(tc_critical, 2),
+            'minimum_safe_s': round(tc_critical * 3, 1),
+            'recommended_s': round(tc_critical * 5, 1),
+            'conservative_s': round(tc_critical * 10, 1),
+            'surge_reduction': {
+                f'{tc_critical*3:.1f}s (3x)': '~33% of Joukowsky',
+                f'{tc_critical*5:.1f}s (5x)': '~20% of Joukowsky',
+                f'{tc_critical*10:.1f}s (10x)': '~10% of Joukowsky',
+            },
+            'pipe_length_m': pipe_length_m,
+            'wave_speed_ms': wave_speed_ms,
+            'basis': f'tc_critical = 2L/a = 2×{pipe_length_m:.0f}/{wave_speed_ms:.0f} '
+                     f'= {tc_critical:.2f} s — Thorley (2004) Ch.3',
+        }
+
+        return recommendations
+
+    def design_surge_mitigation(self, pipe_id=None, max_surge_m=None,
+                                  target_reduction_pct=80):
+        """
+        Design surge mitigation for a specific pipe or the whole network.
+
+        Combines valve closure time, surge vessel sizing, and air valve placement.
+
+        Parameters
+        ----------
+        pipe_id : str or None
+            Specific pipe, or None for worst-case in network
+        max_surge_m : float or None
+            Maximum surge head. If None, estimates from Joukowsky
+        target_reduction_pct : float
+            Target surge reduction percentage (default: 80%)
+
+        Returns dict with mitigation options and specifications.
+        Ref: Thorley (2004), Wylie & Streeter (1978)
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        # Find the longest pipe or specified pipe
+        if pipe_id:
+            try:
+                pipe = self.wn.get_link(pipe_id)
+            except KeyError:
+                return {'error': f'Pipe {pipe_id} not found'}
+        else:
+            # Use longest pipe as worst case
+            pipes = [(pid, self.wn.get_link(pid).length)
+                     for pid in self.wn.pipe_name_list]
+            if not pipes:
+                return {'error': 'No pipes in network'}
+            pipe_id, _ = max(pipes, key=lambda x: x[1])
+            pipe = self.wn.get_link(pipe_id)
+
+        L = pipe.length
+        D = pipe.diameter
+        a = self.DEFAULTS.get('wave_speed_ms', 1100)
+
+        # Estimate max velocity from last analysis or assume 2.0 m/s
+        V = 2.0
+        if self.steady_results:
+            flows = self.steady_results.link['flowrate']
+            if pipe_id in flows.columns:
+                import numpy as np
+                area = np.pi * (D/2)**2
+                V = float(abs(flows[pipe_id]).max()) / max(area, 1e-6)
+
+        # Joukowsky surge
+        j = self.joukowsky(a, V)
+        surge_m = j['head_rise_m']
+        if max_surge_m:
+            surge_m = max_surge_m
+
+        # Option 1: Slow-closing valve
+        closure = self.calculate_safe_closure_time(L, a)
+
+        # Option 2: Surge vessel (Boyle's law simplified)
+        # V_vessel = a × Q × L / (2 × g × H_allowed)
+        g = 9.81
+        Q = V * np.pi * (D/2)**2 if 'np' in dir() else V * 3.14159 * (D/2)**2
+        H_allowed = surge_m * (1 - target_reduction_pct / 100)
+        H_allowed = max(H_allowed, 1.0)  # minimum 1m
+        V_vessel_m3 = a * Q * L / (2 * g * max(H_allowed, 1) * 1000)
+        V_vessel_L = V_vessel_m3 * 1000
+
+        # Option 3: Air valve locations (high points)
+        # Simplified: recommend at start, end, and midpoint
+        air_valves = [
+            {'location': pipe.start_node_name, 'type': 'Double orifice',
+             'reason': 'Pipeline start — air entry on column separation'},
+            {'location': pipe.end_node_name, 'type': 'Single orifice',
+             'reason': 'Pipeline end — air release'},
+        ]
+
+        return {
+            'pipe_id': pipe_id,
+            'pipe_length_m': round(L, 1),
+            'pipe_diameter_mm': int(D * 1000),
+            'max_velocity_ms': round(V, 2),
+            'joukowsky_surge_m': surge_m,
+            'target_reduction_pct': target_reduction_pct,
+            'options': {
+                'slow_closing_valve': {
+                    'recommended_closure_s': closure['recommended_s'],
+                    'minimum_safe_s': closure['minimum_safe_s'],
+                    'basis': closure['basis'],
+                },
+                'surge_vessel': {
+                    'volume_litres': round(V_vessel_L, 0),
+                    'precharge_pressure_kPa': round(surge_m * 9.81 * 0.6, 0),
+                    'basis': 'Wylie & Streeter (1978) Ch.8',
+                },
+                'air_valves': air_valves,
+            },
+        }
 
     def joukowsky(self, wave_speed, velocity_change, density=1000):
         """
