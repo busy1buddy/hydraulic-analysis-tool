@@ -1,27 +1,39 @@
 """
-Automated Review Bridge
-========================
-Flask server on localhost:7771 that spawns Claude Code CLI as a
-reviewer subprocess. No external API key needed.
+Automated Review Bridge — Anthropic API Direct
+================================================
+Flask server on localhost:7771. Calls the Anthropic Messages API
+directly instead of spawning claude CLI subprocesses.
+
+Requires: ANTHROPIC_API_KEY environment variable set.
+Fast reviews complete in 2-5 seconds (vs 45-120s via CLI).
 
 Start: python scripts/review_bridge.py
 Health: curl localhost:7771/health
-Submit: POST localhost:7771/review with JSON body
-
-Configure: set REVIEW_TIMEOUT=240 before starting to increase timeout.
+Submit: POST localhost:7771/review
 """
 
 import os
 import sys
 import json
-import subprocess
 import time
-import tempfile
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HISTORY_FILE = os.path.join(ROOT, 'docs', 'review_loop', 'history.jsonl')
 os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+
+# Load .env file if present (for ANTHROPIC_API_KEY)
+_env_file = os.path.join(ROOT, '.env')
+if os.path.exists(_env_file):
+    with open(_env_file) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith('#') and '=' in _line:
+                _key, _, _val = _line.partition('=')
+                _key = _key.strip()
+                _val = _val.strip().strip('"').strip("'")
+                if _key and _val and _key not in os.environ:
+                    os.environ[_key] = _val
 
 try:
     from flask import Flask, request, jsonify
@@ -29,11 +41,19 @@ except ImportError:
     print("Flask not installed. Run: pip install flask")
     sys.exit(1)
 
+try:
+    import anthropic
+    HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+
 app = Flask(__name__)
 
-# Configurable via environment variable
-TIMEOUT_FAST = int(os.environ.get('REVIEW_TIMEOUT', '180'))
-TIMEOUT_THOROUGH = int(os.environ.get('REVIEW_TIMEOUT_THOROUGH', '300'))
+# Configurable via environment
+TIMEOUT_FAST = int(os.environ.get('REVIEW_TIMEOUT', '30'))
+TIMEOUT_THOROUGH = int(os.environ.get('REVIEW_TIMEOUT_THOROUGH', '60'))
+MODEL_FAST = 'claude-haiku-4-5-20251001'
+MODEL_THOROUGH = 'claude-sonnet-4-6'
 
 REVIEWER_PROMPT_TEMPLATE = """You are a senior hydraulic engineer and software architect \
 with specific expertise in Australian water and mining engineering. You are reviewing \
@@ -55,7 +75,7 @@ an autonomous Claude Code session building a professional hydraulic analysis too
 - WSAA compliance: ALWAYS gauge pressure, never total head
 - Water age from WNTR: divide by 3600 (returns seconds)
 - Velocity: abs(flow).max(), never signed flow.max()
-- Joukowsky: assumes rho=1000 -- WRONG for slurry
+- Joukowsky: use actual fluid density, not hardcoded rho=1000
 
 ### Known Limitations to Watch For
 - Wilson-Thomas turbulent slurry: simplified, 5-10% uncertainty
@@ -99,74 +119,41 @@ Respond in valid JSON only. No text outside the JSON:
 }}"""
 
 
-def _check_claude_cli():
-    """Check if claude CLI is available and measure startup time."""
+def _has_api_key():
+    """Check if ANTHROPIC_API_KEY is set."""
+    return bool(os.environ.get('ANTHROPIC_API_KEY'))
+
+
+def _run_api_reviewer(prompt, model=MODEL_FAST, max_tokens=1000):
+    """Call Anthropic Messages API directly. Returns (text, returncode)."""
+    if not HAS_ANTHROPIC:
+        return ('{"assessment": "anthropic package not installed", '
+                '"quality": "NEEDS_WORK", "issues": ["pip install anthropic"], '
+                '"next_instructions": "", "can_continue": true}'), 1, 0
+
+    if not _has_api_key():
+        return ('{"assessment": "ANTHROPIC_API_KEY not set", '
+                '"quality": "ACCEPTABLE", "issues": ["set ANTHROPIC_API_KEY"], '
+                '"next_instructions": "", "can_continue": true}'), 1, 0
+
+    t0 = time.perf_counter()
     try:
-        t0 = time.perf_counter()
-        result = subprocess.run(
-            ["claude", "--version"],
-            capture_output=True, text=True, timeout=15,
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
         )
         elapsed = time.perf_counter() - t0
-        version = result.stdout.strip().split('\n')[0] if result.stdout else 'unknown'
-        if elapsed > 5:
-            print(f"WARNING: claude CLI startup took {elapsed:.1f}s — reviews will be slow")
-        else:
-            print(f"claude CLI ready: {version} (startup: {elapsed:.1f}s)")
-        return True, elapsed
-    except FileNotFoundError:
-        print("WARNING: claude CLI not found on PATH")
-        return False, 0
-    except subprocess.TimeoutExpired:
-        print("WARNING: claude --version timed out after 15s")
-        return False, 0
-
-
-def _run_claude_reviewer(prompt, model=None, timeout=TIMEOUT_FAST):
-    """Run claude CLI via stdin (temp file) to avoid arg length limits. Retries once."""
-    # Write prompt to temp file and pipe via stdin
-    prompt_file = None
-    try:
-        prompt_file = tempfile.NamedTemporaryFile(
-            mode='w', suffix='.txt', delete=False, encoding='utf-8',
-        )
-        prompt_file.write(prompt)
-        prompt_file.close()
-
-        cmd = ["claude", "--print", "--dangerously-skip-permissions"]
-        if model:
-            cmd.extend(["--model", model])
-
-        for attempt in range(2):
-            t0 = time.perf_counter()
-            try:
-                with open(prompt_file.name, 'r', encoding='utf-8') as stdin_f:
-                    result = subprocess.run(
-                        cmd, stdin=stdin_f,
-                        capture_output=True, text=True,
-                        timeout=timeout, cwd=ROOT,
-                    )
-                elapsed = time.perf_counter() - t0
-                return result.stdout.strip(), result.returncode, elapsed, False
-            except FileNotFoundError:
-                return ('{"assessment": "Claude CLI not found on PATH", '
-                        '"quality": "NEEDS_WORK", "issues": ["claude CLI not installed"], '
-                        '"next_instructions": "", "can_continue": true}'), 1, 0, False
-            except subprocess.TimeoutExpired:
-                elapsed = time.perf_counter() - t0
-                if attempt == 0:
-                    continue
-                return ('{"assessment": "Review timed out after retry", '
-                        '"quality": "ACCEPTABLE", "issues": ["timeout after 2 attempts"], '
-                        '"next_instructions": "", "can_continue": true}'), 1, elapsed, True
-    finally:
-        if prompt_file and os.path.exists(prompt_file.name):
-            try:
-                os.unlink(prompt_file.name)
-            except OSError:
-                pass
-
-    return '{}', 1, 0, True
+        return message.content[0].text, 0, elapsed
+    except anthropic.APIError as e:
+        elapsed = time.perf_counter() - t0
+        return (f'{{"assessment": "API error: {e}", "quality": "NEEDS_WORK", '
+                f'"issues": ["API error"], "next_instructions": "", "can_continue": true}}'), 1, elapsed
+    except Exception as e:
+        elapsed = time.perf_counter() - t0
+        return (f'{{"assessment": "Error: {e}", "quality": "ACCEPTABLE", '
+                f'"issues": ["{type(e).__name__}"], "next_instructions": "", "can_continue": true}}'), 1, elapsed
 
 
 def _parse_json_from_output(text):
@@ -195,7 +182,7 @@ def _parse_json_from_output(text):
 
 
 def _log_exchange(context, question, response, elapsed_s=0, timed_out=False):
-    """Append to history.jsonl with timing metadata."""
+    """Append to history.jsonl."""
     entry = {
         'timestamp': datetime.now().isoformat(),
         'context': context,
@@ -209,7 +196,7 @@ def _log_exchange(context, question, response, elapsed_s=0, timed_out=False):
 
 
 def _compute_stats():
-    """Compute timeout statistics from history."""
+    """Compute statistics from history."""
     entries = []
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE) as f:
@@ -238,8 +225,13 @@ def _compute_stats():
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok', 'reviewer': 'claude-code-cli',
-                    'timeout_fast': TIMEOUT_FAST, 'timeout_thorough': TIMEOUT_THOROUGH})
+    return jsonify({
+        'status': 'ok',
+        'reviewer': 'anthropic-api',
+        'api_key_set': _has_api_key(),
+        'fast_model': MODEL_FAST,
+        'thorough_model': MODEL_THOROUGH,
+    })
 
 
 @app.route('/review', methods=['POST'])
@@ -254,25 +246,20 @@ def review():
         output=output, context=context, question=question
     )
 
-    if mode == 'fast':
-        model = 'claude-haiku-4-5-20251001'
-        timeout = TIMEOUT_FAST
-    else:
-        model = None
-        timeout = TIMEOUT_THOROUGH
-
-    stdout, rc, elapsed, timed_out = _run_claude_reviewer(prompt, model=model, timeout=timeout)
+    model = MODEL_THOROUGH if mode == 'thorough' else MODEL_FAST
+    stdout, rc, elapsed = _run_api_reviewer(prompt, model=model)
 
     parsed = _parse_json_from_output(stdout)
     if parsed is None:
         parsed = {
-            'assessment': f'Could not parse reviewer response. Raw: {stdout[:500]}',
+            'assessment': f'Could not parse response. Raw: {stdout[:500]}',
             'quality': 'NEEDS_WORK',
             'issues': ['Response was not valid JSON'],
             'next_instructions': '',
             'can_continue': True,
         }
 
+    timed_out = elapsed > (TIMEOUT_FAST if mode == 'fast' else TIMEOUT_THOROUGH)
     _log_exchange(context, question, parsed, elapsed_s=elapsed, timed_out=timed_out)
 
     return jsonify(parsed)
@@ -296,13 +283,14 @@ def history():
 
 
 if __name__ == '__main__':
-    print(f"Review bridge starting on http://localhost:7771")
-    print(f"Timeouts: fast={TIMEOUT_FAST}s, thorough={TIMEOUT_THOROUGH}s")
+    print("Review bridge starting on http://localhost:7771")
+    print(f"Models: fast={MODEL_FAST}, thorough={MODEL_THOROUGH}")
+    print(f"API key set: {_has_api_key()}")
     print(f"History: {HISTORY_FILE}")
-    print()
 
-    # Startup check
-    _check_claude_cli()
-    print()
+    if not _has_api_key():
+        print("\nWARNING: ANTHROPIC_API_KEY not set!")
+        print("Set it with: set ANTHROPIC_API_KEY=sk-ant-...")
+        print("Reviews will return placeholder responses until key is set.\n")
 
     app.run(host='127.0.0.1', port=7771, debug=False)
