@@ -1857,3 +1857,261 @@ class AdvancedMixin:
             'elevation_range_m': round(elev_max - elev_min, 1),
             'n_pipe_sizes': len(dn_counts),
         }
+
+    # =========================================================================
+    # O9 — ENGINEERING KNOWLEDGE BASE
+    # =========================================================================
+
+    KNOWLEDGE_BASE = {
+        'hazen_williams': {
+            'topic': 'Hazen-Williams Headloss',
+            'formula': 'hL = 10.67 × L × Q^1.852 / (C^1.852 × D^4.87)',
+            'units': 'hL (m), L (m), Q (m³/s), D (m)',
+            'applies_to': 'Turbulent water flow, DN ≥ 50 mm, common civil use',
+            'limitations': 'Only valid for water at ~15°C; poor for non-water fluids',
+            'reference': 'Williams & Hazen (1920); cited WSAA WSA 03-2011',
+        },
+        'darcy_weisbach': {
+            'topic': 'Darcy-Weisbach Headloss',
+            'formula': 'hL = f × (L/D) × V² / (2g)',
+            'units': 'hL (m), L (m), D (m), V (m/s), g (9.81 m/s²)',
+            'applies_to': 'Any Newtonian fluid, all Re regimes, more rigorous',
+            'limitations': 'Requires friction factor (Colebrook-White iteration)',
+            'reference': 'White, Fluid Mechanics 8th ed. Ch. 6',
+        },
+        'joukowsky': {
+            'topic': 'Joukowsky Surge Pressure',
+            'formula': 'ΔP = ρ × a × ΔV',
+            'units': 'ΔP (Pa), ρ (kg/m³), a (m/s wave speed), ΔV (m/s)',
+            'applies_to': 'Rapid valve closure, pump trip — instantaneous change',
+            'limitations': 'Upper bound; real surges include reflections, friction',
+            'reference': 'Joukowsky (1898); Wylie & Streeter, Fluid Transients',
+        },
+        'lamont_break_rate': {
+            'topic': 'Lamont Pipe Break Rate',
+            'formula': 'N(t) = N₀ × exp(A × (t - t₀))',
+            'units': 'breaks/km/year',
+            'applies_to': 'Mains rehabilitation planning, deterioration modelling',
+            'limitations': 'Material-specific coefficients; calibrate locally',
+            'reference': 'Lamont (1981) AWWA Journal 73(5)',
+        },
+        'wsaa_min_pressure': {
+            'topic': 'WSAA Minimum Service Pressure',
+            'value': '20 m head',
+            'applies_to': 'Residential reticulation at meter',
+            'reference': 'WSAA WSA 03-2011 §3.2.1 Table 3.1',
+        },
+        'wsaa_max_pressure': {
+            'topic': 'WSAA Maximum Service Pressure',
+            'value': '50 m head (residential); 80 m (commercial/industrial)',
+            'applies_to': 'Static pressure limit to protect fittings',
+            'reference': 'WSAA WSA 03-2011 §3.2.1',
+        },
+        'wsaa_max_velocity': {
+            'topic': 'WSAA Maximum Pipe Velocity',
+            'value': '2.0 m/s',
+            'applies_to': 'Peak demand steady-state design',
+            'limitations': 'Higher values allowed in fire flow / emergency',
+            'reference': 'WSAA WSA 03-2011 §3.2.3',
+        },
+        'fire_flow': {
+            'topic': 'Fire Flow Residual Pressure',
+            'value': '12 m residual at 25 L/s at remotest hydrant',
+            'applies_to': 'Residential fire-fighting capacity',
+            'reference': 'WSAA WSA 03-2011 §3.4',
+        },
+        'as2280_ductile_iron': {
+            'topic': 'Ductile Iron Pipe (DICL)',
+            'pn_ratings': 'PN25, PN35',
+            'c_factor_new': '140',
+            'c_factor_aged': '120',
+            'wave_speed': '1100 m/s minimum',
+            'reference': 'AS 2280',
+        },
+        'as1477_pvc': {
+            'topic': 'PVC Pipe',
+            'pn_ratings': 'PN12, PN18',
+            'c_factor': '145-150',
+            'od_series': 'OD ≠ DN — DN100→110, DN150→160, DN200→225',
+            'reference': 'AS/NZS 1477',
+        },
+        'as4130_pe': {
+            'topic': 'PE/HDPE Pipe',
+            'pn_ratings': 'SDR11 PN16',
+            'c_factor': '140-150',
+            'design_stress_short_term': '20-22 MPa (PE100)',
+            'reference': 'AS/NZS 4130',
+        },
+        'bingham_plastic': {
+            'topic': 'Bingham Plastic Slurry',
+            'formula': 'τ = τy + μp × (dV/dy)',
+            'applies_to': 'High-concentration mineral slurries',
+            'laminar_friction': 'Use Darcy f = 64/Re_B (NEVER Fanning 16/Re_B)',
+            'reference': 'Wasp, Kenny & Gandhi (1977)',
+        },
+    }
+
+    def knowledge_base(self, topic=None):
+        """
+        Query the built-in hydraulic engineering knowledge base.
+
+        Parameters
+        ----------
+        topic : str or None
+            Specific topic key (e.g. 'hazen_williams', 'joukowsky',
+            'wsaa_min_pressure'). If None, returns full index.
+
+        Returns dict with formula, units, limitations, and standard reference.
+        """
+        if topic is None:
+            return {
+                'topics': sorted(self.KNOWLEDGE_BASE.keys()),
+                'n_topics': len(self.KNOWLEDGE_BASE),
+                'note': 'Call knowledge_base(topic="<key>") for details.',
+            }
+
+        if topic not in self.KNOWLEDGE_BASE:
+            return {
+                'error': f'Unknown topic: {topic}',
+                'available_topics': sorted(self.KNOWLEDGE_BASE.keys()),
+            }
+
+        entry = dict(self.KNOWLEDGE_BASE[topic])
+        entry['topic_key'] = topic
+        return entry
+
+    def search_knowledge_base(self, query):
+        """
+        Keyword search over the knowledge base.
+
+        Parameters
+        ----------
+        query : str
+            Text to match against topic, formula, or content
+
+        Returns list of matching entries.
+        """
+        if not query:
+            return {'matches': [], 'n_matches': 0}
+
+        q = query.lower()
+        matches = []
+        for key, entry in self.KNOWLEDGE_BASE.items():
+            haystack = ' '.join(str(v).lower() for v in entry.values())
+            haystack += ' ' + key.lower()
+            if q in haystack:
+                matches.append({'topic_key': key, **entry})
+
+        return {'matches': matches, 'n_matches': len(matches), 'query': query}
+
+    # =========================================================================
+    # O10 — PERFORMANCE PROFILING FOR LARGE NETWORKS
+    # =========================================================================
+
+    def performance_profile(self):
+        """
+        Profile the loaded network for size and suggest optimisations.
+
+        Returns performance metrics, identifies potential bottlenecks, and
+        recommends model reduction strategies (skeletonisation, clustering)
+        for networks that are slow to solve or hard to visualise.
+
+        Returns dict with metrics, bottleneck candidates, and recommendations.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        import time as _time
+
+        wn = self.wn
+        n_junc = len(wn.junction_name_list)
+        n_pipe = len(wn.pipe_name_list)
+        n_pump = len(wn.pump_name_list)
+        n_valve = len(wn.valve_name_list)
+        n_tank = len(wn.tank_name_list)
+        n_total_nodes = n_junc + n_tank + len(wn.reservoir_name_list)
+
+        # Size category
+        if n_total_nodes < 100:
+            size_category = 'small'
+        elif n_total_nodes < 1000:
+            size_category = 'medium'
+        elif n_total_nodes < 10000:
+            size_category = 'large'
+        else:
+            size_category = 'very_large'
+
+        # Short-pipe candidates (for skeletonisation)
+        short_pipes = []
+        tiny_diameter_pipes = []
+        for pid in wn.pipe_name_list:
+            p = wn.get_link(pid)
+            if p.length < 10.0:
+                short_pipes.append(pid)
+            if p.diameter * 1000 < 50:  # DN < 50 mm
+                tiny_diameter_pipes.append(pid)
+
+        # Dead-end junctions (degree 1)
+        degree = {jid: 0 for jid in wn.junction_name_list}
+        for pid in wn.pipe_name_list:
+            p = wn.get_link(pid)
+            if p.start_node_name in degree:
+                degree[p.start_node_name] += 1
+            if p.end_node_name in degree:
+                degree[p.end_node_name] += 1
+        dead_ends = [j for j, d in degree.items() if d == 1]
+        series_nodes = [j for j, d in degree.items() if d == 2]
+
+        # Time a single steady-state run
+        solve_time_s = None
+        try:
+            t0 = _time.perf_counter()
+            self.run_steady_state(save_plot=False)
+            solve_time_s = round(_time.perf_counter() - t0, 3)
+        except Exception:
+            pass
+
+        recommendations = []
+        if size_category in ('large', 'very_large'):
+            recommendations.append(
+                f'Network has {n_total_nodes} nodes — consider skeletonising '
+                f'pipes < 50 mm diameter ({len(tiny_diameter_pipes)} candidates) '
+                f'using api.skeletonise().')
+        if len(short_pipes) > 10:
+            recommendations.append(
+                f'{len(short_pipes)} pipes are < 10 m long. Merging these '
+                f'with adjacent pipes reduces solve time without loss of accuracy.')
+        if len(series_nodes) > n_junc * 0.3:
+            recommendations.append(
+                f'{len(series_nodes)} junctions are series nodes (degree 2). '
+                f'Merging series pipes can reduce model size by ~30%.')
+        if solve_time_s is not None and solve_time_s > 5.0:
+            recommendations.append(
+                f'Steady-state solve took {solve_time_s}s. For iterative '
+                f'analysis (calibration, Monte Carlo) consider skeletonisation '
+                f'to cut runtime by 5-20x.')
+        if not recommendations:
+            recommendations.append(
+                'Network size is manageable — no optimisation required.')
+
+        return {
+            'size_category': size_category,
+            'metrics': {
+                'n_junctions': n_junc,
+                'n_pipes': n_pipe,
+                'n_pumps': n_pump,
+                'n_valves': n_valve,
+                'n_tanks': n_tank,
+                'n_total_nodes': n_total_nodes,
+                'n_dead_ends': len(dead_ends),
+                'n_series_nodes': len(series_nodes),
+                'n_short_pipes_lt_10m': len(short_pipes),
+                'n_tiny_diameter_pipes_lt_50mm': len(tiny_diameter_pipes),
+                'steady_state_solve_time_s': solve_time_s,
+            },
+            'recommendations': recommendations,
+            'note': (
+                'Use api.skeletonise() to merge series pipes and drop small '
+                'branches. Validate skeletonised model against full model '
+                'before using in design.'),
+        }

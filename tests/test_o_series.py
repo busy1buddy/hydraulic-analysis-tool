@@ -228,3 +228,126 @@ class TestO5NetworkDocumentation:
     def test_design_standards_referenced(self, api):
         result = api.generate_network_documentation()
         assert 'WSAA WSA 03-2011' in result['markdown']
+
+
+class TestO8PortfolioAnalysis:
+
+    def test_empty_list_error(self):
+        a = HydraulicAPI()
+        result = a.portfolio_analysis([])
+        assert 'error' in result
+
+    def test_mismatched_labels(self):
+        a = HydraulicAPI()
+        result = a.portfolio_analysis(['a.inp', 'b.inp'], labels=['only_one'])
+        assert 'error' in result
+
+    def test_missing_file(self, tmp_path):
+        a = HydraulicAPI()
+        result = a.portfolio_analysis([str(tmp_path / 'nonexistent.inp')])
+        assert result['n_failed'] == 1
+        assert 'error' in result['networks'][0]
+
+    def test_compares_networks(self, api, tmp_path):
+        # Write the current network to a file
+        path_a = str(tmp_path / 'net_a.inp')
+        api.write_inp(path_a)
+
+        # Create second network and write
+        a2 = HydraulicAPI()
+        a2.create_network(
+            name='net_b',
+            junctions=[
+                {'id': 'J1', 'elevation': 10, 'demand': 1, 'x': 0, 'y': 0},
+                {'id': 'J2', 'elevation': 12, 'demand': 1, 'x': 100, 'y': 0},
+            ],
+            reservoirs=[{'id': 'R1', 'head': 60, 'x': -50, 'y': 0}],
+            pipes=[
+                {'id': 'P1', 'start': 'R1', 'end': 'J1', 'length': 100,
+                 'diameter': 150, 'roughness': 130},
+                {'id': 'P2', 'start': 'J1', 'end': 'J2', 'length': 100,
+                 'diameter': 150, 'roughness': 130},
+            ],
+        )
+        path_b = str(tmp_path / 'net_b.inp')
+        a2.write_inp(path_b)
+
+        result = api.portfolio_analysis([path_a, path_b],
+                                        labels=['Site A', 'Site B'])
+        assert result['n_failed'] == 0
+        assert len(result['networks']) == 2
+        assert result['portfolio_summary']['n_networks'] == 2
+        assert 'grade_distribution' in result['portfolio_summary']
+
+    def test_api_state_preserved(self, api, tmp_path):
+        original_pipe_count = len(api.wn.pipe_name_list)
+        path = str(tmp_path / 'preserve.inp')
+        api.write_inp(path)
+        api.portfolio_analysis([path])
+        assert len(api.wn.pipe_name_list) == original_pipe_count
+
+
+class TestO9KnowledgeBase:
+
+    def test_index_returned_without_topic(self, api):
+        result = api.knowledge_base()
+        assert 'topics' in result
+        assert result['n_topics'] >= 10
+
+    def test_specific_topic_lookup(self, api):
+        result = api.knowledge_base('hazen_williams')
+        assert 'formula' in result
+        assert 'reference' in result
+        assert result['topic_key'] == 'hazen_williams'
+
+    def test_unknown_topic(self, api):
+        result = api.knowledge_base('nonexistent_topic')
+        assert 'error' in result
+        assert 'available_topics' in result
+
+    def test_wsaa_entries_present(self, api):
+        topics = api.knowledge_base()['topics']
+        assert 'wsaa_min_pressure' in topics
+        assert 'wsaa_max_pressure' in topics
+        assert 'wsaa_max_velocity' in topics
+
+    def test_search_finds_joukowsky(self, api):
+        result = api.search_knowledge_base('surge')
+        assert result['n_matches'] >= 1
+        keys = [m['topic_key'] for m in result['matches']]
+        assert 'joukowsky' in keys
+
+    def test_search_empty_query(self, api):
+        result = api.search_knowledge_base('')
+        assert result['n_matches'] == 0
+
+    def test_search_no_match(self, api):
+        result = api.search_knowledge_base('zzzxxxyyy_nonexistent')
+        assert result['n_matches'] == 0
+
+
+class TestO10PerformanceProfile:
+
+    def test_no_network_error(self):
+        a = HydraulicAPI()
+        result = a.performance_profile()
+        assert 'error' in result
+
+    def test_small_network_category(self, api):
+        result = api.performance_profile()
+        assert result['size_category'] == 'small'
+        assert 'recommendations' in result
+        assert 'metrics' in result
+
+    def test_metrics_structure(self, api):
+        result = api.performance_profile()
+        m = result['metrics']
+        assert m['n_junctions'] == 3
+        assert m['n_pipes'] == 3
+        assert 'n_dead_ends' in m
+        assert 'n_series_nodes' in m
+        assert m['steady_state_solve_time_s'] is not None
+
+    def test_recommendations_present(self, api):
+        result = api.performance_profile()
+        assert len(result['recommendations']) >= 1

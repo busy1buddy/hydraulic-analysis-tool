@@ -308,3 +308,126 @@ class ComparisonMixin:
             'summary': '. '.join(summary_parts) if summary_parts else 'No significant changes.',
             'labels': [label_a, label_b],
         }
+
+    # =========================================================================
+    # O8 — CROSS-NETWORK (PORTFOLIO) ANALYSIS
+    # =========================================================================
+
+    def portfolio_analysis(self, inp_paths, labels=None):
+        """
+        Compare a portfolio of networks side-by-side.
+
+        For consultants or utilities managing many networks, produces a single
+        comparison table showing inventory, total length, pressure compliance,
+        and grade for each network.
+
+        Parameters
+        ----------
+        inp_paths : list of str
+            Paths to .inp files to compare
+        labels : list of str or None
+            Optional labels (defaults to filenames)
+
+        Returns dict with per-network summary and portfolio-wide aggregates.
+        """
+        import os as _os
+        import wntr as _wntr
+
+        if not inp_paths:
+            return {'error': 'No networks provided'}
+
+        if labels is None:
+            labels = [_os.path.splitext(_os.path.basename(p))[0] for p in inp_paths]
+        if len(labels) != len(inp_paths):
+            return {'error': 'labels length must match inp_paths length'}
+
+        # Preserve current state
+        saved_wn = self.wn
+        saved_inp = getattr(self, '_inp_file', None)
+
+        networks = []
+        try:
+            for path, label in zip(inp_paths, labels):
+                if not _os.path.exists(path):
+                    networks.append({'label': label, 'path': path,
+                                     'error': 'File not found'})
+                    continue
+                try:
+                    wn = _wntr.network.WaterNetworkModel(path)
+                    self.wn = wn
+                    self._inp_file = path
+
+                    total_len = sum(wn.get_link(p).length
+                                    for p in wn.pipe_name_list)
+
+                    try:
+                        res = self.run_steady_state(save_plot=False)
+                        compliance = res.get('compliance', [])
+                        n_alerts = (len(compliance)
+                                    if isinstance(compliance, list) else 0)
+                        pressures = res.get('pressures', {})
+                        if pressures:
+                            p_vals = [p.get('avg_m', 0)
+                                      for p in pressures.values()]
+                            avg_p = sum(p_vals) / len(p_vals)
+                            min_p = min(p_vals)
+                        else:
+                            avg_p, min_p = 0, 0
+                    except Exception:
+                        n_alerts, avg_p, min_p = None, None, None
+
+                    if n_alerts is None:
+                        grade = 'N/A'
+                    elif n_alerts == 0:
+                        grade = 'A'
+                    elif n_alerts <= 3:
+                        grade = 'B'
+                    elif n_alerts <= 10:
+                        grade = 'C'
+                    else:
+                        grade = 'D'
+
+                    networks.append({
+                        'label': label,
+                        'path': path,
+                        'n_junctions': len(wn.junction_name_list),
+                        'n_pipes': len(wn.pipe_name_list),
+                        'n_pumps': len(wn.pump_name_list),
+                        'n_tanks': len(wn.tank_name_list),
+                        'n_reservoirs': len(wn.reservoir_name_list),
+                        'total_length_km': round(total_len / 1000, 2),
+                        'n_alerts': n_alerts,
+                        'avg_pressure_m': (round(avg_p, 1)
+                                           if avg_p is not None else None),
+                        'min_pressure_m': (round(min_p, 1)
+                                           if min_p is not None else None),
+                        'grade': grade,
+                    })
+                except Exception as e:
+                    networks.append({'label': label, 'path': path,
+                                     'error': f'Load failed: {e}'})
+        finally:
+            self.wn = saved_wn
+            self._inp_file = saved_inp
+
+        valid = [n for n in networks if 'error' not in n]
+        portfolio_summary = {}
+        if valid:
+            portfolio_summary = {
+                'n_networks': len(valid),
+                'total_junctions': sum(n['n_junctions'] for n in valid),
+                'total_pipes': sum(n['n_pipes'] for n in valid),
+                'total_length_km': round(
+                    sum(n['total_length_km'] for n in valid), 2),
+                'total_alerts': sum((n['n_alerts'] or 0) for n in valid),
+                'grade_distribution': {
+                    g: sum(1 for n in valid if n['grade'] == g)
+                    for g in ['A', 'B', 'C', 'D']
+                },
+            }
+
+        return {
+            'networks': networks,
+            'portfolio_summary': portfolio_summary,
+            'n_failed': len(networks) - len(valid),
+        }
