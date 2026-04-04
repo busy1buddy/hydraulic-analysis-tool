@@ -37,6 +37,7 @@ from desktop.statistics_panel import StatisticsPanel
 from desktop.preferences import load_preferences, save_preferences
 from desktop.pressure_zone_dialog import PressureZoneDialog
 from desktop.rehab_dialog import RehabDialog
+from desktop.split_canvas import SplitCanvas
 
 
 class MainWindow(QMainWindow):
@@ -228,6 +229,10 @@ class MainWindow(QMainWindow):
         self.basemap_act.setCheckable(True)
         self.basemap_act.toggled.connect(self._on_basemap_toggled)
         view_menu.addAction(self.basemap_act)
+
+        split_act = QAction("Split &Screen (Compare Scenarios)", self)
+        split_act.triggered.connect(self._on_split_screen)
+        view_menu.addAction(split_act)
 
         view_menu.addSeparator()
 
@@ -970,6 +975,30 @@ class MainWindow(QMainWindow):
     def _on_basemap_toggled(self, checked: bool):
         """Toggle GIS basemap overlay."""
         self.canvas.toggle_basemap(checked)
+
+    def _on_split_screen(self):
+        """Open split-screen scenario comparison."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        scenarios = self.scenario_panel.scenarios
+        if len(scenarios) < 2:
+            QMessageBox.warning(self, "Insufficient Scenarios",
+                "Create at least 2 scenarios and run them before comparing.\n\n"
+                "Go to the Scenarios panel, create scenarios with different\n"
+                "demand multipliers, then click 'Run All'.")
+            return
+        has_results = sum(1 for sc in scenarios if sc.results)
+        if has_results < 2:
+            QMessageBox.warning(self, "No Results",
+                "Run all scenarios first (click 'Run All' in the Scenarios panel).")
+            return
+
+        split = SplitCanvas(self.api, parent=self)
+        split.set_scenarios(scenarios)
+        split.closed.connect(split.deleteLater)
+        split.show()
 
     def _on_analysis_error(self, msg):
         self.progress_bar.setVisible(False)

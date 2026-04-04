@@ -117,6 +117,14 @@ class AnimationPanel(QWidget):
         ctrl_row.addWidget(self.loop_check)
 
         ctrl_row.addStretch()
+
+        self.export_btn = QPushButton("Export GIF...")
+        self.export_btn.setFont(font)
+        self.export_btn.setToolTip(
+            "Export animation as GIF or MP4 (requires Pillow; imageio for MP4)")
+        self.export_btn.clicked.connect(self._on_export)
+        ctrl_row.addWidget(self.export_btn)
+
         layout.addLayout(ctrl_row)
 
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -277,3 +285,127 @@ class AnimationPanel(QWidget):
                     self.next_btn, self.last_btn):
             btn.setEnabled(has_data)
         self.slider.setEnabled(has_data)
+        self.export_btn.setEnabled(has_data)
+
+    # ------------------------------------------------------------------
+    # GIF / MP4 export
+    # ------------------------------------------------------------------
+
+    def _on_export(self):
+        """Export animation frames as GIF or MP4."""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+
+        if self.n_frames == 0:
+            QMessageBox.warning(self, "No Data",
+                "No animation data loaded. Run an analysis first.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Animation", "",
+            "GIF Image (*.gif);;MP4 Video (*.mp4);;All Files (*)"
+        )
+        if not path:
+            return
+
+        is_mp4 = path.lower().endswith('.mp4')
+
+        if is_mp4:
+            try:
+                import imageio
+            except ImportError:
+                QMessageBox.warning(self, "Missing Dependency",
+                    "MP4 export requires the imageio package.\n\n"
+                    "Install with: pip install imageio[ffmpeg]")
+                return
+        else:
+            try:
+                from PIL import Image
+            except ImportError:
+                QMessageBox.warning(self, "Missing Dependency",
+                    "GIF export requires the Pillow package.\n\n"
+                    "Install with: pip install Pillow")
+                return
+
+        # Capture frames
+        progress = QProgressDialog(
+            "Exporting animation...", "Cancel", 0, self.n_frames, self)
+        progress.setWindowTitle("Export")
+        progress.setMinimumDuration(0)
+
+        frames = []
+        original_frame = self._current_frame
+
+        for i in range(self.n_frames):
+            if progress.wasCanceled():
+                self._set_frame(original_frame)
+                return
+
+            progress.setValue(i)
+            self._set_frame(i)
+
+            # Let Qt process the frame update
+            from PyQt6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+            # Grab the parent canvas widget if available
+            canvas = self._find_canvas()
+            if canvas is None:
+                QMessageBox.warning(self, "Export Error",
+                    "Cannot find canvas widget for frame capture.")
+                self._set_frame(original_frame)
+                return
+
+            pixmap = canvas.plot_widget.grab()
+            img = pixmap.toImage()
+            # Convert QImage to bytes
+            from PyQt6.QtCore import QBuffer, QIODevice
+            buf = QBuffer()
+            buf.open(QIODevice.OpenModeFlag.WriteOnly)
+            img.save(buf, 'PNG')
+            frames.append(buf.data().data())
+
+        progress.setValue(self.n_frames)
+        self._set_frame(original_frame)
+
+        # Write output
+        try:
+            if is_mp4:
+                import imageio
+                import io
+                from PIL import Image as PILImage
+                writer = imageio.get_writer(path, fps=15)
+                for frame_bytes in frames:
+                    pil_img = PILImage.open(io.BytesIO(frame_bytes))
+                    writer.append_data(np.array(pil_img))
+                writer.close()
+            else:
+                from PIL import Image
+                import io
+                pil_frames = []
+                for frame_bytes in frames:
+                    pil_frames.append(Image.open(io.BytesIO(frame_bytes)))
+                if pil_frames:
+                    pil_frames[0].save(
+                        path, save_all=True,
+                        append_images=pil_frames[1:],
+                        duration=66,  # ~15 fps
+                        loop=0,
+                    )
+
+            QMessageBox.information(self, "Export Complete",
+                f"Animation saved to:\n{path}\n\n"
+                f"{self.n_frames} frames exported.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error",
+                f"Could not save animation.\n\n{e}")
+
+    def _find_canvas(self):
+        """Find the parent NetworkCanvas widget."""
+        # Walk up the widget tree to find the MainWindow, then get its canvas
+        widget = self.parent()
+        while widget is not None:
+            if hasattr(widget, 'canvas'):
+                return widget.canvas
+            widget = widget.parent() if hasattr(widget, 'parent') else None
+        return None
