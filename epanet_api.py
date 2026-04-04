@@ -2669,6 +2669,90 @@ class HydraulicAPI:
         }
 
     # =========================================================================
+    # CHLORINE BOOSTER STATION DESIGN (J14)
+    # =========================================================================
+
+    WSAA_MIN_CHLORINE_MGL = 0.2  # WSAA WSA 03-2011 minimum residual
+
+    def design_chlorine_boosters(self, wq_results=None, target_residual_mgl=None):
+        """
+        Identify locations where chlorine drops below minimum and
+        recommend booster station placement and dosing.
+
+        Parameters
+        ----------
+        wq_results : dict or None
+            Water quality results from run_water_quality(parameter='chlorine').
+            If None, runs chlorine analysis.
+        target_residual_mgl : float or None
+            Target residual (default: WSAA 0.2 mg/L)
+
+        Returns dict with 'deficient_nodes', 'booster_recommendations', 'summary'.
+        Ref: WSAA Water Quality Management Guidelines
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if target_residual_mgl is None:
+            target_residual_mgl = self.WSAA_MIN_CHLORINE_MGL
+
+        if wq_results is None:
+            try:
+                wq_results = self.run_water_quality(
+                    parameter='chlorine', duration_hrs=72,
+                    initial_conc=1.0, bulk_coeff=-0.5, wall_coeff=-0.1)
+            except Exception as e:
+                return {'error': f'Water quality analysis failed: {e}'}
+
+        junction_quality = wq_results.get('junction_quality', {})
+
+        # Find nodes below minimum
+        deficient = []
+        for jid, qdata in junction_quality.items():
+            min_cl = qdata.get('min_chlorine_mgl', qdata.get('min_age_hrs', 1.0))
+            avg_cl = qdata.get('avg_chlorine_mgl', qdata.get('avg_age_hrs', 1.0))
+            if min_cl < target_residual_mgl:
+                deficient.append({
+                    'node': jid,
+                    'min_chlorine_mgl': round(min_cl, 3),
+                    'avg_chlorine_mgl': round(avg_cl, 3),
+                    'deficit_mgl': round(target_residual_mgl - min_cl, 3),
+                })
+
+        if not deficient:
+            return {
+                'deficient_nodes': [],
+                'booster_recommendations': [],
+                'summary': f'All nodes maintain ≥{target_residual_mgl} mg/L — '
+                           f'no booster stations needed.',
+            }
+
+        # Sort by deficit (worst first)
+        deficient.sort(key=lambda x: x['deficit_mgl'], reverse=True)
+
+        # Recommend booster stations
+        # Strategy: place at upstream nodes that feed the most deficient areas
+        # Simplified: recommend at the most deficient node
+        boosters = []
+        for d in deficient[:3]:  # up to 3 boosters
+            # Dose = target - current minimum + safety margin
+            dose = target_residual_mgl - d['min_chlorine_mgl'] + 0.1
+            boosters.append({
+                'node': d['node'],
+                'recommended_dose_mgl': round(dose, 2),
+                'target_residual_mgl': target_residual_mgl,
+                'reason': f'Minimum chlorine {d["min_chlorine_mgl"]:.3f} mg/L '
+                          f'< {target_residual_mgl} mg/L (WSAA)',
+            })
+
+        return {
+            'deficient_nodes': deficient,
+            'booster_recommendations': boosters,
+            'summary': f'{len(deficient)} nodes below {target_residual_mgl} mg/L. '
+                       f'Recommended {len(boosters)} booster station(s).',
+        }
+
+    # =========================================================================
     # ASSET DETERIORATION MODELLING (J9)
     # =========================================================================
 
