@@ -1,231 +1,334 @@
-# Future Roadmap
+# Product Roadmap — Hydraulic Analysis Tool
 
-How to take this from a strong open-source toolkit to something that exceeds $15K/year commercial software like PumpSim, AFT Fathom, and WaterGEMS.
+**Version:** v1.0.0-release (2026-04-04)
+**Test suite:** 363 tests passing, 12 xfail (TSNet pump stability)
+**Architecture:** PyQt6 desktop app + WNTR/TSNet solvers + Australian pipe/pump databases
 
----
-
-## What We Have Today (v1.0)
-
-| Category | Capabilities |
-|----------|-------------|
-| **Hydraulic Analysis** | Steady-state (24hr EPS), water hammer (MOC), fire flow, water quality (age), pump trip/startup |
-| **Slurry / Mining** | Bingham Plastic, Power Law, Herschel-Bulkley solvers; 7 pre-configured fluids; settling/wear checks |
-| **Pump Engineering** | 7-pump database with curves, recommendation engine, system curves, operating point analysis |
-| **Pipe Engineering** | Australian pipe database (4 materials, 32 sizes), stress calculator (hoop/von Mises/Barlow) |
-| **Visualization** | 2D Plotly charts, 3D Three.js scene with color-coded results |
-| **Data Import** | CSV, GIS Shapefile, DXF/CAD |
-| **Scenario Analysis** | Side-by-side what-if comparison with modification tracking |
-| **Reporting** | Word DOCX and PDF report generation |
-| **Network Editing** | View, edit, add, delete elements; save to .inp |
-| **Compliance** | WSAA Australian standards (pressure, velocity, pipe rating, fire flow) |
-| **Testing** | 157 automated tests, 18 test files |
-| **UI** | NiceGUI dashboard (7 tabs), legacy FastAPI REST API |
-| **Feedback** | Built-in user feedback channel |
+This roadmap covers three parallel tracks: production hardening (depth), feature gaps (breadth), and validation (prove the numbers). Items are prioritised by impact on professional engineering credibility.
 
 ---
 
-## Phase 1: Polish & Professional Quality (Near-term)
+## Track 1 — Production Hardening (depth)
 
-These items transform the current build into a tool professional engineers would trust daily.
+### 1.1 Visualisation completeness audit
+**Priority:** CRITICAL | **Effort:** 2-3 days | **Depends on:** nothing
 
-### 1.1 3D Visualization Enhancement -- COMPLETED (v1.1.0)
-- ~~**Animated flow particles** - show fluid direction and velocity as moving dots along pipes~~
-- ~~**Pipe textures** - material-based textures (steel, PVC, concrete) on 3D pipes~~
-- ~~**Result animation** - step through 24hr simulation in 3D, watching pressures change~~
-- ~~**Selection highlighting** - glow/outline effect on selected elements~~
-- ~~**Measurement tool** - click two points to measure distance~~
-- ~~**Labels toggle** - show/hide node labels, pipe diameters, flow values in 3D~~
-- ~~**Screenshot/video export** - capture 3D views for reports~~
+Run the app against all 10 tutorial networks and document every visual issue.
 
-### 1.2 Pump Curve Digitizer
-- Upload a pump curve image (from manufacturer PDF)
-- Click points on the image to digitize the curve
-- Auto-fit polynomial to digitized points
-- Save to pump database
-- Could use OpenCV for image processing or a simpler click-coordinate approach
+Checklist:
+- [ ] ColourBar renders correctly for each variable type (pressure, velocity, headloss)
+- [ ] ColourBar ticks are readable at extreme ranges (0.01 to 10000)
+- [ ] Value overlays do not overlap on dense networks (fire_flow_demand has 10 nodes)
+- [ ] Value overlays scale font with zoom level
+- [ ] Animation player works on transient_network.inp (the only transient-capable network)
+- [ ] Animation player gracefully handles networks with no transient data
+- [ ] Pipe DN scaling works at extreme sizes: DN63 (PE) to DN900 (Concrete)
+- [ ] Pipe DN scaling is visually distinct: DN150 vs DN600 must be obviously different
+- [ ] Node demand scaling differentiates 0 LPS from 50 LPS
+- [ ] Probe tool (not yet built) returns correct values for junctions, reservoirs, tanks, pipes, pumps, valves
+- [ ] Split-screen comparison (not yet built) works with two scenarios
+- [ ] GIF export (not yet built) produces a valid animated file
+- [ ] All 5 colourmap options produce visually distinct gradients
+- [ ] Log scale checkbox works correctly for values spanning 3+ orders of magnitude
+- [ ] Percentile clip (not yet built) handles outlier values without distorting the scale
 
-### 1.3 Dynamic Operational Simulation
-- **Control logic engine** - IF/THEN rules for pump/valve control
-- **Tank level triggers** - start/stop pumps based on tank levels
-- **Time-based scheduling** - pump schedules over 24hr/weekly cycles
-- **Energy cost optimization** - time-of-use tariffs, minimize pumping cost
-- WNTR already supports controls and rules - this is an exposure/UI task
+Current status: ColourMapWidget, ColourBar, AnimationPanel, pipe/node scaling, and value overlay are built. Probe tool, split-screen, and GIF export are designed but not yet implemented.
 
-### 1.4 Terrain Mapping
-- Import DEM (Digital Elevation Model) files
-- Map pipeline routes onto 3D terrain surface
-- Auto-set junction elevations from DEM
-- Render terrain mesh in 3D scene
-- Australian DEM data from ELVIS (elevation.fsdf.org.au)
+### 1.2 Performance profiling
+**Priority:** HIGH | **Effort:** 3-5 days | **Depends on:** 1.1
 
-### 1.5 Input Validation & Error Recovery
-- Validate network connectivity before simulation
-- Check for disconnected nodes, dead-end pipes
-- Graceful handling of solver convergence failures
-- User-friendly error messages (not Python tracebacks)
+Profile the app on a large network (1000+ nodes). Use EPANET's BWSN-1 or generate a synthetic grid network.
 
----
+Targets:
+- [ ] Canvas redraw < 100ms at 1000 nodes (currently untested)
+- [ ] Animation player maintains 30fps at 1000 nodes x 200 timesteps
+- [ ] Results table scrolls smoothly at 1000 rows (QTableWidget may need virtualisation)
+- [ ] Memory usage < 500 MB for 1000-node steady-state analysis
+- [ ] Memory usage < 2 GB for 1000-node transient (200 steps x 1000 nodes x 8 bytes = 1.6 MB — should be fine)
+- [ ] No memory leaks over a 1-hour session (open/close/analyse cycle 50 times)
+- [ ] Startup time < 3 seconds on a modern Windows machine
+- [ ] PyInstaller exe startup < 10 seconds
 
-## Phase 2: Feature Parity with Commercial Tools (Mid-term)
+Profiling tools: cProfile for Python, QElapsedTimer for Qt, tracemalloc for memory.
 
-These close the remaining gaps with PumpSim, AFT Fathom, and WaterGEMS.
+### 1.3 Error handling completeness
+**Priority:** HIGH | **Effort:** 2-3 days | **Depends on:** nothing
 
-### 2.1 Comprehensive Pump Curve System
-- **Manufacturer database** - import from Grundfos, Flygt, Xylem, KSB, Sulzer product selectors
-- **Multi-pump analysis** - series and parallel pump combinations
-- **VFD/variable speed** - affinity law curves at different RPM percentages
-- **NPSHa vs NPSHr** - cavitation analysis with inlet pipe losses
-- **Pump wear curves** - degraded performance over time
-- **Positive displacement pumps** - flow-per-RPM, pressure-per-RPM models
+Document every crash path and add defensive handling.
 
-### 2.2 Advanced Slurry Modelling
-- **Particle settling velocity** - Stokes, intermediate, Newton's law regimes
-- **Critical deposition velocity** - minimum velocity to prevent settling
-- **Slurry concentration effects** - viscosity vs concentration curves
-- **Wear rate estimation** - pipe wall erosion from abrasive slurry
-- **Thickener/cyclone integration** - model concentration changes through process equipment
-- **Paste fill design** - underground backfill pipeline design per mining standards
+Known crash scenarios to test:
+- [ ] Malformed .inp files (missing [JUNCTIONS] section, truncated file, binary garbage)
+- [ ] .inp files with unsupported EPANET features (rules, controls, emitters, sources)
+- [ ] Networks with isolated nodes (no connected pipes)
+- [ ] Networks with negative elevations (valid but unusual)
+- [ ] Networks with zero-length pipes (WNTR rejects these)
+- [ ] Networks with zero-diameter pipes (causes division by zero in velocity calc)
+- [ ] Transient analysis on a network with no valves or pumps
+- [ ] Pump trip on a pump with >3 curve points (TSNet limitation)
+- [ ] Report generation when analysis produced warnings/errors
+- [ ] Opening a .hap file that references a missing .inp file
+- [ ] Disk full during report generation or audit trail write
+- [ ] Network modification (canvas editor) then analyse without saving
 
-### 2.3 Water Quality Modelling (Extended)
-- **Chlorine decay** - first-order bulk and wall decay
-- **Contamination tracking** - source tracing for backflow events
-- **DBP formation** - disinfection byproduct prediction
-- **Temperature modelling** - heat transfer in exposed pipelines
-- **Multi-species reactions** - complex water chemistry
+Current status: basic error handling exists (QMessageBox for missing network, try/except around analysis). Need systematic coverage of every boundary condition.
 
-### 2.4 GIS Integration
-- **Live GIS overlay** - OpenStreetMap/satellite imagery under 3D network
-- **Spatial queries** - find pipes within X metres of a location
-- **Asset register integration** - link pipes to asset management databases
-- **Coordinate reference systems** - full GDA2020/WGS84/MGA support with on-the-fly reprojection
-- **Shapefile/GeoPackage export** - export results back to GIS
+### 1.4 UI/UX review
+**Priority:** MEDIUM | **Effort:** 1-2 days | **Depends on:** 1.1
 
-### 2.5 SCADA / Real-Time Integration
-- **OPC UA client** - read live SCADA data (pressures, flows, pump status)
-- **Digital twin mode** - compare live vs model in real time
-- **Alarm generation** - flag when live data deviates from model predictions
-- **Historian integration** - store time-series in InfluxDB/TimescaleDB
-- **Dashboard live mode** - auto-updating charts from SCADA feeds
+Act as a first-time hydraulic engineer and document friction points.
+
+Checklist:
+- [ ] Is the File > Open workflow obvious? (currently no drag-and-drop)
+- [ ] Can a user find the tutorial examples from inside the app?
+- [ ] Is the Analysis > Run Steady State shortcut (F5) documented in the menu?
+- [ ] Are error messages actionable? ("Load a network first" vs "Click File > Open to load an .inp file")
+- [ ] Is the slurry mode workflow clear? (toggle → set parameters → run)
+- [ ] Is it obvious that you need to run analysis before generating a report?
+- [ ] Can a user understand the WSAA compliance results without prior knowledge?
+- [ ] Are keyboard shortcuts documented? (F5, F6, Ctrl+Z, Ctrl+Y, Ctrl+O, Ctrl+S, Ctrl+Q)
+- [ ] Is the Properties panel obviously interactive? (currently just shows data, no edit)
+- [ ] Is the colour bar unit label always visible and correct?
 
 ---
 
-## Phase 3: Competitive Advantage (Long-term)
+## Track 2 — Feature Gaps (breadth)
 
-These go beyond what any single commercial tool offers today.
+### 2.1 Water quality modelling
+**Priority:** HIGH | **Effort:** 5-8 days | **Depends on:** nothing
 
-### 3.1 AI-Powered Analysis
-- **Automated network optimization** - genetic algorithm for pipe sizing, pump selection
-- **Leak detection** - ML model trained on pressure/flow patterns
-- **Demand forecasting** - predict future demands from historical data
-- **Energy optimization** - RL-based pump scheduling for lowest cost
-- **Anomaly detection** - flag unusual hydraulic behaviour automatically
+EPANET's core differentiator. WNTR already supports water quality simulation — this is primarily a UI exposure task.
 
-### 3.2 Collaboration Features
-- **Multi-user editing** - concurrent network modification (WebSocket)
-- **Version control** - track changes to network models over time
-- **Review & approval workflow** - engineering review before finalizing designs
-- **Commenting** - attach notes to specific elements
-- **Role-based access** - viewer, editor, approver roles
+What to build:
+- Analysis > Water Quality submenu (Age, Chlorine, Trace)
+- Chlorine decay parameters dialog (bulk coefficient, wall coefficient, initial concentration)
+- Canvas colour mode: Chlorine Concentration (mg/L)
+- Canvas colour mode: Water Age (hours) — partially exists, needs integration with new colourmap
+- Compliance check: minimum residual chlorine 0.2 mg/L per WSAA
+- Report section: water quality summary table (max age, min chlorine per junction)
+- Tutorial: add water quality analysis to dead_end_network example
 
-### 3.3 Cloud Deployment
-- **Web-accessible** - NiceGUI already supports multi-user web deployment
-- **Simulation queue** - background processing for large networks
-- **Results caching** - don't re-run unchanged analyses
-- **User management** - authentication, project workspaces
-- **API for integrations** - REST API already exists, add OAuth tokens
+WNTR API: `sim = wntr.sim.EpanetSimulator(wn); results = sim.run_sim()` with `wn.options.quality.parameter = 'CHEMICAL'`.
 
-### 3.4 Regulatory Compliance Engine
-- **Australian standards** (current): WSAA, AS/NZS 2566, AS 2419.1
-- **Mining regulations**: state-specific requirements (NSW, QLD, WA, VIC)
-- **Environmental compliance**: discharge limits, EPA requirements
-- **International standards**: ISO, EN, AWWA for export markets
-- **Automated compliance reports** - generate submission-ready documents
+### 2.2 Demand patterns and extended period simulation (EPS)
+**Priority:** HIGH | **Effort:** 5-8 days | **Depends on:** nothing
 
-### 3.5 Extended Simulation Capabilities
-- **Multiphase flow** - gas-liquid mixtures in pipelines
-- **Thermal hydraulics** - temperature-dependent fluid properties
-- **Compressible gas flow** - compressed air reticulation (like PumpSim Premium)
-- **Coupled hydraulic-structural** - pipe movement under pressure loading
-- **Seismic analysis** - earthquake resilience assessment (WNTR already has this foundation)
+Currently all analyses use base demand with a scalar multiplier. Real networks have diurnal patterns.
 
-### 3.6 Professional Distribution
-- **Windows installer** - Tauri-based native app with auto-update
-- **Offline-first** - works without internet (NiceGUI already does this)
-- **Licensing system** - trial, professional, enterprise tiers
-- **Training materials** - built-in tutorials, example projects
-- **Certification program** - for consulting engineers
+What to build:
+- Demand Pattern Editor dialog (table: 24 rows x 2 columns: hour, multiplier)
+- Pattern library presets: Residential (WSAA typical), Commercial, Industrial, Irrigation
+- Apply pattern to individual junctions or all junctions
+- Extended period simulation: run over 24h, 48h, or 168h (1 week)
+- Results: pressure/velocity envelope (min/max band) over simulation period
+- Canvas: animate EPS results using existing AnimationPanel
+- Compliance: check WSAA min pressure across ALL timesteps, not just average
 
----
+The EPS infrastructure already exists (WNTR runs 24h by default) — the gap is UI exposure and envelope reporting.
 
-## Competitive Comparison
+### 2.3 Calibration tools
+**Priority:** MEDIUM | **Effort:** 8-12 days | **Depends on:** 2.2
 
-| Feature | Our Toolkit | PumpSim ($15K) | AFT Fathom ($10K) | WaterGEMS ($15K) |
-|---------|------------|----------------|-------------------|------------------|
-| Steady-state hydraulics | Yes | Yes | Yes | Yes |
-| Water hammer / transient | Yes | No | Separate ($15K AFT Impulse) | Separate (HAMMER) |
-| Water quality | Yes | No | No | Yes |
-| Non-Newtonian fluids | Yes | Yes | Yes (limited) | No |
-| 3D visualization | Yes | Yes (better) | No | No |
-| Pump recommendation | Yes | Yes (better) | Yes (best) | Limited |
-| GIS integration | Yes | No | No | Yes (best) |
-| Fire flow analysis | Yes | No | No | Yes |
-| Scenario comparison | Yes | Limited | Yes | Yes |
-| Python API | Yes | No | No | Limited |
-| Report generation | Yes | Limited | Yes | Yes |
-| Network editor | Yes | Yes (better) | Yes | Yes (best) |
-| SCADA integration | Planned | No | No | Yes |
-| AI optimization | Planned | No | No | No |
-| Automated testing | 157 tests | No | No | No |
-| Cost | Free | $5-15K/yr | $5-15K/yr | $5-15K/yr |
+Engineers use field data to calibrate models. This is what separates a design tool from a verified operational model.
 
-### Where we already win
-- **Transient analysis included** (competitors charge separately)
-- **Water quality + hydraulics in one tool**
-- **Python API for automation** (none of the competitors offer this)
-- **Open source + free** (vs $5-15K/year)
-- **Automated testing** (157 tests - commercial tools have none exposed)
-- **Both mining AND water supply** in one tool
+What to build:
+- Import field measurements (CSV: node_id, timestamp, pressure_m)
+- Import flow measurements (CSV: pipe_id, timestamp, flow_lps)
+- Roughness calibration wizard: iteratively adjust C-factors to match measured pressures
+- Demand calibration: scale demands to match measured flows at metering points
+- Goodness of fit report: predicted vs measured scatter plot, R^2, RMSE, Nash-Sutcliffe
+- Calibration report section in DOCX/PDF
 
-### Where we need to improve
-- **3D visualization quality** - PumpSim's is more polished (textures, animation)
-- **Pump curve database size** - AFT Fathom has thousands of real manufacturer pumps
-- **Network editor UX** - WaterGEMS has the best drag-and-drop editor
-- **Validation/certification** - commercial tools have decades of engineering validation
-- **Documentation depth** - commercial tools have video tutorials, training courses
+Calibration algorithms: start with manual roughness grouping (DI, PVC, PE, Concrete), then genetic algorithm for automated calibration.
 
----
+### 2.4 Pressure zone management
+**Priority:** MEDIUM | **Effort:** 3-5 days | **Depends on:** nothing
 
-## Priority Ranking
+Multi-zone systems are standard in Australian water networks.
 
-If building towards commercial-competitive quality, this is the recommended priority order:
+What to build:
+- Zone assignment: right-click node > Assign to Zone (dropdown)
+- Zone colour-coding on canvas (distinct colour per zone)
+- PRV/PSV valve analysis with zone boundary identification
+- Zone balance report: supply vs demand per zone per timestep
+- Zone pressure envelope: min/max/avg pressure per zone
+- Canvas: zone boundary lines drawn automatically
 
-| Priority | Item | Impact | Effort |
-|----------|------|--------|--------|
-| ~~1~~ | ~~3D flow animation + textures~~ | ~~DONE (v1.1.0)~~ | ~~Medium~~ |
-| 2 | Dynamic simulation control logic | Core engineering feature | Medium |
-| 3 | Pump curve digitizer | Practical daily-use feature | Low |
-| 4 | Terrain mapping (DEM) | Visual + engineering impact | Medium |
-| 5 | Manufacturer pump database expansion | Practical impact | Low-Medium |
-| 6 | Input validation + error UX | Trust + usability | Medium |
-| 7 | SCADA/OPC integration | Enterprise differentiator | High |
-| 8 | AI-powered optimization | Unique competitive advantage | High |
-| 9 | Multi-user collaboration | Enterprise feature | High |
-| 10 | Cloud deployment | Scale + accessibility | Medium |
-| 11 | Tauri desktop installer | Distribution | Medium |
-| 12 | Regulatory compliance engine | Market requirement | Medium |
+### 2.5 Fire flow analysis wizard
+**Priority:** MEDIUM | **Effort:** 3-5 days | **Depends on:** nothing
+
+Already implemented in epanet_api.py (`run_fire_flow()`) but not exposed as a proper feature.
+
+What to build:
+- Analysis > Fire Flow Wizard dialog
+- Specify: target node, required flow (default 25 LPS per WSAA), minimum residual pressure (12 m per WSAA)
+- Automated: sweep all nodes, find max available flow at each
+- Results: fire flow availability map on canvas (green = adequate, red = inadequate)
+- Compliance report: which nodes fail fire flow requirements
+- Tutorial: add fire flow analysis to fire_flow_demand example
+
+### 2.6 GIS integration
+**Priority:** LOW (but critical for professional adoption) | **Effort:** 10-15 days | **Depends on:** nothing
+
+Engineers work with GIS data.
+
+What to build:
+- Shapefile import: import pipes and nodes from GIS layers (partially exists in importers/)
+- Coordinate system: support MGA2020/GDA2020 via pyproj
+- Background map: OpenStreetMap tile layer behind the network canvas (via requests + tile caching)
+- Export: save results as shapefile with result attributes per element
+- DEM import: set junction elevations from Digital Elevation Model
+
+Libraries: geopandas, pyproj, contextily (for basemaps).
+
+### 2.7 Asset management integration
+**Priority:** LOW | **Effort:** 5-8 days | **Depends on:** 2.3
+
+Australian utilities use asset management systems.
+
+What to build:
+- Import pipe age/condition from CSV
+- Pipe condition scoring: function of age, material, break history
+- Rehabilitation prioritisation: rank pipes by (headloss x age x condition score)
+- Capital works report: recommended replacements with estimated cost
+- Export: pipe condition scores to CSV for asset register
 
 ---
 
-## Technical Debt
+## Track 3 — Validation (prove the numbers)
 
-Items to address for long-term maintainability:
+### 3.1 EPANET verification test suite
+**Priority:** CRITICAL | **Effort:** 3-5 days | **Depends on:** nothing
 
-- Replace `print()` statements with Python `logging` module
-- Add structured logging (JSON format) for production deployment
-- Add input validation at API boundaries (Pydantic models for all methods)
-- Add rate limiting and authentication to REST API
-- Add database (SQLite) for results persistence instead of JSON files
-- Improve TSNet pump transient stability (or evaluate alternative solvers)
-- Add concurrent analysis support (async/queue for long-running simulations)
-- Add configuration file (YAML/TOML) instead of hardcoded defaults
-- Set up CI/CD pipeline (GitHub Actions) for automated testing on push
+EPA publishes official test networks with reference results. Run all of them and compare.
+
+Networks to verify:
+- [ ] Net1.inp — 9 junctions, 12 pipes, 1 pump, 1 tank. Pressures must match EPANET 2.2 within 0.1%
+- [ ] Net2.inp — 35 junctions, 40 pipes, 1 pump, 1 tank. Extended period with tank filling/draining
+- [ ] Net3.inp — 92 junctions, 117 pipes, 2 pumps, 3 tanks. Largest standard test network
+- [ ] BWSN-1 — 126 junctions. Water security benchmark
+- [ ] BWSN-2 — 12,523 junctions. Large-scale performance test
+
+Verification method: run each network through WNTR, compare node pressures and link flows against EPANET 2.2 reference outputs at every timestep. Tolerance: < 0.1% for pressures, < 0.5% for flows.
+
+### 3.2 Slurry solver validation
+**Priority:** HIGH | **Effort:** 3-5 days | **Depends on:** nothing
+
+The slurry solver is unique to this tool — it needs independent validation against published literature.
+
+Benchmarks:
+- [ ] Buckingham-Reiner: benchmark against Darby (Chemical Engineering Fluid Mechanics, 3rd ed.) Table 7-1
+- [ ] Herschel-Bulkley: benchmark against Chhabra & Richardson (Non-Newtonian Flow, 2nd ed.)
+- [ ] Wilson-Thomas turbulent friction: benchmark against Wilson, Addie & Clift (Slurry Transport Using Centrifugal Pumps, 3rd ed.)
+- [ ] Newtonian limit: already benchmarked (Benchmark #6, passes at < 5%)
+- [ ] Document valid flow regime range: Re_B from 1 to 10^6, He from 0 to 10^8
+- [ ] Document accuracy at transition regime (Re near Re_crit): this is the weakest area
+
+### 3.3 Transient solver validation
+**Priority:** MEDIUM | **Effort:** 2-3 days | **Depends on:** nothing
+
+TSNet has known limitations. Document them precisely rather than hiding them.
+
+Items:
+- [ ] Joukowsky benchmark: current result matches within 0.5 m (already verified in Benchmark #1)
+- [ ] Valve closure wave shape: compare TSNet waveform against analytical solution for simple pipe
+- [ ] Pump trip: document the 12 xfail cases with root cause (sqrt of negative head, >3 curve points, zero roughness)
+- [ ] Network configuration limits: which topologies work? (linear, branched, looped, multi-pump)
+- [ ] Comparison with commercial MOC solver if reference data available (AFT Impulse, Bentley HAMMER)
+
+### 3.4 Pipe stress validation
+**Priority:** MEDIUM | **Effort:** 1-2 days | **Depends on:** nothing
+
+The pipe stress calculations need engineering review.
+
+Benchmarks:
+- [ ] Hoop stress: already benchmarked (Benchmark #2, exact match)
+- [ ] Von Mises: already benchmarked (Benchmark #3, within 0.5 MPa)
+- [ ] Barlow wall thickness: already benchmarked (Benchmark #4, exact match)
+- [ ] PN safety factor methodology: document that this is rated_pressure / operating_pressure, not a code check
+- [ ] Compare against AS 2280 worked examples for ductile iron
+- [ ] Compare against AS/NZS 4130 for PE100 SDR11
+- [ ] Document limitations: thin-wall theory only (not valid for wall_thickness/diameter > 0.1)
+
+### 3.5 Competitive benchmarking
+**Priority:** LOW | **Effort:** 2-3 days | **Depends on:** 3.1
+
+Run the same network through this tool AND EPANET 2.2 (free from EPA).
+
+Items:
+- [ ] Use Net1.inp as the standard comparison
+- [ ] Table: node pressures from both tools, difference column
+- [ ] Table: link flows from both tools, difference column
+- [ ] Screenshot comparison: our FEA visualisation vs EPANET 2.2 2D map
+- [ ] Performance: time to load, solve, and render (our tool vs EPANET 2.2)
+- [ ] Feature comparison table: what we do that EPANET doesn't (slurry, 3D, scenarios, reports)
+
+---
+
+## Known Limitations (honest assessment as of v1.0.0-release)
+
+### Cannot do today
+| Limitation | Impact | Workaround |
+|------------|--------|------------|
+| No water quality UI | Cannot visualise chlorine/age on canvas | Use WNTR Python API directly |
+| No demand pattern editor | All analysis uses flat or multiplied demand | Edit pattern in .inp file manually |
+| No calibration tools | Cannot match model to field measurements | Manual roughness adjustment |
+| No GIS basemap | Network floats in abstract coordinate space | Use shapefile import for real coordinates |
+| TSNet pump transient unstable | 12 tests xfail, some networks crash | Use valve closure proxy for pump trip analysis |
+| TSNet requires 1 or 3 curve points | Most real pump curves have 7+ points | Simplify curve to 3 points before transient |
+| No SCADA/real-time integration | Desktop tool only, no live data | Export results to CSV for comparison |
+| Single-threaded analysis | Large networks block the UI | QThread worker handles this, but no parallel solves |
+| No multi-user collaboration | Single user, local files only | Share .inp/.hap files via file sharing |
+| Probe tool not yet built | Cannot click-inspect all variables at once | Use Properties panel (shows one element at a time) |
+| Split-screen comparison not yet built | Cannot visually compare two scenarios side by side | Use scenario comparison table |
+| GIF export not yet built | Cannot export transient animation | Use screen recording software |
+
+### Works but with caveats
+| Feature | Caveat |
+|---------|--------|
+| Transient analysis | Only works on networks with valves; pump trip requires simple pump curves |
+| Slurry solver | Validated for Bingham plastic laminar/turbulent; transition regime accuracy uncertain |
+| Pipe stress | Thin-wall theory only; PN safety factor is pressure-class ratio, not a code-compliance check |
+| Report generation | DOCX is full-featured; PDF uses fpdf2 which produces basic formatting |
+| Canvas editor | Add/delete/move works; no drag-to-move (must use editor.move_node() programmatically) |
+| PyInstaller exe | 918 MB distribution size; 10-second startup time; requires Windows x64 |
+
+### Known bugs
+| Bug | Severity | Status |
+|-----|----------|--------|
+| TSNet sqrt(negative) on some pump networks | LOW (xfail) | TSNet library issue, not fixable without upstream patch |
+| Canvas nodes not visible until Fit button clicked on some screen DPIs | LOW | Workaround: click Fit after loading |
+| Colourbar tick labels show scientific notation at extreme ranges | LOW | Cosmetic; values are correct |
+
+---
+
+## Immediate Next Actions (priority order)
+
+| # | Action | Track | Effort | Why first |
+|---|--------|-------|--------|-----------|
+| 1 | Visualisation audit on all 10 tutorials | 1.1 | 2-3 days | Find real issues before anyone else uses the tool |
+| 2 | EPANET verification suite (Net1, Net2, Net3) | 3.1 | 3-5 days | Prove the numbers before distributing to engineers |
+| 3 | Water quality modelling UI | 2.1 | 5-8 days | Biggest feature gap vs EPANET's core value proposition |
+| 4 | Demand patterns + EPS | 2.2 | 5-8 days | Required for any real professional analysis |
+| 5 | Performance profiling on 1000+ node network | 1.2 | 3-5 days | Must know scaling limits before marketing to real projects |
+| 6 | Error handling sweep | 1.3 | 2-3 days | First-time users will find every crash path |
+| 7 | Fire flow wizard UI | 2.5 | 3-5 days | Already implemented in API, just needs UI exposure |
+| 8 | Slurry solver validation against published data | 3.2 | 3-5 days | Mining clients will demand validation documentation |
+
+---
+
+## Project Statistics (v1.0.0-release)
+
+| Metric | Value |
+|--------|-------|
+| Python source files | 70 |
+| Lines of code (approx) | ~12,000 |
+| Test files | 22 |
+| Tests passing | 363 |
+| Tests xfail | 12 |
+| Tutorial examples | 10 |
+| Pipe materials in database | 4 (DI, PVC, PE, Concrete) |
+| Pipe sizes in database | 35 |
+| Pump curves in database | 7 |
+| Git commits | 21 |
+| PyInstaller exe size | 94 MB |
+| Distribution size | 918 MB |
