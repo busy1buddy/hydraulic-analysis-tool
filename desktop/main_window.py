@@ -103,6 +103,16 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        export_bundle_act = QAction("Export Project &Bundle...", self)
+        export_bundle_act.triggered.connect(self._on_export_bundle)
+        file_menu.addAction(export_bundle_act)
+
+        import_bundle_act = QAction("&Import Project Bundle...", self)
+        import_bundle_act.triggered.connect(self._on_import_bundle)
+        file_menu.addAction(import_bundle_act)
+
+        file_menu.addSeparator()
+
         exit_act = QAction("E&xit", self)
         exit_act.setShortcut("Ctrl+Q")
         exit_act.triggered.connect(self.close)
@@ -1240,6 +1250,53 @@ class MainWindow(QMainWindow):
     # =====================================================================
     # TOOLS / REPORTS / VIEW
     # =====================================================================
+
+    def _on_export_bundle(self):
+        """Export project as .hydraulic bundle."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Open a network first.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Project Bundle", "",
+            "Hydraulic Bundle (*.hydraulic);;All Files (*)")
+        if not path:
+            return
+        try:
+            self.api.export_bundle(
+                path, inp_path=self._current_file,
+                hap_data={'settings': {'slurry_mode': self.slurry_act.isChecked()}},
+            )
+            QMessageBox.information(self, "Export Complete",
+                f"Project bundle saved to:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))
+
+    def _on_import_bundle(self):
+        """Import a .hydraulic project bundle."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Project Bundle", "",
+            "Hydraulic Bundle (*.hydraulic);;ZIP Files (*.zip);;All Files (*)")
+        if not path:
+            return
+        try:
+            result = self.api.import_bundle(path)
+            inp = result.get('inp_path')
+            if inp and os.path.exists(inp):
+                self.api.load_network_from_path(inp)
+                self._current_file = inp
+                self._populate_explorer()
+                self._update_status_bar()
+                self.canvas.set_api(self.api)
+                self.setWindowTitle(
+                    f"Hydraulic Analysis Tool — {os.path.basename(inp)}")
+                QMessageBox.information(self, "Import Complete",
+                    f"Loaded network from bundle:\n{os.path.basename(inp)}")
+            else:
+                QMessageBox.warning(self, "No Network in Bundle",
+                    "The bundle did not contain an .inp network file.")
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", str(e))
 
     def _on_quality_review(self):
         self.status_bar.showMessage("Quality review triggered.", 3000)

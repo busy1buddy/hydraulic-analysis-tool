@@ -14,8 +14,40 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox, QGroupBox, QTableWidget, QTableWidgetItem,
     QProgressBar, QCheckBox, QApplication,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
+
+
+class _FireFlowSweepWorker(QThread):
+    """Background worker for fire flow sweep — runs each junction in sequence."""
+
+    progress = pyqtSignal(int)
+    result = pyqtSignal(dict)   # {junction_id: pressure_m or None}
+    error = pyqtSignal(str)
+
+    def __init__(self, api, junctions, flow_lps, min_pressure_m):
+        super().__init__()
+        self.api = api
+        self.junctions = junctions
+        self.flow_lps = flow_lps
+        self.min_pressure_m = min_pressure_m
+
+    def run(self):
+        results = {}
+        for i, jid in enumerate(self.junctions):
+            self.progress.emit(i)
+            try:
+                res = self.api.run_fire_flow(
+                    node_id=jid, flow_lps=self.flow_lps,
+                    min_pressure_m=self.min_pressure_m, save_plot=False,
+                )
+                if 'error' in res:
+                    results[jid] = None
+                else:
+                    results[jid] = res.get('fire_node_pressure_m', 0)
+            except Exception:
+                results[jid] = None
+        self.result.emit(results)
 
 
 class FireFlowDialog(QDialog):
@@ -142,30 +174,23 @@ class FireFlowDialog(QDialog):
         self.sweep_btn.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setMaximum(len(junctions))
+        self._sweep_pressure = pressure
 
         self._sweep_results = {}
         self.results_table.setRowCount(0)
 
-        for i, jid in enumerate(junctions):
-            self.progress.setValue(i)
-            QApplication.processEvents()  # keep GUI responsive during sweep
-            try:
-                results = self.api.run_fire_flow(
-                    node_id=jid, flow_lps=flow,
-                    min_pressure_m=pressure, save_plot=False,
-                )
-                if 'error' in results:
-                    self._sweep_results[jid] = None
-                else:
-                    fire_p = results.get('fire_node_pressure_m', 0)
-                    self._sweep_results[jid] = fire_p
-            except Exception:
-                self._sweep_results[jid] = None
+        # Run sweep on background QThread to avoid freezing the GUI
+        self._sweep_worker = _FireFlowSweepWorker(
+            self.api, junctions, flow, pressure)
+        self._sweep_worker.progress.connect(self.progress.setValue)
+        self._sweep_worker.result.connect(self._on_sweep_finished)
+        self._sweep_worker.start()
 
-        self.progress.setValue(len(junctions))
+    def _on_sweep_finished(self, results):
+        """Handle completed fire flow sweep results."""
+        self._sweep_results = results
         self.progress.setVisible(False)
-        self._show_sweep_results(pressure)
-
+        self._show_sweep_results(self._sweep_pressure)
         self.run_btn.setEnabled(True)
         self.sweep_btn.setEnabled(True)
 

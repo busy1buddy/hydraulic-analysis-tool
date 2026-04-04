@@ -2102,6 +2102,121 @@ class HydraulicAPI:
 
         return groups
 
+    # =========================================================================
+    # PROJECT BUNDLE EXPORT/IMPORT
+    # =========================================================================
+
+    def export_bundle(self, bundle_path, inp_path=None, hap_data=None,
+                      scenarios=None, audit_dir=None):
+        """
+        Export project as a .hydraulic ZIP bundle.
+
+        Packages .inp, .hap, scenarios, and audit trail into a single
+        portable file for consultant-to-client sharing.
+
+        Parameters
+        ----------
+        bundle_path : str
+            Output .hydraulic (zip) file path
+        inp_path : str or None
+            Path to .inp file to include
+        hap_data : dict or None
+            Project settings to include as project.hap
+        scenarios : list or None
+            Scenario data dicts to include
+        audit_dir : str or None
+            Path to audit trail directory to include
+        """
+        import zipfile
+
+        with zipfile.ZipFile(bundle_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Include .inp
+            if inp_path and os.path.exists(inp_path):
+                zf.write(inp_path, os.path.basename(inp_path))
+            elif self._inp_file and os.path.exists(self._inp_file):
+                zf.write(self._inp_file, os.path.basename(self._inp_file))
+
+            # Include .hap project data
+            if hap_data:
+                zf.writestr('project.hap', json.dumps(hap_data, indent=2))
+
+            # Include scenarios
+            if scenarios:
+                zf.writestr('scenarios.json', json.dumps(scenarios, indent=2))
+
+            # Include audit trail
+            if audit_dir and os.path.isdir(audit_dir):
+                for root, _dirs, files in os.walk(audit_dir):
+                    for fname in files:
+                        full = os.path.join(root, fname)
+                        arcname = os.path.join('audit', os.path.relpath(full, audit_dir))
+                        zf.write(full, arcname)
+
+            # Include metadata
+            meta = {
+                'version': '1.3.0',
+                'format': 'hydraulic-bundle',
+                'network_summary': self.get_network_summary() if self.wn else {},
+            }
+            zf.writestr('meta.json', json.dumps(meta, indent=2))
+
+        return bundle_path
+
+    def import_bundle(self, bundle_path, extract_dir=None):
+        """
+        Import a .hydraulic ZIP bundle.
+
+        Extracts .inp, .hap, scenarios, and audit trail.
+
+        Parameters
+        ----------
+        bundle_path : str
+            Path to .hydraulic (zip) file
+        extract_dir : str or None
+            Directory to extract to (default: models/)
+
+        Returns dict with 'inp_path', 'hap_data', 'scenarios', 'meta'.
+        """
+        import zipfile
+
+        if extract_dir is None:
+            extract_dir = self.model_dir
+
+        result = {
+            'inp_path': None,
+            'hap_data': None,
+            'scenarios': None,
+            'meta': None,
+        }
+
+        with zipfile.ZipFile(bundle_path, 'r') as zf:
+            names = zf.namelist()
+
+            # Extract .inp
+            inp_files = [n for n in names if n.endswith('.inp')]
+            if inp_files:
+                zf.extract(inp_files[0], extract_dir)
+                result['inp_path'] = os.path.join(extract_dir, inp_files[0])
+
+            # Read .hap
+            if 'project.hap' in names:
+                result['hap_data'] = json.loads(zf.read('project.hap'))
+
+            # Read scenarios
+            if 'scenarios.json' in names:
+                result['scenarios'] = json.loads(zf.read('scenarios.json'))
+
+            # Read metadata
+            if 'meta.json' in names:
+                result['meta'] = json.loads(zf.read('meta.json'))
+
+            # Extract audit trail
+            audit_files = [n for n in names if n.startswith('audit/')]
+            for af in audit_files:
+                zf.extract(af, extract_dir)
+
+        return result
+
     def joukowsky(self, wave_speed, velocity_change, density=1000):
         """
         Calculate Joukowsky pressure rise.
