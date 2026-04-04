@@ -32,6 +32,8 @@ from desktop.eps_dialog import EPSConfigDialog
 from desktop.fire_flow_dialog import FireFlowDialog
 from desktop.water_quality_dialog import WaterQualityDialog
 from desktop.probe_tooltip import ProbeTooltip
+from desktop.calibration_dialog import CalibrationDialog
+from desktop.statistics_panel import StatisticsPanel
 
 
 class MainWindow(QMainWindow):
@@ -154,6 +156,10 @@ class MainWindow(QMainWindow):
         wq_menu.addAction(wq_trace_act)
 
         analysis_menu.addSeparator()
+
+        calibration_act = QAction("&Calibration...", self)
+        calibration_act.triggered.connect(self._on_calibration)
+        analysis_menu.addAction(calibration_act)
 
         pattern_act = QAction("&Demand Patterns...", self)
         pattern_act.triggered.connect(self._on_demand_patterns)
@@ -379,13 +385,15 @@ class MainWindow(QMainWindow):
         self.pipe_results_table.verticalHeader().setVisible(False)
 
         self.pipe_stress_panel = PipeStressPanel()
+        self.statistics_panel = StatisticsPanel()
 
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self.node_results_table)
         splitter.addWidget(self.pipe_results_table)
         splitter.addWidget(self.pipe_stress_panel)
+        splitter.addWidget(self.statistics_panel)
         # Give each panel roughly equal initial space
-        splitter.setSizes([200, 200, 200])
+        splitter.setSizes([200, 200, 150, 150])
         results_layout.addWidget(splitter)
 
         self.results_dock.setWidget(results_widget)
@@ -779,6 +787,9 @@ class MainWindow(QMainWindow):
         # Update pipe stress panel
         self.pipe_stress_panel.update_results(self.api, results)
 
+        # Update network statistics panel
+        self.statistics_panel.update_statistics(self.api, results)
+
         # Populate animation panel if transient data present
         # Transient results include 'junctions' key with head arrays
         if 'junctions' in results and isinstance(results['junctions'], dict):
@@ -1075,6 +1086,11 @@ class MainWindow(QMainWindow):
     # =====================================================================
     # DEMAND PATTERNS / EPS
     # =====================================================================
+
+    def _on_calibration(self):
+        """Open the Calibration Tools dialog."""
+        dialog = CalibrationDialog(self.api, canvas=self.canvas, parent=self)
+        dialog.exec()
 
     def _on_fire_flow(self):
         if self.api.wn is None:
