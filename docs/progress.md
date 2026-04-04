@@ -1,5 +1,13 @@
 # Build Progress
 
+## v2.0.0 — Production Ready (2026-04-04)
+- Innovation Q2: Pump failure impact analysis — power loss simulation, affected customer report
+- Innovation Q3: Quick network assessment — comprehensive evaluation in seconds for unknown networks
+- Mining slurry design workflow documented (tutorials/mining_slurry_line/DESIGN_WORKFLOW.md)
+- REST API: /api/assessment endpoint for quick assessment
+- Tools > Quick Assessment (F10) in UI
+- 800+ tests passing, 12 xfailed (TSNet)
+
 ## v1.9.0 M-Series — Depth and Polish (2026-04-04)
 - M1: Todini resilience index — first-class metric in status bar, dashboard KPI, compliance certificate, benchmarked 10 tutorials
 - M5: Demand pattern library — 8 built-in patterns (WSAA residential/commercial, industrial, irrigation, hospital, school, mining), apply/save/custom
