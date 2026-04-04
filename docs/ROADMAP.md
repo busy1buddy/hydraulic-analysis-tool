@@ -262,20 +262,27 @@ Items:
 
 ---
 
-## Known Limitations (honest assessment as of v1.0.0-release)
+## Known Limitations (updated v1.3.0, 2026-04-04)
 
 ### Cannot do today
 | Limitation | Impact | Workaround |
 |------------|--------|------------|
-| No calibration tools | Cannot match model to field measurements | Manual roughness adjustment |
-| No GIS basemap | Network floats in abstract coordinate space | Use shapefile import for real coordinates |
 | TSNet pump transient unstable | 12 tests xfail, some networks crash | Use valve closure proxy for pump trip analysis |
 | TSNet requires 1 or 3 curve points | Most real pump curves have 7+ points | Simplify curve to 3 points before transient |
 | No SCADA/real-time integration | Desktop tool only, no live data | Export results to CSV for comparison |
-| Single-threaded analysis | Large networks block the UI | QThread worker handles this, but no parallel solves |
 | No multi-user collaboration | Single user, local files only | Share .inp/.hap files via file sharing |
 | Split-screen comparison not yet built | Cannot visually compare two scenarios side by side | Use scenario comparison table |
 | GIF export not yet built | Cannot export transient animation | Use screen recording software |
+
+### Resolved since v1.0.0
+| Was | Now | Version |
+|-----|-----|---------|
+| No calibration tools | CSV import, R²/RMSE/NSE metrics, scatter plot, roughness adjustment | v1.2.0 (C1) |
+| No GIS basemap | OpenStreetMap tiles, MGA2020 + lat/lon detection, tile caching | v1.3.0 (C3) |
+| No pressure zone management | Zone CRUD, auto-detect by elevation, balance report, PRV analysis | v1.3.0 (C2) |
+| No asset rehabilitation | Condition import, weighted scoring, risk ranking | v1.3.0 (C4) |
+| PDF basic formatting only | Executive summary, colour-coded compliance, alternating rows | v1.3.0 (C5) |
+| No drag-to-move | Full drag-to-move with undo support | v1.1.0 (A7) |
 
 ### Works but with caveats
 | Feature | Caveat |
@@ -284,8 +291,8 @@ Items:
 | Slurry solver | Validated for Bingham plastic laminar/turbulent (< 0.5% error); transition regime 10–20% uncertainty |
 | Pipe stress | Thin-wall theory only (not valid for t/D > 0.1); PN safety factor is pressure-class ratio, not a code-compliance check |
 | Water quality | Chlorine decay model requires calibrated bulk/wall coefficients — defaults are illustrative only |
-| Report generation | DOCX is full-featured; PDF uses fpdf2 which produces basic formatting without colour |
-| Canvas editor | Add/delete/move works; no drag-to-move (must use editor.move_node() programmatically) |
+| GIS basemap | Requires MGA2020 or lat/lon coordinates; arbitrary local coordinates show "unavailable" message |
+| Canvas editor | Add/delete/move/drag-to-move works; no rubber-band multi-select |
 | EPS animation | AnimationPanel plays correctly; frame rate may drop below 30fps on 500+ node networks |
 | PyInstaller exe | 918 MB distribution size; 10-second startup time; requires Windows x64 |
 

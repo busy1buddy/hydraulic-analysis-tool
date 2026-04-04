@@ -16,6 +16,14 @@ pytest>=7.0.0
 httpx>=0.24.0
 pytest-cov>=4.0.0
 
+# Desktop application
+PyQt6>=6.5.0             # Desktop UI framework
+pyqtgraph>=0.13.0        # Interactive 2D plotting for network canvas
+
+# Report generation
+python-docx>=0.8.11      # DOCX report generation
+fpdf2>=2.7.0             # PDF report generation
+
 # Scientific computing
 numpy>=1.24.0
 scipy>=1.10.0
@@ -23,3 +31,6 @@ pandas>=2.0.0
 matplotlib>=3.7.0
 networkx>=3.0
 plotly>=5.15.0
+
+# Review pipeline (optional)
+anthropic>=0.40.0         # Automated review bridge (Anthropic API)
