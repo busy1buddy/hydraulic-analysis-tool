@@ -114,6 +114,17 @@ class CalibrationDialog(QDialog):
         self.highlight_btn.clicked.connect(self._on_highlight)
         toolbar.addWidget(self.highlight_btn)
 
+        self.auto_cal_btn = QPushButton("Auto-Calibrate Roughness")
+        self.auto_cal_btn.setFont(QFont("Consolas", 10))
+        self.auto_cal_btn.setToolTip(
+            "Optimise Hazen-Williams C-factors by material group to minimise\n"
+            "pressure residuals. Requires measured data loaded first.\n"
+            "Uses scipy.optimize.minimize (L-BFGS-B)."
+        )
+        self.auto_cal_btn.setEnabled(False)
+        self.auto_cal_btn.clicked.connect(self._on_auto_calibrate)
+        toolbar.addWidget(self.auto_cal_btn)
+
         toolbar.addStretch()
         root.addLayout(toolbar)
 
@@ -304,6 +315,7 @@ class CalibrationDialog(QDialog):
         self._update_stats()
         self._update_plot()
         self.highlight_btn.setEnabled(bool(self._data))
+        self.auto_cal_btn.setEnabled(bool(self._data))
 
     def _populate_table(self):
         self.table.setRowCount(0)
@@ -466,3 +478,96 @@ class CalibrationDialog(QDialog):
         self.status_bar_message = (
             f"Highlighted {len(variable_data)} nodes by calibration error."
         )
+
+    # ── Auto-Calibration ─────────────────────────────────────────────────────
+
+    def _on_auto_calibrate(self):
+        """
+        Run automatic roughness calibration using scipy.optimize.
+
+        Groups pipes by material, adjusts C-factors to minimise the sum of
+        squared pressure residuals between modelled and measured values.
+        Ref: WSAA Calibration Guidelines
+        """
+        if not self._data:
+            QMessageBox.warning(self, "No Data",
+                "Import measured pressure data first.")
+            return
+
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network", "No network loaded.")
+            return
+
+        # Build measured pressures dict
+        measured = {}
+        for nid, (meas, _mod) in self._data.items():
+            if not math.isnan(meas):
+                measured[nid] = meas
+
+        if len(measured) < 2:
+            QMessageBox.warning(self, "Insufficient Data",
+                "Need at least 2 measured pressure points for calibration.")
+            return
+
+        # Show progress
+        from PyQt6.QtWidgets import QProgressDialog
+        progress = QProgressDialog(
+            "Optimising roughness...", "Cancel", 0, 0, self)
+        progress.setWindowTitle("Auto-Calibration")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
+
+        try:
+            result = self.api.auto_calibrate_roughness(measured)
+        except Exception as e:
+            progress.close()
+            QMessageBox.critical(self, "Calibration Error",
+                f"Optimisation failed: {e}")
+            return
+
+        progress.close()
+
+        if 'error' in result:
+            QMessageBox.warning(self, "Error", result['error'])
+            return
+
+        # Show results
+        before = result['before']
+        after = result['after']
+        groups = result['groups']
+
+        msg_parts = [
+            "Auto-Calibration Complete",
+            f"Iterations: {result['iterations']}",
+            "",
+            f"Before: R² = {before['r2']:.4f}, RMSE = {before['rmse']:.2f} m",
+            f"After:  R² = {after['r2']:.4f}, RMSE = {after['rmse']:.2f} m",
+            "",
+            "Roughness adjustments by material group:",
+        ]
+
+        for gname, g in groups.items():
+            msg_parts.append(
+                f"  {gname}: C = {g['C_before']:.0f} → {g['C_after']:.0f} "
+                f"({g['n_pipes']} pipes)"
+            )
+
+        QMessageBox.information(self, "Auto-Calibration Results",
+                                "\n".join(msg_parts))
+
+        # Re-run analysis to get updated modelled values
+        try:
+            new_results = self.api.run_steady_state(save_plot=False)
+            pressures = new_results.get('pressures', {})
+            # Update data with new modelled values
+            for nid in list(self._data.keys()):
+                meas, _ = self._data[nid]
+                p = pressures.get(nid, {})
+                mod = p.get('avg_m', float('nan'))
+                self._data[nid] = (meas, mod)
+            self._refresh()
+        except Exception:
+            pass  # Non-critical — dialog will refresh on next import

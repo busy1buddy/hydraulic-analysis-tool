@@ -1792,6 +1792,174 @@ class HydraulicAPI:
         pipe_scores.sort(key=lambda x: x['priority_score'], reverse=True)
         return pipe_scores
 
+    # =========================================================================
+    # AUTO-CALIBRATION (Roughness Optimisation)
+    # =========================================================================
+
+    def auto_calibrate_roughness(self, measured_pressures, material_groups=None):
+        """
+        Automatically calibrate pipe roughness (Hazen-Williams C) by minimising
+        pressure residuals using scipy.optimize.minimize.
+
+        Groups pipes by material and adjusts C-factors to minimise the sum of
+        squared pressure differences between modelled and measured values.
+
+        Parameters
+        ----------
+        measured_pressures : dict
+            {node_id: measured_pressure_m} — field measurements at junctions
+        material_groups : dict or None
+            {material_name: {'pipes': [pipe_ids], 'bounds': (C_min, C_max)}}
+            If None, auto-groups by roughness similarity.
+
+        Returns
+        -------
+        dict with:
+            - 'groups': {material: {'C_before': float, 'C_after': float, 'pipes': list}}
+            - 'before': {'r2': float, 'rmse': float}
+            - 'after': {'r2': float, 'rmse': float}
+            - 'iterations': int
+            - 'convergence': list of (iteration, rmse) tuples
+
+        Ref: WSAA Calibration Guidelines; Hazen-Williams C ranges per material:
+            DI: 100-145, PVC: 130-150, PE: 130-150, Concrete: 80-120
+        """
+        from scipy.optimize import minimize
+
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        # Default material grouping by roughness value clusters
+        if material_groups is None:
+            material_groups = self._auto_group_pipes()
+
+        # Build parameter vector: one C value per material group
+        group_names = list(material_groups.keys())
+        x0 = []
+        bounds = []
+        for gname in group_names:
+            g = material_groups[gname]
+            pipe_ids = g['pipes']
+            # Initial C = current average
+            avg_c = 0
+            for pid in pipe_ids:
+                pipe = self.wn.get_link(pid)
+                avg_c += pipe.roughness
+            avg_c /= max(len(pipe_ids), 1)
+            x0.append(avg_c)
+            b = g.get('bounds', (80, 150))
+            bounds.append(b)
+
+        convergence = []
+
+        def objective(x):
+            """Sum of squared pressure residuals."""
+            # Apply C values to pipes
+            for i, gname in enumerate(group_names):
+                c_val = x[i]
+                for pid in material_groups[gname]['pipes']:
+                    pipe = self.wn.get_link(pid)
+                    pipe.roughness = c_val
+
+            # Run simulation
+            try:
+                sim = wntr.sim.EpanetSimulator(self.wn)
+                results = sim.run_sim()
+                pressures = results.node['pressure']
+            except Exception:
+                return 1e10  # Penalise failed simulations
+
+            # Compute residuals
+            ssr = 0.0
+            for nid, p_meas in measured_pressures.items():
+                if nid in pressures.columns:
+                    p_mod = float(pressures[nid].mean())
+                    ssr += (p_meas - p_mod) ** 2
+
+            # Track convergence
+            rmse = (ssr / max(len(measured_pressures), 1)) ** 0.5
+            convergence.append((len(convergence), rmse))
+
+            return ssr
+
+        # Record "before" state
+        before_ssr = objective(x0)
+        before_rmse = (before_ssr / max(len(measured_pressures), 1)) ** 0.5
+        meas_list = list(measured_pressures.values())
+        # Get modelled pressures for R² calc
+        sim = wntr.sim.EpanetSimulator(self.wn)
+        res = sim.run_sim()
+        mod_list = [float(res.node['pressure'][nid].mean())
+                    for nid in measured_pressures if nid in res.node['pressure'].columns]
+        meas_for_r2 = [measured_pressures[nid]
+                       for nid in measured_pressures if nid in res.node['pressure'].columns]
+
+        from desktop.calibration_dialog import compute_r2, compute_rmse
+        before_r2 = compute_r2(meas_for_r2, mod_list)
+
+        # Optimise
+        result = minimize(
+            objective, x0, method='L-BFGS-B', bounds=bounds,
+            options={'maxiter': 50, 'ftol': 1e-6}
+        )
+
+        # Record "after" state
+        after_rmse = (result.fun / max(len(measured_pressures), 1)) ** 0.5
+        # Get after modelled pressures
+        sim = wntr.sim.EpanetSimulator(self.wn)
+        res = sim.run_sim()
+        mod_list_after = [float(res.node['pressure'][nid].mean())
+                         for nid in measured_pressures if nid in res.node['pressure'].columns]
+        after_r2 = compute_r2(meas_for_r2, mod_list_after)
+
+        # Build result
+        groups_result = {}
+        for i, gname in enumerate(group_names):
+            groups_result[gname] = {
+                'C_before': round(x0[i], 1),
+                'C_after': round(result.x[i], 1),
+                'pipes': material_groups[gname]['pipes'],
+                'n_pipes': len(material_groups[gname]['pipes']),
+            }
+
+        return {
+            'groups': groups_result,
+            'before': {'r2': round(before_r2, 4), 'rmse': round(before_rmse, 2)},
+            'after': {'r2': round(after_r2, 4), 'rmse': round(after_rmse, 2)},
+            'iterations': result.nit,
+            'convergence': convergence,
+            'success': result.success,
+        }
+
+    def _auto_group_pipes(self):
+        """Auto-group pipes by roughness value into material classes."""
+        groups = {}
+        # Hazen-Williams C ranges per material — WSAA typical values
+        C_BANDS = {
+            'DI (C~140)': (120, 145),
+            'PVC/PE (C~150)': (145, 155),
+            'Concrete (C~90-110)': (80, 120),
+            'Old/Unknown (C<120)': (50, 120),
+        }
+
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            c = pipe.roughness
+            assigned = False
+            for band_name, (lo, hi) in C_BANDS.items():
+                if lo <= c <= hi:
+                    if band_name not in groups:
+                        groups[band_name] = {'pipes': [], 'bounds': (lo, hi)}
+                    groups[band_name]['pipes'].append(pid)
+                    assigned = True
+                    break
+            if not assigned:
+                if 'Other' not in groups:
+                    groups['Other'] = {'pipes': [], 'bounds': (50, 160)}
+                groups['Other']['pipes'].append(pid)
+
+        return groups
+
     def joukowsky(self, wave_speed, velocity_change, density=1000):
         """
         Calculate Joukowsky pressure rise.
