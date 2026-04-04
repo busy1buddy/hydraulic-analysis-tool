@@ -1,6 +1,6 @@
 # Blockers — Items Requiring Human Judgment
 
-**Last updated:** 2026-04-04 (v1.3.0)
+**Last updated:** 2026-04-04 (v1.3.0 + I-series autonomous development)
 
 ## Active Items Needing Human Decision
 

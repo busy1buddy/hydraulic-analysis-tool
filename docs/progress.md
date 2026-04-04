@@ -13,7 +13,9 @@
 - I10: Network comparison — topology diff, property changes, identical detection
 - I11: Demand forecasting — linear/exponential/logistic growth, WSAA failure year prediction
 - I12: Pipe sizing optimisation — cost database (Rawlinsons), iterative upsizing, budget limits
-- 595 tests passing (+55 from I-series), 12 xfailed
+- I14: 3D network visualisation — PyQtGraph OpenGL, elevation Z-axis, WSAA colours
+- I15: Advanced slurry — settling velocity (Stokes/Schiller-Naumann/Newton), Durand deposition velocity, Rouse concentration profile
+- 618 tests passing (+78 from I-series), 12 xfailed
 
 ## v1.3.0 Release (2026-04-04)
 - C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
