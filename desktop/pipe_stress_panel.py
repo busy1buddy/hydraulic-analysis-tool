@@ -133,8 +133,8 @@ class PipeStressPanel(QWidget):
             sf = round(pn_rating / pressure_kPa, 2) if pressure_kPa > 0 else float('inf')
 
             items = [
-                pid, str(dn_mm), mat_display, f"{pressure_kPa:.0f}",
-                f"{hoop:.1f}", str(pn_rating), f"{sf:.2f}"
+                pid, f"{dn_mm} mm", mat_display, f"{pressure_kPa:.0f} kPa",
+                f"{hoop:.1f} MPa", f"{pn_rating} kPa", f"{sf:.2f}"
             ]
 
             for col, val in enumerate(items):

@@ -322,8 +322,8 @@ class WaterQualityDialog(QDialog):
             is_stagnant = max_a > 24.0
 
             _set_cell(self.results_table, row, 0, junc)
-            _set_cell(self.results_table, row, 1, f"{max_a:.1f}")
-            _set_cell(self.results_table, row, 2, f"{avg_a:.1f}")
+            _set_cell(self.results_table, row, 1, f"{max_a:.1f} hrs")
+            _set_cell(self.results_table, row, 2, f"{avg_a:.1f} hrs")
 
             status = "STAGNATION RISK" if is_stagnant else "OK"
             status_item = QTableWidgetItem(status)

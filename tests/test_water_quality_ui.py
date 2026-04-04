@@ -165,7 +165,7 @@ class TestWaterAgeMode:
         for row in range(table.rowCount()):
             val_item = table.item(row, 1)
             assert val_item is not None, f"Row {row} col 1 is None"
-            val = float(val_item.text())
+            val = float(val_item.text().replace(' hrs', ''))
             assert val >= 0.0, f"Age value {val} is negative at row {row}"
 
     def test_age_values_positive(self, dialog_age, qapp):
@@ -175,7 +175,7 @@ class TestWaterAgeMode:
         table = dialog_age.results_table
         max_vals = []
         for row in range(table.rowCount()):
-            max_vals.append(float(table.item(row, 1).text()))
+            max_vals.append(float(table.item(row, 1).text().replace(' hrs', '')))
         # At least one junction must have non-zero age
         assert any(v > 0 for v in max_vals), "All water age values are 0"
 
@@ -209,7 +209,7 @@ class TestWaterAgeMode:
         qapp.processEvents()
         table = dialog_age.results_table
         for row in range(table.rowCount()):
-            max_age = float(table.item(row, 1).text())
+            max_age = float(table.item(row, 1).text().replace(' hrs', '').replace(' mg/L', '').replace(' %', ''))
             status = table.item(row, 3).text()
             if max_age > 24.0:
                 assert status == "STAGNATION RISK", (
