@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QComboBox, QDoubleSpinBox, QPushButton, QLabel,
     QDialogButtonBox, QGroupBox, QTableWidget, QTableWidgetItem,
-    QProgressBar, QCheckBox,
+    QProgressBar, QCheckBox, QApplication,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
@@ -121,6 +121,8 @@ class FireFlowDialog(QDialog):
                 min_pressure_m=pressure,
                 save_plot=False,
             )
+            if 'error' in results:
+                raise RuntimeError(results['error'])
             self._results = results
             self._show_single_results(results, pressure)
         except Exception as e:
@@ -146,17 +148,21 @@ class FireFlowDialog(QDialog):
 
         for i, jid in enumerate(junctions):
             self.progress.setValue(i)
+            QApplication.processEvents()  # keep GUI responsive during sweep
             try:
                 results = self.api.run_fire_flow(
                     node_id=jid, flow_lps=flow,
                     min_pressure_m=pressure, save_plot=False,
                 )
-                # Get fire node residual pressure
-                fire_p = results.get('fire_node_pressure_m', 0)
-                self._sweep_results[jid] = fire_p
+                if 'error' in results:
+                    self._sweep_results[jid] = None
+                else:
+                    fire_p = results.get('fire_node_pressure_m', 0)
+                    self._sweep_results[jid] = fire_p
             except Exception:
                 self._sweep_results[jid] = None
 
+        self.progress.setValue(len(junctions))
         self.progress.setVisible(False)
         self._show_sweep_results(pressure)
 
@@ -240,11 +246,14 @@ class FireFlowDialog(QDialog):
                     item.setForeground(QColor(166, 227, 161))
                 self.results_table.setItem(row, col, item)
 
-        total = pass_count + fail_count
+        total_tested = pass_count + fail_count
+        error_count = sum(1 for v in self._sweep_results.values() if v is None)
+        total_all = total_tested + error_count
+        error_str = f" ({error_count} errors)" if error_count > 0 else ""
         self.summary_label.setText(
-            f"Sweep complete: {pass_count}/{total} nodes can supply "
-            f"{self.flow_spin.value():.0f} LPS at {min_pressure:.0f} m residual.")
-        if fail_count == 0:
+            f"Sweep complete: {pass_count}/{total_all} nodes can supply "
+            f"{self.flow_spin.value():.0f} LPS at {min_pressure:.0f} m residual{error_str}.")
+        if fail_count == 0 and error_count == 0:
             self.summary_label.setStyleSheet("color: #a6e3a1;")
         else:
             self.summary_label.setStyleSheet("color: #f38ba8;")
