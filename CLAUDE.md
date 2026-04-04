@@ -158,6 +158,7 @@ architect
 3. HIGH findings exist -> fix all, or document deferral reason in `docs/decisions/{date}.md`
 4. Write phase summary to `docs/progress.md`
 5. Commit to git: "Phase X complete — N blockers fixed, N high fixed"
+6. Push to remote: `git push origin master`
 
 ### Decision logging (every non-trivial decision)
 Write to `docs/decisions/{YYYY-MM-DD}.md`:

@@ -1,0 +1,44 @@
+# Build output
+dist/
+build/
+*.exe
+
+# PyInstaller (keep hydraulic_tool.spec)
+*.spec
+!hydraulic_tool.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+
+# Temp files
+temp.*
+*.tmp
+*.bin
+*.rpt
+results.obj
+
+# Audit trail (auto-generated, not version controlled)
+docs/audit/
+
+# Review loop logs
+docs/review_loop/bridge.log
+docs/review_loop/history.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
