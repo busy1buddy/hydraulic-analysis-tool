@@ -1,25 +1,25 @@
 # Blockers — Items Requiring Human Judgment
 
-**Last updated:** 2026-04-04
+**Last updated:** 2026-04-04 (v1.3.0)
 
-## No Active Blockers
+## Active Items Needing Human Decision
 
-All "stop and surface" conditions from CLAUDE.md were checked:
-- No benchmark regressions introduced
-- No unconfirmed standard values used
-- No .inp format or HydraulicAPI interface changes made
+| Item | Why Human Needed | Suggested Action |
+|------|-----------------|------------------|
+| Review bridge API key | Bridge server returns "Connection error" on Anthropic API calls. Health endpoint OK. API key may not be loaded in server process. | Check `.env` file is in project root, restart review bridge with `scripts\start_review_loop.bat` |
+| GIS basemap for MGA coordinates | MGA-to-latlon conversion is approximate (~1m accuracy). For professional survey work, pyproj should be used instead. | Evaluate whether to add pyproj dependency for production use |
+| Rehab scoring weights | Current weights (age 25%, condition 30%, breaks 25%, hydraulics 20%) are based on WSAA guidelines. Different utilities may use different weightings. | Consider making weights configurable via UI or config file |
 
 ## Deferred Items (not blockers, just not yet built)
 
 | Item | Reason Deferred | Impact |
 |------|----------------|--------|
-| Split-screen comparison | Lower priority than water quality and fire flow | Engineers can use scenario comparison table instead |
-| GIF export | Requires imageio dependency; lower priority | Users can use screen recording software |
-| Percentile clip on colourbar | Edge case for extreme outlier networks | Engineers can manually adjust min/max range |
-| Canvas batch rendering for 500+ nodes | Performance optimisation — render is 8s at 500 nodes | Acceptable for networks < 200 nodes (majority of use cases) |
-| Calibration tools (Track 2.3) | 8-12 day effort, requires field data format spec | Most impactful remaining feature for professional adoption |
-| Pressure zone management (Track 2.4) | Requires zone assignment UI design | Important for multi-zone Australian networks |
-| GIS integration (Track 2.6) | 10-15 day effort, requires geopandas/pyproj | Critical for professional adoption but large scope |
+| Split-screen comparison | Lower priority than C2-C5 features | Engineers use scenario comparison table |
+| GIF export | Requires imageio dependency; lower priority | Screen recording as workaround |
+| SCADA/real-time integration | Major feature, out of current scope | Desktop tool only |
+| Multi-user collaboration | Architectural change needed | Share .inp/.hap files |
+| Genetic algorithm roughness calibration | C1 delivers manual calibration; GA is next tier | Manual roughness adjustment works |
+| Fire flow sweep on QThread | Currently uses processEvents(); works but not ideal for 500+ nodes | Lower priority — processEvents adequate for typical networks |
 
 ## TSNet Known Issues (12 xfail tests)
 

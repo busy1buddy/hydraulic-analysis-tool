@@ -1,5 +1,15 @@
 # Build Progress
 
+## v1.3.0 Release (2026-04-04)
+- C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
+- C3: GIS background map — OpenStreetMap tile layer, MGA2020 + lat/lon coordinate detection, tile caching, basemap toggle in View menu
+- C4: Rehabilitation prioritisation — pipe condition CSV import, weighted scoring (age/condition/breaks/hydraulics), CRITICAL/HIGH/MEDIUM/LOW risk ranking
+- C5: Report improvements — executive summary with compliance overview, key metrics table, recommended actions, PDF colour-coded cells, alternating rows
+- Self-directed: requirements.txt updated with all missing deps (PyQt6, pyqtgraph, python-docx, fpdf2, anthropic)
+- Self-directed: ROADMAP.md updated to reflect all resolved limitations
+- Self-directed: docs/USER_TESTING.md — comprehensive first-time engineer testing guide (8 scenarios)
+- 540 tests passing (+36 new), 12 xfailed (TSNet pump stability)
+
 ## v1.2.0 Release (2026-04-04)
 - C1: Calibration tools — import CSV measurements, R²/RMSE/NSE statistics, scatter plot, canvas highlighting
 - C6: Session persistence — save/restore last file, window size, slurry mode, colour mode
