@@ -36,7 +36,10 @@
 - J9: Asset deterioration modelling — Gompertz curves by material, failure year prediction
 - J11: SCADA replay — import CSV demands, run EPS with actual measured patterns
 - J12: Pipe cost database editor — custom costs, CSV import
-- 678 tests passing, 12 xfailed
+- J14: Chlorine booster station design — deficiency detection, dosing, WSAA 0.2 mg/L threshold
+- Network Health Dashboard — at-a-glance KPI cards (pressure, velocity, compliance traffic lights)
+- Self-discovery: units added to pipe stress and water quality tables
+- 683 tests passing, 12 xfailed
 
 ## v1.3.0 Release (2026-04-04)
 - C2: Pressure zone management — zone CRUD API, auto-detect by elevation, zone balance analysis, PRV recommendations, canvas overlay, full dialog UI
