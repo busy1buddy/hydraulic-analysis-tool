@@ -1,5 +1,13 @@
 # Build Progress
 
+## v1.2.0 Release (2026-04-04)
+- C1: Calibration tools — import CSV measurements, R²/RMSE/NSE statistics, scatter plot, canvas highlighting
+- C6: Session persistence — save/restore last file, window size, slurry mode, colour mode
+- C7: Network statistics panel — pipe length, demand, material summary, WSAA compliance counts
+- C8: Keyboard shortcuts dialog (already built in A6)
+- Review bridge rewritten: Anthropic API direct (1.5s vs 45-120s subprocess)
+- 504 tests passing
+
 ## Continuous Improvement (2026-04-04)
 - Fixed Joukowsky pressure rise: now uses actual fluid density (was hardcoded rho=1000). Slurry pressure rise is proportionally higher. Added density parameter + slurry benchmark test.
 - Added minimum velocity compliance check: 0.6 m/s per WSAA, flags sediment deposition risk as INFO
