@@ -1,5 +1,15 @@
-# Next Instructions — warmup
+# Next Instructions — formula and standards audit
 
-Quality: BLOCKER
+Quality: NEEDS_WORK
 
-STOP. Before proceeding to Phase 4, fix wave speed regression. (1) In epanet_api.py line 42, change 'wave_speed_ms': 1000 to 1100. (2) In analysis_worker.py line 51, change wave_speed=self.params.get('wave_speed', 1000) to 1100. (3) Add unit test file tests/test_analysis_worker.py with test cases for each analysis type (steady, transient, slurry) and error handling. (4) For slurry parameters: move lazy import to module level (top of analysis_worker.py), parameterize density/roughness via self.params with documented defaults from slurry_solver.py SLURRY_DATABASE, and add comments explaining hardcoded values. (5) Verify scenario_panel correctly handles scenario selection highlighting in the tree. Run full test suite and /review-cycle again before marking complete.
+Fix the two HIGH issues before proceeding:
+
+1. epanet_api.py line 42: Change default wave_speed_ms from 1000 to 1100. Add comment: '# AS 2280 minimum for ductile iron â€” conservative default'. Verify lines 930, 1123, 1169 still work correctly with the new default.
+
+2. slurry_solver.py herschel_bulkley_headloss() around line 245: Change laminar friction from f=16/Re to f=64/Re (Darcy convention) to match bingham_plastic_headloss(). Update the comment to explicitly state Darcy convention. Check the turbulent branch for the same issue â€” if it uses Dodge-Metzner (which returns Fanning), multiply by 4 before feeding to Darcy-Weisbach.
+
+3. Add four missing tests: (a) zero-diameter pipe returns no velocity error, (b) fire flow flags nodes below 12m residual, (c) WSAA flags nodes above 50m, (d) transient compliance subtracts elevation before PN comparison.
+
+4. In pipe_stress.py line 116, add comment: '# Lower-bound value per AS/NZS 4130 Table 2 â€” conservative for burst design'.
+
+Run full test suite after each fix to confirm no regressions.

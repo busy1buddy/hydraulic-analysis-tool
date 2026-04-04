@@ -113,7 +113,7 @@ MATERIAL_STRENGTH = {
     'steel_grade_350': {'yield_MPa': 350, 'tensile_MPa': 450, 'standard': 'AS 1579'},
     'pvc_pn12': {'yield_MPa': 45, 'tensile_MPa': 52, 'standard': 'AS/NZS 1477'},
     'pvc_pn18': {'yield_MPa': 45, 'tensile_MPa': 52, 'standard': 'AS/NZS 1477'},
-    'pe100': {'yield_MPa': 20, 'tensile_MPa': 25, 'standard': 'AS/NZS 4130'},  # AS/NZS 4130 short-term design yield ~20-22 MPa
+    'pe100': {'yield_MPa': 20, 'tensile_MPa': 25, 'standard': 'AS/NZS 4130'},  # Lower-bound value per AS/NZS 4130 Table 2 — conservative for burst design (range 20-22 MPa)
     'concrete_class3': {'yield_MPa': 30, 'tensile_MPa': 40, 'standard': 'AS 4058'},
 }
 

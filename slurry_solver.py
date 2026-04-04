@@ -191,13 +191,17 @@ def power_law_headloss(flow_m3s, diameter_m, length_m, density, K, n,
     Re_crit = 2100  # Approximate for power law
 
     if Re_MR < Re_crit:
-        f = 16 / Re_MR
+        # Darcy friction factor for laminar power law flow
+        # Uses Darcy convention (64/Re), NOT Fanning (16/Re)
+        f = 64 / Re_MR
         regime = 'laminar'
     else:
-        # Dodge-Metzner correlation for turbulent power law
-        f = _dodge_metzner_friction(Re_MR, n)
+        # Dodge-Metzner correlation returns Fanning f — multiply by 4 for Darcy
+        f_fanning = _dodge_metzner_friction(Re_MR, n)
+        f = 4 * f_fanning
         regime = 'turbulent'
 
+    # Darcy-Weisbach headloss: hL = f * (L/D) * V²/(2g)
     headloss = f * (length_m / diameter_m) * (V ** 2) / (2 * g)
 
     return {
@@ -242,14 +246,17 @@ def herschel_bulkley_headloss(flow_m3s, diameter_m, length_m, density,
     Re_gen = density * V * diameter_m / mu_app
 
     if Re_gen < 2100:
-        f = 16 / max(Re_gen, 1)
+        # Darcy friction factor for laminar flow — consistent with Bingham solver
+        # Uses Darcy convention (64/Re), NOT Fanning (16/Re)
+        f = 64 / max(Re_gen, 1)
         regime = 'laminar'
     else:
-        # Use Colebrook-White with apparent viscosity
+        # Use Colebrook-White with apparent viscosity (returns Darcy f)
         e_d = roughness_mm / 1000 / diameter_m
         f = _colebrook_white(Re_gen, e_d)
         regime = 'turbulent'
 
+    # Darcy-Weisbach headloss: hL = f * (L/D) * V²/(2g)
     headloss = f * (length_m / diameter_m) * (V ** 2) / (2 * g)
 
     return {

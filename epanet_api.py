@@ -39,7 +39,7 @@ class HydraulicAPI:
         'max_pressure_m': 50,          # WSAA maximum static pressure (m)
         'max_velocity_ms': 2.0,        # Maximum pipe velocity (m/s)
         'pipe_rating_kPa': 3500,       # PN35 ductile iron
-        'wave_speed_ms': 1000,         # Ductile iron wave speed
+        'wave_speed_ms': 1100,         # AS 2280 minimum for ductile iron — conservative default
     }
 
     def __init__(self, work_dir=None):
