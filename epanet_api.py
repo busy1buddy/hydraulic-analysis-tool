@@ -54,6 +54,9 @@ class HydraulicAPI:
         self.steady_results = None
         self.transient_results = None
         self._inp_file = None
+        # Instance-level copy of defaults so set_compliance_thresholds
+        # doesn't mutate shared class state
+        self.DEFAULTS = dict(HydraulicAPI.DEFAULTS)
 
     # =========================================================================
     # NETWORK CREATION
@@ -4347,6 +4350,151 @@ class HydraulicAPI:
             junc.demand_timeseries_list[0].base_value = base_demand
 
         return results
+
+    # =========================================================================
+    # SCENARIO DIFFERENCE REPORT (N8)
+    # =========================================================================
+
+    def scenario_difference(self, results_a, results_b, label_a='Scenario A',
+                             label_b='Scenario B'):
+        """
+        Calculate differences between two analysis results.
+
+        For each node: pressure change (B - A)
+        For each pipe: velocity and headloss change
+        Highlights changes > 10%.
+
+        Parameters
+        ----------
+        results_a, results_b : dict
+            Results from run_steady_state()
+        label_a, label_b : str
+            Names for the two scenarios
+
+        Returns dict with per-node and per-pipe differences, and plain English summary.
+        """
+        if not results_a or not results_b:
+            return {'error': 'Both scenarios must have results'}
+
+        p_a = results_a.get('pressures', {})
+        p_b = results_b.get('pressures', {})
+        f_a = results_a.get('flows', {})
+        f_b = results_b.get('flows', {})
+
+        node_diffs = []
+        for jid in set(p_a.keys()) | set(p_b.keys()):
+            avg_a = p_a.get(jid, {}).get('avg_m', 0)
+            avg_b = p_b.get(jid, {}).get('avg_m', 0)
+            change = round(avg_b - avg_a, 1)
+            pct = round(change / max(abs(avg_a), 0.1) * 100, 1)
+            node_diffs.append({
+                'node': jid,
+                f'{label_a}_pressure_m': avg_a,
+                f'{label_b}_pressure_m': avg_b,
+                'change_m': change,
+                'change_pct': pct,
+                'significant': abs(pct) > 10,
+            })
+
+        pipe_diffs = []
+        for pid in set(f_a.keys()) | set(f_b.keys()):
+            v_a = f_a.get(pid, {}).get('max_velocity_ms', 0)
+            v_b = f_b.get(pid, {}).get('max_velocity_ms', 0)
+            v_change = round(v_b - v_a, 2)
+            pipe_diffs.append({
+                'pipe': pid,
+                f'{label_a}_velocity_ms': v_a,
+                f'{label_b}_velocity_ms': v_b,
+                'velocity_change_ms': v_change,
+                'significant': abs(v_change) > 0.2,
+            })
+
+        # Plain English summary
+        improved = [d for d in node_diffs if d['change_m'] > 1]
+        worsened = [d for d in node_diffs if d['change_m'] < -1]
+
+        summary_parts = []
+        if improved:
+            best = max(improved, key=lambda d: d['change_m'])
+            summary_parts.append(
+                f"{len(improved)} node(s) improved pressure "
+                f"(best: {best['node']} +{best['change_m']:.1f} m)")
+        if worsened:
+            worst = min(worsened, key=lambda d: d['change_m'])
+            summary_parts.append(
+                f"{len(worsened)} node(s) lost pressure "
+                f"(worst: {worst['node']} {worst['change_m']:.1f} m)")
+
+        vel_improved = [d for d in pipe_diffs if d['velocity_change_ms'] < -0.2]
+        if vel_improved:
+            summary_parts.append(
+                f"{len(vel_improved)} pipe(s) reduced velocity")
+
+        return {
+            'node_differences': sorted(node_diffs, key=lambda d: abs(d['change_m']), reverse=True),
+            'pipe_differences': sorted(pipe_diffs, key=lambda d: abs(d['velocity_change_ms']), reverse=True),
+            'summary': '. '.join(summary_parts) if summary_parts else 'No significant changes.',
+            'labels': [label_a, label_b],
+        }
+
+    # =========================================================================
+    # CUSTOM COMPLIANCE THRESHOLDS (N10)
+    # =========================================================================
+
+    def set_compliance_thresholds(self, min_pressure_m=None, max_pressure_m=None,
+                                   max_velocity_ms=None, min_velocity_ms=None,
+                                   min_chlorine_mgl=None, pipe_rating_kPa=None):
+        """
+        Override default WSAA compliance thresholds for project-specific requirements.
+
+        Useful for mining (120m max pressure), industrial (higher velocity limits),
+        or other non-standard applications.
+
+        Parameters
+        ----------
+        min_pressure_m : float or None
+            Minimum pressure threshold (default: WSAA 20 m)
+        max_pressure_m : float or None
+            Maximum pressure threshold (default: WSAA 50 m, mining: 120 m)
+        max_velocity_ms : float or None
+            Maximum velocity (default: WSAA 2.0 m/s)
+        min_velocity_ms : float or None
+            Minimum velocity for sediment prevention (default: 0.6 m/s)
+        min_chlorine_mgl : float or None
+            Minimum chlorine residual (default: WSAA 0.2 mg/L)
+        pipe_rating_kPa : float or None
+            Pipe PN rating in kPa (default: 3500 = PN35)
+
+        Returns dict with updated thresholds.
+        """
+        if min_pressure_m is not None:
+            self.DEFAULTS['min_pressure_m'] = min_pressure_m
+        if max_pressure_m is not None:
+            self.DEFAULTS['max_pressure_m'] = max_pressure_m
+        if max_velocity_ms is not None:
+            self.DEFAULTS['max_velocity_ms'] = max_velocity_ms
+        if min_velocity_ms is not None:
+            self.DEFAULTS['min_velocity_ms'] = min_velocity_ms
+        if min_chlorine_mgl is not None:
+            self.WSAA_MIN_CHLORINE_MGL = min_chlorine_mgl
+        if pipe_rating_kPa is not None:
+            self.DEFAULTS['pipe_rating_kPa'] = pipe_rating_kPa
+
+        return {
+            'thresholds': dict(self.DEFAULTS),
+            'min_chlorine_mgl': self.WSAA_MIN_CHLORINE_MGL,
+        }
+
+    def get_compliance_thresholds(self):
+        """Return current compliance thresholds."""
+        return {
+            'min_pressure_m': self.DEFAULTS['min_pressure_m'],
+            'max_pressure_m': self.DEFAULTS['max_pressure_m'],
+            'max_velocity_ms': self.DEFAULTS['max_velocity_ms'],
+            'min_velocity_ms': self.DEFAULTS['min_velocity_ms'],
+            'pipe_rating_kPa': self.DEFAULTS['pipe_rating_kPa'],
+            'min_chlorine_mgl': self.WSAA_MIN_CHLORINE_MGL,
+        }
 
     # =========================================================================
     # EXCEL NETWORK IMPORT (N5)
