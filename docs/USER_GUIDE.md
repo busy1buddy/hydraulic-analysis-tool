@@ -1,575 +1,442 @@
-# User Guide
+# User Guide — EPANET Hydraulic Analysis Toolkit
 
-Complete guide to using the EPANET Hydraulic Analysis Toolkit.
+**Version:** v1.0.0-release | **Target audience:** Australian water supply and mining engineers
+
+This guide covers everything you need to perform professional hydraulic analysis from first launch to printed report. No Python knowledge required.
 
 ---
 
 ## 1. Installation
 
-### Prerequisites
-- Python 3.10 or higher
-- pip package manager
+### Option A — Windows Installer (recommended)
 
-### Install Dependencies
-```bash
-cd EPANET_CLAUDE
+1. Run **HydraulicAnalysisTool-Setup.exe** from the `installer/` folder or the provided USB drive.
+2. Follow the on-screen prompts. Default install location: `C:\Program Files\HydraulicAnalysisTool\`
+3. A desktop shortcut **Hydraulic Analysis Tool** is created automatically.
+4. Double-click the shortcut to launch. First startup may take 5–10 seconds while the solver initialises.
+
+### Option B — Python source (developers)
+
+Requires Python 3.10 or higher and pip.
+
+```
 pip install -r requirements.txt
+python main_app.py
 ```
 
-This installs: WNTR, EPyT, TSNet, FastAPI, uvicorn, matplotlib, numpy, pandas, scipy, networkx, plotly.
+### Verify it works
 
-### Verify Installation
-```bash
-python -c "import wntr; import tsnet; import epyt; print('All packages OK')"
-```
+The main window should appear with a blank canvas and the menu bar showing **File / Edit / Analysis / Water Quality / View / Tools / Help**. The status bar at the bottom shows **No network loaded**.
+
+If the window does not open, check that your antivirus is not blocking the executable, or contact your IT department for the signed installer.
 
 ---
 
-## 2. Web Dashboard
+## 2. Opening a Network
 
-### Starting the Dashboard
-```bash
-python server.py
-```
-The dashboard launches at **http://localhost:8765** (port 8765).
+### File > Open (.inp)
 
-### From Claude Code
-The dashboard is pre-configured in `.claude/launch.json`. Claude Code can launch it via Preview MCP and interact with all controls programmatically.
+1. Click **File > Open (.inp)...** or press **Ctrl+O**.
+2. Browse to your EPANET `.inp` file and click Open.
+3. The network appears on the canvas. Node and pipe counts are shown in the status bar.
 
-### Dashboard Tabs
+### Drag and drop
 
-#### Steady-State Analysis Tab
-1. **Select a network** from the dropdown (loads .inp files from `models/`)
-2. Click **Run Steady-State Analysis**
-3. View results:
-   - **Network Topology** - interactive Plotly map of nodes and pipes
-   - **WSAA Compliance** - automatic check against Australian standards
-   - **Junction Pressures** - 24hr pressure profiles with WSAA 20m minimum line
-   - **Pipe Flows** - 24hr flow profiles in LPS
-   - **Metrics** - min pressure, max velocity, total demand
+Drag an `.inp` file from Windows Explorer directly onto the application window. The network loads immediately.
 
-#### Transient / Water Hammer Tab
-1. **Select the network** containing a valve (e.g., `transient_network.inp`)
-2. **Set parameters**:
-   - **Valve ID**: name of the valve element (e.g., `V1`)
-   - **Closure Time**: how fast the valve closes (seconds). Shorter = more severe hammer
-   - **Start Time**: when closure begins in the simulation
-   - **Wave Speed**: pressure wave velocity in pipes (m/s). Depends on pipe material
-   - **Duration**: total simulation time (seconds)
-3. Click **Run Water Hammer Analysis**
-4. View results:
-   - **Transient Head** - pressure oscillations over time at each junction
-   - **Pressure Envelope** - max/min transient vs steady-state
-   - **Compliance** - check against PN35 pipe rating (3500 kPa)
-   - **Mitigation** - recommended surge protection measures
+### Open Tutorial
 
-#### Joukowsky Calculator Tab
-Quick calculation of instantaneous pressure rise from velocity change:
-- **Formula**: dH = (a x dV) / g
-- Select pipe material to auto-set wave speed, or enter custom value
-- Enter velocity change (m/s) - typically the flow velocity before valve closure
-- Results shown in metres of head and kPa
+1. Click **File > Open Tutorial...**
+2. A dialog lists all 10 built-in tutorial networks (see Section 10 for descriptions).
+3. Select a tutorial and click Open. The network and all pre-configured scenarios load.
+
+### What you see after loading
+
+- **Canvas (centre):** nodes shown as circles, pipes as lines. Use scroll wheel to zoom, drag to pan, and click **Fit** in the canvas toolbar to zoom to fit.
+- **Properties panel (right):** click any node or pipe to see its ID, elevation, demand, diameter, and roughness.
+- **Scenarios panel (far right):** lists any scenarios saved with the project.
 
 ---
 
-## 3. Python API
+## 3. Running Analysis
 
-### Basic Usage
+All analysis commands are in the **Analysis** menu or available via keyboard shortcut. You must load a network first.
 
-```python
-from epanet_api import HydraulicAPI
+### Steady State (F5)
 
-api = HydraulicAPI()
-```
+Solves the network at a single instant in time using base demands.
 
-### Loading an Existing Network
+1. Press **F5** or click **Analysis > Run Steady State**.
+2. Results appear immediately in the Results panel below the canvas:
+   - **Node table:** junction ID, pressure (m), elevation (m AHD), demand (LPS).
+   - **Pipe table:** pipe ID, flow (LPS), velocity (m/s), headloss (m/km).
+   - **WSAA Compliance:** pass/fail summary (see Section 4).
+3. The canvas colours pipes and nodes by pressure (default). Use the ColourMap controls top-right to change variable.
 
-```python
-summary = api.load_network('australian_network.inp')
-print(summary)
-# {'junctions': 7, 'reservoirs': 1, 'tanks': 1, 'pipes': 9, ...}
-```
+### Transient / Water Hammer (F6)
 
-Network files are loaded from the `models/` directory.
+Simulates a rapid valve closure or pump trip and calculates the resulting pressure surge.
 
-### Running Steady-State Analysis
+1. Press **F6** or click **Analysis > Run Transient**.
+2. A dialog asks for:
+   - **Valve ID** — the valve element to close (e.g., V1).
+   - **Closure time (s)** — time to fully close. Values under 2 s produce significant water hammer.
+   - **Wave speed (m/s)** — depends on pipe material: PE 300, PVC 400, Ductile Iron 1100, Steel 1100.
+   - **Duration (s)** — total simulation length. Allow at least 5× the pipe travel time.
+3. Results show maximum surge pressure (m and kPa), surge wave envelope, and whether the pressure exceeds the pipe pressure rating.
 
-```python
-results = api.run_steady_state()
+### Extended Period Simulation / EPS (F7)
 
-# Access pressures
-for junction, data in results['pressures'].items():
-    print(f"{junction}: min={data['min_m']}m, max={data['max_m']}m")
+Runs the network over 24 hours (or longer) using an hourly demand pattern.
 
-# Access flows
-for pipe, data in results['flows'].items():
-    print(f"{pipe}: avg={data['avg_lps']} LPS, velocity={data['avg_velocity_ms']} m/s")
+1. Press **F7** or click **Analysis > Run Extended Period (EPS)**.
+2. Optionally set the pattern duration (24 h, 48 h, or 168 h) in the dialog.
+3. Results show pressure and velocity envelopes (min/max band) across all timesteps.
+4. Use the AnimationPanel (bottom of canvas) to step through each hour.
+5. WSAA compliance is checked at **every timestep** — a network that passes at average demand may fail at peak hour.
 
-# Check compliance
-for item in results['compliance']:
-    print(f"{item['type']}: {item['message']}")
+### Fire Flow Wizard (F8)
 
-# Plot saved to output/api_steady_results.png
-print(results['plot'])
-```
+Tests whether each node can sustain a 25 LPS fire demand while maintaining 12 m residual pressure (WSAA requirement).
 
-### Running Transient Analysis
-
-```python
-api.load_network('transient_network.inp')
-
-result = api.run_transient(
-    valve_name='V1',        # Valve to close
-    closure_time=0.5,       # Seconds (rapid = water hammer)
-    start_time=2.0,         # Start closure at t=2s
-    wave_speed=1000,        # m/s (ductile iron)
-    sim_duration=20,        # Total simulation seconds
-)
-
-print(f"Max surge: {result['max_surge_m']}m ({result['max_surge_kPa']} kPa)")
-
-for junction, data in result['junctions'].items():
-    print(f"{junction}: surge={data['surge_m']}m, max={data['max_head_m']}m")
-
-for rec in result['mitigation']:
-    print(f"  - {rec}")
-```
-
-### Creating a Network from Scratch
-
-```python
-summary = api.create_network(
-    name='my_suburb',
-    reservoirs=[
-        {'id': 'R1', 'head': 80, 'x': 0, 'y': 50},
-    ],
-    junctions=[
-        {'id': 'J1', 'elevation': 50, 'demand': 0, 'x': 15, 'y': 50},
-        {'id': 'J2', 'elevation': 45, 'demand': 10, 'x': 30, 'y': 45},
-        {'id': 'J3', 'elevation': 42, 'demand': 15, 'x': 45, 'y': 40},
-    ],
-    pipes=[
-        {'id': 'P1', 'start': 'R1', 'end': 'J1', 'length': 500,
-         'diameter': 300, 'roughness': 130},
-        {'id': 'P2', 'start': 'J1', 'end': 'J2', 'length': 400,
-         'diameter': 250, 'roughness': 130},
-        {'id': 'P3', 'start': 'J2', 'end': 'J3', 'length': 350,
-         'diameter': 200, 'roughness': 120},
-    ],
-    valves=[
-        {'id': 'V1', 'start': 'J2', 'end': 'J3', 'diameter': 200,
-         'type': 'TCV', 'setting': 1},
-    ],
-    tanks=[
-        {'id': 'T1', 'elevation': 55, 'init_level': 3, 'min_level': 0.5,
-         'max_level': 5, 'diameter': 12, 'x': 30, 'y': 70},
-    ],
-    duration_hrs=24,
-    pattern=[0.5, 0.4, 0.3, 0.3, 0.5, 0.8,
-             1.2, 1.5, 1.3, 1.0, 0.9, 0.8,
-             0.7, 0.6, 0.7, 0.9, 1.3, 1.5,
-             1.4, 1.2, 1.0, 0.8, 0.7, 0.6],
-)
-
-# Saved to models/my_suburb.inp automatically
-```
-
-**Parameter notes:**
-- `demand` is in **LPS** (litres per second)
-- `diameter` is in **mm** (converted to metres internally)
-- `elevation` and `head` are in **metres**
-- `roughness` is Hazen-Williams C-factor (typical: 110-140)
-- `pattern` is a 24-element demand multiplier list (one per hour)
-
-### Joukowsky Quick Calculator
-
-```python
-result = api.joukowsky(wave_speed=1000, velocity_change=1.5)
-print(f"Pressure rise: {result['head_rise_m']}m = {result['pressure_rise_kPa']} kPa")
-```
-
-### Exporting Results
-
-```python
-api.export_results_json(results, 'my_analysis.json')
-# Saved to output/my_analysis.json
-```
+1. Press **F8** or click **Analysis > Fire Flow Wizard...**
+2. Set the required flow (default 25 LPS) and residual pressure (default 12 m).
+3. Click **Run**. The wizard sweeps all nodes automatically.
+4. The canvas shows a colour-coded fire flow map: green = adequate, red = inadequate.
+5. The Results panel lists every node with its available fire flow and pass/fail status.
 
 ---
 
-## 4. Standalone Scripts
+## 4. Understanding Results
 
-### Steady-State Analysis
-```bash
-python run_hydraulic_analysis.py
-```
-Runs a 24-hour extended period simulation on `models/australian_network.inp` and:
-- Prints junction pressures, pipe flows, velocities
-- Checks WSAA compliance
-- Saves plot to `output/hydraulic_results.png`
+### Node pressure table
 
-### Transient Analysis
-```bash
-python run_transient_analysis.py
-```
-Runs water hammer analysis on `models/transient_network.inp` with 0.5s valve closure:
-- Prints Joukowsky surge calculations
-- Checks against PN35 pipe rating
-- Provides mitigation recommendations
-- Saves plot to `output/transient_results.png`
+| Column | Units | WSAA Requirement |
+|--------|-------|-----------------|
+| Pressure | m head | 20–50 m |
+| Elevation | m AHD | — |
+| Demand | LPS | — |
 
----
+Cells highlighted in **red** are outside the WSAA range. A pressure below 20 m means the service connection may not function. A pressure above 50 m means pipes are overpressured and PRVs may be required.
 
-## 5. Network Model Files (.inp)
+### Pipe flow and velocity table
 
-### Format
-EPANET `.inp` files are plain text. Key sections:
+| Column | Units | WSAA Requirement |
+|--------|-------|-----------------|
+| Flow | LPS | — |
+| Velocity | m/s | < 2.0 m/s |
+| Headloss | m/km | — (informational) |
 
-| Section | Content |
-|---------|---------|
-| `[JUNCTIONS]` | Node ID, elevation (m), base demand (LPS) |
-| `[RESERVOIRS]` | Source ID, head (m) |
-| `[TANKS]` | Tank ID, elevation, levels, diameter |
-| `[PIPES]` | Pipe ID, start/end nodes, length (m), diameter (mm), roughness |
-| `[VALVES]` | Valve ID, nodes, diameter, type, setting |
-| `[OPTIONS]` | Units (LPS), headloss method (H-W) |
-| `[TIMES]` | Duration, timestep |
-| `[COORDINATES]` | Node positions for visualization |
+Velocity above 2.0 m/s is flagged in red. High velocity causes noise, erosion, and water hammer risk. Consider upsizing the pipe diameter.
 
-### Included Models
+### WSAA Compliance summary
 
-**`australian_network.inp`** - 7-junction suburban distribution network
-- 1 reservoir (R1, 80m head)
-- 1 elevated tank (T1)
-- 9 pipes (150-300mm diameter)
-- 24-hour demand pattern
-- Total base demand: 38 LPS
+The compliance panel appears after any analysis run. It shows:
 
-**`transient_network.inp`** - 6-junction network with valve for water hammer
-- 1 reservoir (R1, 80m head)
-- 6 pipes + 1 TCV valve (V1)
-- Designed for transient analysis scenarios
+- **PASS** (green) — all nodes within 20–50 m pressure and all pipes below 2.0 m/s.
+- **FAIL** (red) — one or more violations, listed by element ID with the measured value.
 
-### Adding Your Own Network
-1. Create an `.inp` file (use EPANET GUI or the Python API)
-2. Save it to the `models/` directory
-3. It will appear in the dashboard dropdown automatically
+The compliance check references WSAA *Water Supply Code of Australia* (WSA 03) and the specific threshold is noted alongside each result (e.g., "WSAA minimum 20 m — Junction J4: 17.3 m").
+
+### Pressure display
+
+Pressures are shown to one decimal place (e.g., 23.4 m). This is the precision appropriate for engineering assessment — the solver produces more decimal places but the last digit has no physical significance at pipe network scale.
+
+### Velocity display
+
+Velocities are shown to two decimal places (e.g., 1.87 m/s), matching the precision needed to assess compliance with the 2.00 m/s WSAA limit.
 
 ---
 
-## 6. Australian Standards Reference
+## 5. Canvas Features
 
-### WSAA Pressure Requirements
-| Condition | Minimum Pressure |
-|-----------|-----------------|
-| Peak demand | 20m head (200 kPa) |
-| Fire flow | 12m head (120 kPa) |
-| Maximum static | 50m head (500 kPa) |
+### Colour modes
 
-### Pipe Velocity Limits
-| Pipe Type | Max Velocity |
-|-----------|-------------|
-| Distribution mains | 2.0 m/s |
-| Trunk mains | 1.5 m/s |
-| Service connections | 2.5 m/s |
+Use the **ColourMap** widget in the top-right panel to change what the colours represent:
 
-### Pipe Pressure Ratings
-| Class | Rating |
-|-------|--------|
-| PN16 | 1600 kPa |
-| PN20 | 2000 kPa |
-| PN25 | 2500 kPa |
-| PN35 | 3500 kPa |
+| Mode | What it shows |
+|------|--------------|
+| Pressure | Node pressure in m head (blue = low, red = high) |
+| Velocity | Pipe velocity in m/s |
+| Headloss | Pipe headloss gradient in m/km |
+| Flow | Pipe flow rate in LPS |
+| Water Age | Hours since water entered the network (requires water quality run) |
+| Chlorine | Chlorine residual in mg/L (requires chlorine decay run) |
 
-### Wave Speeds by Material
-| Material | Wave Speed (m/s) |
-|----------|-----------------|
-| PE / HDPE | 250-350 |
-| PVC | 350-500 |
-| Ductile Iron | 1000-1200 |
-| Steel | 900-1200 |
-| Concrete | 1100-1300 |
+The ColourBar on the right side of the panel shows the scale. Units are always labelled.
 
----
+### Value overlay
 
-## 7. API Endpoints (Dashboard Server)
+Click the **Values** button in the canvas toolbar to show numeric values on every element. The display shows the currently active colour mode variable. For large networks (200+ elements), values may overlap — zoom in to read individual elements.
 
-When running `python server.py`, the following REST endpoints are available:
+### Labels
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | Dashboard HTML page |
-| GET | `/api/networks` | List available .inp files |
-| GET | `/api/network/{file}` | Network topology and details |
-| GET | `/api/steady/{file}` | Run steady-state analysis |
-| POST | `/api/transient` | Run transient analysis |
-| POST | `/api/joukowsky` | Calculate Joukowsky pressure rise |
+Click the **Labels** button to toggle node and pipe ID labels on the canvas.
 
-### Example: Calling via curl
-```bash
-# List networks
-curl http://localhost:8765/api/networks
+### Pipe DN scaling
 
-# Run steady-state
-curl http://localhost:8765/api/steady/australian_network.inp
+Click **View > Scale Pipes by DN** to draw pipe widths proportional to their nominal diameter. DN63 (PE service pipe) appears thin; DN900 (concrete trunk main) appears thick. This helps quickly identify the network hierarchy.
 
-# Run transient
-curl -X POST http://localhost:8765/api/transient \
-  -H "Content-Type: application/json" \
-  -d '{"inp_file":"transient_network.inp","valve":"V1","closure_time":0.5}'
+### Node demand scaling
 
-# Joukowsky
-curl -X POST http://localhost:8765/api/joukowsky \
-  -H "Content-Type: application/json" \
-  -d '{"wave_speed":1000,"velocity_change":2.0}'
+Click **View > Scale Nodes by Demand** to size junction circles proportional to their base demand. Zero-demand nodes (e.g., intermediate connections) appear as small dots; high-demand nodes appear larger.
 
-# Fire flow
-curl "http://localhost:8765/api/fireflow/australian_network.inp?node=J3&flow=25"
+### Probe tool
 
-# Water quality
-curl "http://localhost:8765/api/waterquality/australian_network.inp?parameter=age&duration=72"
-```
+Click the **Probe** button in the canvas toolbar to enter probe mode. Click any node or pipe on the canvas to see a floating tooltip showing all hydraulic result variables for that element at the current timestep. Press **Escape** to dismiss the tooltip and exit probe mode.
+
+### Fit to window
+
+Click the **Fit** button in the canvas toolbar (or use the keyboard shortcut **Ctrl+F**) to zoom and pan the canvas so the entire network is visible.
+
+### Edit mode
+
+Click the **Edit** button to enter edit mode. In edit mode you can:
+- Left-click an empty area to add a junction.
+- Right-click a node or pipe to delete it.
+- Use the editor programmatically via **Edit > Undo** (Ctrl+Z) and **Edit > Redo** (Ctrl+Y).
 
 ---
 
-## 8. Non-Newtonian / Slurry Analysis
+## 6. Slurry Mode
 
-For mining applications involving tailings, paste fill, or other non-Newtonian fluids.
+Slurry mode applies a non-Newtonian rheology model to replace the standard Hazen-Williams friction formula. Use this for mining tailings lines, paste fill pipelines, and cement or polymer slurries.
 
-### Available Fluids
-```python
-from slurry_solver import list_fluids, analyze_slurry_network
-print(list_fluids())
-# water, mine_tailings_30pct, mine_tailings_50pct, paste_fill_70pct,
-# cement_slurry, polymer_solution, drilling_mud
-```
+### Enabling slurry mode
 
-### Running Slurry Analysis
-```python
-from epanet_api import HydraulicAPI
-from slurry_solver import analyze_slurry_network
-import wntr
+1. Load your network as normal.
+2. Click **Analysis > Slurry Mode** (checkable menu item). A slurry parameters panel appears below the ColourMap.
 
-api = HydraulicAPI()
-api.load_network('australian_network.inp')
+### Setting slurry parameters
 
-result = analyze_slurry_network(api.wn, 'mine_tailings_30pct')
-for pipe, data in result['pipe_results'].items():
-    print(f"{pipe}: headloss={data['headloss_m']}m, "
-          f"velocity={data['velocity_ms']} m/s, regime={data['regime']}")
-```
+| Parameter | Description | Typical range |
+|-----------|-------------|--------------|
+| Fluid type | Preset or custom | See list below |
+| Density (kg/m³) | Slurry bulk density | 1100–1800 |
+| Yield stress (Pa) | Minimum shear stress to initiate flow (Bingham/H-B) | 5–100 Pa |
+| Plastic viscosity (Pa·s) | Post-yield viscosity (Bingham) | 0.01–0.2 |
+| Consistency index K | Power-law coefficient | 0.01–10 |
+| Flow index n | Power-law exponent (< 1 = shear thinning) | 0.2–1.0 |
 
-### Custom Fluid Properties
-```python
-custom = {
-    'type': 'bingham_plastic',
-    'density_kg_m3': 1400,
-    'yield_stress_Pa': 12.0,
-    'plastic_viscosity_Pa_s': 0.03,
-    'description': 'Custom tailings',
-}
-result = analyze_slurry_network(api.wn, custom_fluid=custom)
-```
+**Built-in fluid presets:**
 
-### Rheological Models
-| Model | Parameters | Use Case |
-|-------|-----------|----------|
-| Bingham Plastic | yield stress, plastic viscosity | Tailings, cement, paste fill |
-| Power Law | consistency index K, flow index n | Polymer solutions, some muds |
-| Herschel-Bulkley | yield stress, K, n | General non-Newtonian (most flexible) |
+| Preset | Model | Typical use |
+|--------|-------|-------------|
+| mine_tailings_30pct | Bingham plastic | 30% solids copper or gold tailings |
+| mine_tailings_50pct | Bingham plastic | 50% solids high-density tailings |
+| paste_fill_70pct | Bingham plastic | Paste fill for underground voids |
+| cement_slurry | Bingham plastic | Cement grouting and backfill |
+| polymer_solution | Power law | Drag-reducing polymer injection |
+| drilling_mud | Herschel-Bulkley | Directional drilling |
 
----
+### Running slurry analysis
 
-## 9. Pump Curve System
+Press **F5** (Steady State) with slurry mode enabled. The solver applies the selected rheology model to every pipe and reports:
 
-### Listing Available Pumps
-```python
-from data.pump_curves import list_pumps, recommend_pump
+- Headloss per pipe using the Buckingham-Reiner (Bingham laminar), Wilson-Thomas (turbulent), or power-law formulation.
+- Flow regime (laminar / turbulent / transition) per pipe.
+- A comparison table showing slurry headloss vs the equivalent water headloss.
 
-# All pumps
-for p in list_pumps():
-    print(f"{p['pump_id']}: {p['max_head_m']}m, {p['max_flow_lps']} LPS")
+### Interpretation
 
-# Filter by application
-water_pumps = list_pumps(application='water')
-slurry_pumps = list_pumps(application='slurry')
-```
+Slurry headloss is almost always higher than water headloss for the same flow rate. If the slurry velocity is below the deposition velocity, the pipe may settle and block. The results panel flags any pipe at risk.
 
-### Pump Recommendation
-```python
-# Find best pump for 30 LPS at 40m head
-recs = recommend_pump(required_flow_lps=30, required_head_m=40)
-for r in recs:
-    print(f"{r['model']}: {r['efficiency_pct']}% eff, "
-          f"{r['head_margin_m']}m margin, score={r['suitability_score']}")
-```
+### Disabling slurry mode
 
-### System Curve & Operating Point
-```python
-from data.pump_curves import generate_system_curve, find_operating_point
-
-sys_curve = generate_system_curve(
-    static_head_m=25,       # Elevation difference
-    pipe_length_m=1000,     # Total pipe length
-    pipe_diameter_mm=200,   # Pipe diameter
-    roughness=130,          # Hazen-Williams C
-)
-
-op = find_operating_point('WSP-200-40', sys_curve)
-print(f"Operating at {op['flow_lps']} LPS, {op['head_m']}m, "
-      f"{op['efficiency_pct']}% efficiency")
-```
+Click **Analysis > Slurry Mode** again to uncheck it. The next analysis run uses standard Hazen-Williams.
 
 ---
 
-## 10. Pipe Stress Analysis
+## 7. Scenarios
 
-### Quick Stress Check
-```python
-from pipe_stress import analyze_pipe_stress
+Scenarios allow you to compare a base network against alternatives — for example, a pipe upsizing, a demand growth projection, or a roughness deterioration study.
 
-result = analyze_pipe_stress(
-    pressure_kPa=1500,
-    diameter_mm=200,
-    wall_thickness_mm=7.0,
-    material='ductile_iron',
-    transient_factor=1.5,   # 50% surge on top of steady pressure
-)
-print(f"Hoop stress: {result['hoop_stress_MPa']} MPa")
-print(f"Safety factor: {result['safety_factor_hoop']}")
-print(f"Status: {result['status']}")
-```
+### Creating a scenario
 
-### Wall Thickness Design
-```python
-from pipe_stress import barlow_wall_thickness
+1. In the **Scenarios** panel (right side of window), click **New Scenario**.
+2. Enter a name (e.g., "Upsize P6 to DN250") and an optional description.
+3. Define modifications:
+   - **Pipe diameter** — select a pipe ID and enter the new diameter in mm.
+   - **Pipe roughness** — select a pipe ID and enter the new Hazen-Williams C-factor.
+   - **Demand factor** — apply a multiplier to all junction demands (e.g., 1.3 for 30% growth).
+   - **Demand set** — set a specific junction to a fixed demand in LPS.
+4. Click **Save**. The scenario appears in the scenarios list.
 
-design = barlow_wall_thickness(
-    pressure_kPa=2500,
-    diameter_mm=300,
-    allowable_stress_MPa=300,  # Ductile iron yield
-    safety_factor=2.5,
-    corrosion_allowance_mm=1.5,
-)
-print(f"Minimum wall: {design['min_thickness_mm']}mm")
-print(f"Design wall: {design['design_thickness_mm']}mm")
-```
+### Running all scenarios
 
----
+Click **Run All** in the Scenarios panel to solve every scenario in sequence. Progress is shown in the status bar.
 
-## 11. Scenario Comparison
+### Comparison table
 
-### Creating and Comparing Scenarios
-```python
-from scenario_manager import ScenarioManager
+After running all scenarios, click **Compare** to open the scenario comparison table. Columns show each scenario; rows show key metrics:
 
-mgr = ScenarioManager()
+- Minimum network pressure (m)
+- Maximum pipe velocity (m/s)
+- WSAA compliance (pass/fail)
+- Pump operating point (if applicable)
+- Total network headloss (m)
 
-# Base case
-mgr.create_scenario('base', 'australian_network.inp', description='Current network')
+Cells that differ significantly from the base case are highlighted.
 
-# Pipe upsizing scenario
-mgr.create_scenario('upsize_p6', 'australian_network.inp',
-    modifications=[{'type': 'pipe_diameter', 'target': 'P6', 'value': 250}],
-    description='Upsize P6 from 150mm to 250mm',
-)
+### Saving and loading
 
-# Demand growth scenario
-mgr.create_scenario('growth_30pct', 'australian_network.inp',
-    modifications=[{'type': 'demand_factor', 'value': 1.3}],
-    description='30% demand growth projection',
-)
-
-# Run all and compare
-mgr.run_all()
-comparison = mgr.compare('base', 'growth_30pct')
-for s in comparison['summary']:
-    print(s)
-```
-
-### Available Modifications
-| Type | Target | Value | Example |
-|------|--------|-------|---------|
-| `pipe_diameter` | Pipe ID | mm | Upsize P6 to 250mm |
-| `pipe_roughness` | Pipe ID | C-factor | Age pipe to C=100 |
-| `demand_factor` | (all) | multiplier | 1.3 = 30% growth |
-| `demand_set` | Junction ID | LPS | Set J3 to 20 LPS |
+Scenarios are saved in the `.hap` project file (File > Save As). To reload a project with all its scenarios, use File > Open and select the `.hap` file.
 
 ---
 
-## 12. Network Import
+## 8. Water Quality
 
-### From CSV
-```python
-from importers.csv_import import import_from_csv
+Water quality analysis tracks how a substance (or water age) changes as water travels through the network. Requires a network loaded and at least one reservoir source defined.
 
-result = import_from_csv('nodes.csv', 'pipes.csv', output_name='my_network')
-print(f"Imported {result['total_nodes']} nodes, {result['total_links']} links")
-```
+### Water Age
 
-**nodes.csv format:** `id, type, x, y, elevation, demand, head`
-**pipes.csv format:** `id, start, end, length, diameter, roughness, type`
+Estimates how long water has been in the network at each node. Old water (high age) indicates dead ends, poor circulation, or oversized storage.
 
-### From GIS Shapefile
-```python
-from importers.shapefile_import import import_from_shapefile
+1. Click **Water Quality > Water Age...**
+2. Set the simulation duration (default 72 hours — long enough for the network to reach a repeating pattern).
+3. Click **Run**. Results show water age in hours at each junction.
+4. Change the canvas colour mode to **Water Age** to see the spatial distribution.
 
-result = import_from_shapefile(
-    'pipes.shp', 'nodes.shp',
-    source_crs='EPSG:28355',  # MGA Zone 55
-    output_name='gis_network',
-)
-```
+WSAA guideline: water age should not exceed 3 days (72 hours) at any service connection.
 
-### From DXF/CAD
-```python
-from importers.dxf_import import import_from_dxf
+### Chlorine Decay
 
-result = import_from_dxf(
-    'drawing.dxf',
-    pipe_layers=['WATER_MAINS'],
-    junction_layers=['NODES'],
-    default_diameter=200,
-)
-```
+Models the decay of chlorine residual as water travels through the network.
 
----
+1. Click **Water Quality > Chlorine Decay...**
+2. Set parameters:
+   - **Initial concentration (mg/L)** — chlorine at the reservoir/source (typically 0.5–1.0 mg/L for treated water).
+   - **Bulk decay coefficient (1/day)** — rate of decay in the bulk water volume (typical: 0.5–2.0).
+   - **Wall decay coefficient (m/day)** — rate of decay at the pipe wall (typical: 0.01–0.1 for lined pipes).
+3. Click **Run**. Results show chlorine concentration in mg/L at each junction.
+4. Change the canvas colour mode to **Chlorine** to see the spatial distribution.
 
-## 13. 3D Visualization
+WSAA requirement: minimum residual chlorine of 0.2 mg/L at all service connections.
 
-The 3D View tab in the NiceGUI dashboard renders the network in Three.js:
+### Trace
 
-- **Load & Render** - displays the network in 3D with elevation
-- **Run Analysis + Color** - runs steady-state and colors pipes by pressure or velocity
-- **View presets** - Plan, Isometric, Side, Front views
-- **Click elements** - shows properties in the info panel
-- **Vertical Scale** - adjust elevation exaggeration (0.1 to 5.0)
-- **Orbit controls** - drag to rotate, scroll to zoom, right-click to pan
+Tracks the proportion of water originating from a selected source node. Useful for blending analysis in multi-source systems.
+
+1. Click **Water Quality > Trace...**
+2. Select the source node to trace from.
+3. Click **Run**. Results show percentage (0–100%) from the selected source at each junction.
 
 ---
 
-## 14. Report Generation
+## 9. Reports
 
-### From Python API
-```python
-api.load_network('australian_network.inp')
-steady = api.run_steady_state(save_plot=False)
-path = api.generate_report(
-    format='docx',
-    steady_results=steady,
-    title='Network Assessment',
-    engineer_name='Jane Smith',
-    project_name='Suburban Water Supply Upgrade',
-)
-print(f"Report saved: {path}")
-```
+Reports compile analysis results into a professional engineering document suitable for client delivery or design documentation.
 
-### Report Sections
-1. Cover page with project details and date
-2. Network description with node and pipe tables
-3. Steady-state results (pressures, flows, velocities)
-4. Compliance summary (WSAA)
-5. Transient results (if included)
-6. Fire flow results (if included)
-7. Water quality results (if included)
-8. Auto-generated conclusions
+### Generating a report
+
+1. Run at least one analysis (Steady State, Transient, or Fire Flow) so results are available.
+2. Click **File > Generate Report...** or use the Reports button in the Results panel.
+3. In the report dialog:
+   - **Title** — project title (e.g., "Drummoyne WA — Reticulation Upgrade")
+   - **Engineer name** — displayed on the cover page
+   - **Project number** — for filing reference
+   - **Format** — DOCX (full formatting) or PDF (basic formatting)
+   - **Include sections** — check/uncheck to include Steady State, Transient, Fire Flow, Water Quality as applicable
+4. Click **Generate**. The report is saved to the `output/` folder and the path is shown in the status bar.
+
+### Report sections
+
+A full report includes:
+
+1. Cover page — project title, engineer, date, project number
+2. Network description — element counts, source heads, total demand
+3. Node table — all junctions with elevation, pressure, demand
+4. Pipe table — all pipes with diameter, length, roughness, flow, velocity
+5. WSAA compliance summary — pass/fail for pressure and velocity
+6. Transient results — surge pressures and envelope (if run)
+7. Fire flow results — availability map and node compliance (if run)
+8. Water quality results — age or chlorine summary (if run)
+9. Conclusions — auto-generated summary of compliance status
+
+### DOCX vs PDF
+
+DOCX format produces the best output: formatted tables, bold headings, compliance colour coding, and editable text for the engineer to annotate. PDF is available for quick sharing but uses basic formatting without colour.
+
+---
+
+## 10. Tutorials
+
+Open any tutorial via **File > Open Tutorial...**. Each tutorial includes a pre-built network, scenarios, and engineering notes in the `README.md` file inside the tutorial folder.
+
+| # | Tutorial | Description |
+|---|----------|-------------|
+| 1 | **Simple Loop** | 6-node looped residential network. Learn how loops balance flow and pressure, and verify WSAA pressure compliance. |
+| 2 | **Dead End Network** | Branching tree with an 800 m dead-end branch. See how water age stagnates and plan a flushing program. |
+| 3 | **Pump Station** | Single pump lifting water to an elevated distribution zone. Find the pump operating point on the system curve. |
+| 4 | **Pressure Zone Boundary** | Two pressure zones separated by a PRV. Select the correct PRV set-point to protect the low-pressure zone. |
+| 5 | **Fire Flow Demand** | Residential network under 25 LPS fire demand. Check WSAA fire flow residual (12 m at 25 LPS) at every node. |
+| 6 | **Mining Slurry Line** | Straight pipeline comparing water vs Bingham plastic slurry. Quantify the headloss penalty for high-density tailings. |
+| 7 | **Multistage Pump** | Two pumps in series for a high-elevation supply. Assess head addition, single-pump failure, and transient starting point. |
+| 8 | **Elevated Tank** | Gravity-fed distribution from a steel tank. Observe how tank drawdown affects pressure at the furthest junction. |
+| 9 | **Industrial Ring Main** | Large DN400–DN600 ring main for a mining estate. Apply the 120 m HGL threshold and assess N-1 pipe security. |
+| 10 | **Rehabilitation Comparison** | Old cast-iron main (C=80) vs cement-lined pipe (C=130). Quantify the headloss reduction and compliance recovery. |
+
+---
+
+## 11. Keyboard Shortcuts
+
+### File
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+N | New project |
+| Ctrl+O | Open .inp file |
+| Ctrl+S | Save |
+| Ctrl+Shift+S | Save As (.hap project file) |
+| Ctrl+Q | Exit |
+
+### Edit
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+Z | Undo |
+| Ctrl+Y | Redo |
+| Escape | Cancel pipe creation / hide probe tooltip |
+
+### Analysis
+
+| Shortcut | Action |
+|----------|--------|
+| F5 | Run Steady State |
+| F6 | Run Transient |
+| F7 | Run Extended Period (EPS) |
+| F8 | Fire Flow Wizard |
+
+### Canvas
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+F | Fit network to window |
+| Scroll wheel | Zoom in / out |
+| Middle-click drag | Pan |
+
+### Help
+
+| Shortcut | Action |
+|----------|--------|
+| F1 | Show keyboard shortcuts dialog |
+
+---
+
+## Quick Reference — Australian Standards
+
+| Standard | Requirement | Value |
+|----------|-------------|-------|
+| WSAA WSA 03 | Minimum service pressure | 20 m head |
+| WSAA WSA 03 | Maximum service pressure | 50 m head |
+| WSAA WSA 03 | Maximum pipe velocity | 2.0 m/s |
+| WSAA WSA 03 | Fire flow residual pressure | 12 m at 25 LPS |
+| WSAA WSA 03 | Maximum water age | 72 hours |
+| WSAA WSA 03 | Minimum chlorine residual | 0.2 mg/L |
+| AS 2280 | Ductile iron pressure class | PN25 / PN35 |
+| AS/NZS 1477 | PVC pressure class | PN12 / PN18 |
+| AS/NZS 4130 | PE/HDPE pressure class | SDR11 PN16 |
+
+---
+
+*For technical support, see `docs/` for the API reference, validation reports, and roadmap. For Python API usage, see the legacy `docs/USER_GUIDE.md` (the version in the project root covers the Python API and web dashboard).*
