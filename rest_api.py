@@ -45,6 +45,7 @@ class HydraulicHandler(BaseHTTPRequestHandler):
             '/api/fingerprint': self._fingerprint,
             '/api/diagnose': self._diagnose,
             '/api/compliance': self._compliance,
+            '/api/assessment': self._assessment,
             '/api/nodes': self._nodes,
             '/api/pipes': self._pipes,
         }
@@ -115,6 +116,10 @@ class HydraulicHandler(BaseHTTPRequestHandler):
 
     def _compliance(self, params):
         result = _api.run_design_compliance_check()
+        self._json_response(result)
+
+    def _assessment(self, params):
+        result = _api.quick_assessment()
         self._json_response(result)
 
     def _nodes(self, params):

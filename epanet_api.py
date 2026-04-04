@@ -4629,6 +4629,102 @@ class HydraulicAPI:
         }
 
     # =========================================================================
+    # QUICK NETWORK ASSESSMENT (Innovation Q3)
+    # =========================================================================
+
+    def quick_assessment(self):
+        """
+        Generate a comprehensive quick assessment for an unknown network.
+
+        Designed for the scenario: engineer receives a 20-year-old .inp file
+        with no documentation. This method gives them a complete picture in
+        seconds — topology, hydraulics, compliance, risks, and recommendations.
+
+        Returns dict with all assessment sections.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        assessment = {
+            'network_name': os.path.basename(self._inp_file) if self._inp_file else 'Unknown',
+        }
+
+        # 1. Basic summary
+        assessment['summary'] = self.get_network_summary()
+
+        # 2. Topology
+        assessment['topology'] = self.analyse_topology()
+
+        # 3. Run analysis
+        try:
+            results = self.run_steady_state(save_plot=False)
+            assessment['analysis_status'] = 'OK'
+        except Exception as e:
+            assessment['analysis_status'] = f'FAILED: {e}'
+            results = None
+
+        # 4. Hydraulic fingerprint
+        if results:
+            assessment['fingerprint'] = self.hydraulic_fingerprint()
+
+        # 5. Resilience
+        if results:
+            assessment['resilience'] = self.compute_resilience_index(results)
+
+        # 6. Quality score
+        if results:
+            assessment['quality_score'] = self.compute_quality_score(results)
+
+        # 7. Diagnostics
+        assessment['diagnostics'] = self.diagnose_network()
+
+        # 8. Material inventory (from roughness values)
+        material_counts = {'DI (C=120-140)': 0, 'PVC (C=140-150)': 0,
+                          'Concrete (C=90-120)': 0, 'Unknown': 0}
+        for pid in self.wn.pipe_name_list:
+            C = self.wn.get_link(pid).roughness
+            if 120 <= C <= 140:
+                material_counts['DI (C=120-140)'] += 1
+            elif 140 < C <= 150:
+                material_counts['PVC (C=140-150)'] += 1
+            elif 90 <= C < 120:
+                material_counts['Concrete (C=90-120)'] += 1
+            else:
+                material_counts['Unknown'] += 1
+        assessment['material_inventory'] = material_counts
+
+        # 9. Pipe size distribution
+        size_dist = {}
+        for pid in self.wn.pipe_name_list:
+            dn = int(self.wn.get_link(pid).diameter * 1000)
+            size_dist[dn] = size_dist.get(dn, 0) + 1
+        assessment['pipe_sizes'] = dict(sorted(size_dist.items()))
+
+        # 10. Recommendations
+        recs = []
+        if assessment.get('diagnostics', {}).get('critical', 0) > 0:
+            recs.append('Fix critical diagnostic issues before running analysis.')
+        topo = assessment.get('topology', {})
+        if topo.get('dead_end_count', 0) > 5:
+            recs.append(f'Network has {topo["dead_end_count"]} dead ends — '
+                       f'consider looping for water quality.')
+        if topo.get('bridge_count', 0) > 0:
+            recs.append(f'{topo["bridge_count"]} bridge pipes identified — '
+                       f'single points of failure.')
+        ri = assessment.get('resilience', {})
+        if ri.get('resilience_index', 1) < 0.15:
+            recs.append('Low resilience index — network is vulnerable to failures.')
+        qs = assessment.get('quality_score', {})
+        if qs.get('total_score', 100) < 60:
+            recs.append(f'Quality score {qs.get("total_score", "?")}/100 — '
+                       f'significant improvements needed.')
+        if not recs:
+            recs.append('Network appears healthy. Run detailed analysis for more insight.')
+        assessment['recommendations'] = recs
+
+        return assessment
+
+    # =========================================================================
     # QUALITY SCORE SYSTEM (M9)
     # =========================================================================
 

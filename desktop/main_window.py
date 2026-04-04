@@ -219,6 +219,12 @@ class MainWindow(QMainWindow):
         schedule_act.triggered.connect(self._on_schedule_reports)
         tools_menu.addAction(schedule_act)
 
+        assess_act = QAction("&Quick Assessment...", self)
+        assess_act.setShortcut("F10")
+        assess_act.setToolTip("Generate comprehensive quick assessment of network health")
+        assess_act.triggered.connect(self._on_quick_assessment)
+        tools_menu.addAction(assess_act)
+
         diag_act = QAction("&Network Diagnostics...", self)
         diag_act.setToolTip("Diagnose common network problems and suggest fixes")
         diag_act.triggered.connect(self._on_diagnostics)
@@ -1264,6 +1270,54 @@ class MainWindow(QMainWindow):
         from desktop.compliance_dialog import ComplianceDialog
         dialog = ComplianceDialog(self.api, parent=self)
         dialog.exec()
+
+    def _on_quick_assessment(self):
+        """Run quick assessment and show results."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        result = self.api.quick_assessment()
+        if 'error' in result:
+            QMessageBox.warning(self, "Error", result['error'])
+            return
+
+        lines = [f"Quick Assessment: {result['network_name']}\n"]
+
+        s = result.get('summary', {})
+        lines.append(f"Network: {s.get('junctions', 0)} junctions, "
+                     f"{s.get('pipes', 0)} pipes, {s.get('pumps', 0)} pumps")
+
+        t = result.get('topology', {})
+        if 'error' not in t:
+            lines.append(f"Topology: {t.get('loops', 0)} loops, "
+                        f"{t.get('dead_end_count', 0)} dead ends, "
+                        f"{t.get('bridge_count', 0)} bridges")
+
+        ri = result.get('resilience', {})
+        if 'error' not in ri:
+            lines.append(f"Resilience: {ri.get('resilience_index', 0):.3f} "
+                        f"(Grade {ri.get('grade', '?')})")
+
+        qs = result.get('quality_score', {})
+        if 'error' not in qs:
+            lines.append(f"Quality: {qs.get('total_score', 0):.0f}/100 "
+                        f"(Grade {qs.get('grade', '?')})")
+
+        # Materials
+        mats = result.get('material_inventory', {})
+        if mats:
+            lines.append(f"\nMaterials: " + ", ".join(
+                f"{k}: {v}" for k, v in mats.items() if v > 0))
+
+        # Recommendations
+        recs = result.get('recommendations', [])
+        if recs:
+            lines.append(f"\nRecommendations:")
+            for r in recs:
+                lines.append(f"  - {r}")
+
+        QMessageBox.information(self, "Quick Assessment", '\n'.join(lines))
 
     def _on_diagnostics(self):
         """Run network diagnostics."""
