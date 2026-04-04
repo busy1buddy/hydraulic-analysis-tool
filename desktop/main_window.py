@@ -774,8 +774,12 @@ class MainWindow(QMainWindow):
         # Build a flows snapshot
         flows = {}
         for pid, pd in pipe_data.items():
-            vel_arr = pd.get('start_node_velocity') or pd.get('velocity')
-            flow_arr = pd.get('start_node_flowrate') or pd.get('flowrate')
+            vel_arr = pd.get('start_node_velocity')
+            if vel_arr is None:
+                vel_arr = pd.get('velocity')
+            flow_arr = pd.get('start_node_flowrate')
+            if flow_arr is None:
+                flow_arr = pd.get('flowrate')
             v = float(vel_arr[frame]) if vel_arr is not None and frame < len(vel_arr) else 0.0
             q = float(flow_arr[frame]) if flow_arr is not None and frame < len(flow_arr) else 0.0
             flows[pid] = {
