@@ -30,10 +30,17 @@ from epanet_api.slurry import SlurryMixin
 from epanet_api.compliance import ComplianceMixin
 from epanet_api.assets import AssetsMixin
 from epanet_api.advanced import AdvancedMixin
+from epanet_api.topology import TopologyMixin
+from epanet_api.resilience import ResilienceMixin
+from epanet_api.calibration import CalibrationMixin
+from epanet_api.forecasting import ForecastingMixin
+from epanet_api.surge import SurgeMixin
+from epanet_api.comparison import ComparisonMixin
 
 
 class HydraulicAPI(CoreMixin, AnalysisMixin, SlurryMixin, ComplianceMixin,
-                   AssetsMixin, AdvancedMixin):
+                   AssetsMixin, AdvancedMixin, TopologyMixin, ResilienceMixin,
+                   CalibrationMixin, ForecastingMixin, SurgeMixin, ComparisonMixin):
     """Unified API for EPANET hydraulic and transient analysis."""
 
     # Australian standard unit defaults
