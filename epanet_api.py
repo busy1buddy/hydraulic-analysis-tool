@@ -696,6 +696,202 @@ class HydraulicAPI:
         plt.close()
         return path
 
+    def run_water_quality_chlorine(self, initial_conc=0.5, bulk_coeff=-0.5,
+                                   wall_coeff=-0.01, duration_hrs=72,
+                                   save_plot=False):
+        """
+        Run chlorine decay simulation using WNTR CHEMICAL quality mode.
+
+        Sets up first-order bulk and wall decay coefficients, seeds all
+        reservoirs with the initial concentration, and simulates chlorine
+        transport through the network.
+
+        Parameters
+        ----------
+        initial_conc : float
+            Initial chlorine concentration at reservoirs (mg/L). Default 0.5.
+        bulk_coeff : float
+            Bulk decay coefficient (1/hr, negative = decay). Default -0.5/hr.
+        wall_coeff : float
+            Wall decay coefficient (m/hr, negative = decay). Default -0.01 m/hr.
+        duration_hrs : float
+            Simulation duration in hours. Default 72.
+        save_plot : bool
+            Whether to save a results bar chart.
+
+        Returns
+        -------
+        dict
+            junction_quality  : {junc_id: {'min_conc': float, 'avg_conc': float,
+                                            'max_conc': float}}
+            compliance        : list of compliance dicts (WSAA < 0.2 mg/L)
+            non_compliant     : list of junction IDs below 0.2 mg/L
+            parameters        : {'initial_conc', 'bulk_coeff', 'wall_coeff'}
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+
+        original_duration = self.wn.options.time.duration
+        original_quality_param = getattr(self.wn.options.quality, 'parameter', 'NONE')
+
+        try:
+            # Configure CHEMICAL quality mode
+            self.wn.options.quality.parameter = 'CHEMICAL'
+            self.wn.options.time.duration = int(duration_hrs * 3600)
+
+            # Set bulk and wall reaction coefficients on every pipe
+            # Bulk coeff in WNTR is 1/s (convert from 1/hr)
+            # Wall coeff in WNTR is m/s (convert from m/hr)
+            bulk_s = bulk_coeff / 3600.0   # 1/hr -> 1/s
+            wall_s = wall_coeff / 3600.0   # m/hr -> m/s
+
+            for pipe_name in self.wn.pipe_name_list:
+                pipe = self.wn.get_link(pipe_name)
+                pipe.bulk_coeff = bulk_s
+                pipe.wall_coeff = wall_s
+
+            # Seed reservoirs with initial concentration
+            for res_name in self.wn.reservoir_name_list:
+                res = self.wn.get_node(res_name)
+                res.initial_quality = initial_conc
+
+            # Set junction initial quality to 0 (receives tracer from reservoir)
+            for junc_name in self.wn.junction_name_list:
+                junc = self.wn.get_node(junc_name)
+                junc.initial_quality = 0.0
+
+            sim = wntr.sim.EpanetSimulator(self.wn)
+            quality_results = sim.run_sim()
+            quality = quality_results.node['quality']
+
+            results = {
+                'parameter': 'CHEMICAL',
+                'unit': 'mg/L',
+                'duration_hrs': duration_hrs,
+                'junction_quality': {},
+                'non_compliant': [],
+                'compliance': [],
+                'parameters': {
+                    'initial_conc': initial_conc,
+                    'bulk_coeff': bulk_coeff,
+                    'wall_coeff': wall_coeff,
+                },
+            }
+
+            # WSAA chlorine residual minimum: 0.2 mg/L
+            WSAA_MIN_CHLORINE_MGL = 0.2  # WSAA WSA 03-2011
+
+            for junc in self.wn.junction_name_list:
+                q = quality[junc]
+                min_c = round(float(q.min()), 4)
+                avg_c = round(float(q.mean()), 4)
+                max_c = round(float(q.max()), 4)
+                results['junction_quality'][junc] = {
+                    'min_conc': min_c,
+                    'avg_conc': avg_c,
+                    'max_conc': max_c,
+                }
+                # Flag if minimum drops below WSAA threshold
+                if min_c < WSAA_MIN_CHLORINE_MGL:
+                    results['non_compliant'].append(junc)
+
+            for junc in results['non_compliant']:
+                c = results['junction_quality'][junc]['min_conc']
+                results['compliance'].append({
+                    'type': 'WARNING',
+                    'element': junc,
+                    'message': (f'Min chlorine {c:.3f} mg/L < 0.2 mg/L '
+                                f'(WSAA WSA 03-2011 residual minimum)'),
+                })
+
+            if not results['compliance']:
+                results['compliance'].append({
+                    'type': 'OK',
+                    'message': 'All junctions meet 0.2 mg/L chlorine residual (WSAA)',
+                })
+
+        finally:
+            self.wn.options.time.duration = original_duration
+            self.wn.options.quality.parameter = original_quality_param
+
+        return results
+
+    def run_water_quality_trace(self, source_node, duration_hrs=72,
+                                save_plot=False):
+        """
+        Run a tracer analysis to determine what percentage of water at each
+        junction originates from the specified source node.
+
+        Parameters
+        ----------
+        source_node : str
+            Name of the reservoir or node to trace from.
+        duration_hrs : float
+            Simulation duration in hours. Default 72.
+        save_plot : bool
+            Whether to save a results bar chart.
+
+        Returns
+        -------
+        dict
+            junction_quality  : {junc_id: {'avg_pct': float, 'min_pct': float,
+                                            'max_pct': float}}
+            source_node       : str
+            compliance        : list (informational only)
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+
+        original_duration = self.wn.options.time.duration
+        original_quality_param = getattr(self.wn.options.quality, 'parameter', 'NONE')
+        original_trace_node = getattr(self.wn.options.quality, 'trace_node', None)
+
+        try:
+            # Configure TRACE quality mode
+            # WNTR QualityOptions uses trace_node attribute to specify the source
+            self.wn.options.quality.parameter = 'TRACE'
+            self.wn.options.quality.trace_node = source_node
+
+            self.wn.options.time.duration = int(duration_hrs * 3600)
+
+            sim = wntr.sim.EpanetSimulator(self.wn)
+            quality_results = sim.run_sim()
+            quality = quality_results.node['quality']
+
+            results = {
+                'parameter': 'TRACE',
+                'unit': '%',
+                'source_node': source_node,
+                'duration_hrs': duration_hrs,
+                'junction_quality': {},
+                'compliance': [],
+            }
+
+            for junc in self.wn.junction_name_list:
+                q = quality[junc]
+                avg_pct = round(float(q.mean()), 2)
+                min_pct = round(float(q.min()), 2)
+                max_pct = round(float(q.max()), 2)
+                results['junction_quality'][junc] = {
+                    'avg_pct': avg_pct,
+                    'min_pct': min_pct,
+                    'max_pct': max_pct,
+                }
+
+            results['compliance'].append({
+                'type': 'INFO',
+                'message': (f'Trace from {source_node}: '
+                            f'{len(results["junction_quality"])} junctions analysed'),
+            })
+
+        finally:
+            self.wn.options.time.duration = original_duration
+            self.wn.options.quality.parameter = original_quality_param
+            if hasattr(self.wn.options.quality, 'trace_node'):
+                self.wn.options.quality.trace_node = original_trace_node
+
+        return results
+
     # =========================================================================
     # TRANSIENT (WATER HAMMER) ANALYSIS
     # =========================================================================

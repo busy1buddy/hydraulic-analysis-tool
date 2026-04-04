@@ -30,6 +30,7 @@ from desktop.animation_panel import AnimationPanel
 from desktop.pattern_editor import PatternEditorDialog
 from desktop.eps_dialog import EPSConfigDialog
 from desktop.fire_flow_dialog import FireFlowDialog
+from desktop.water_quality_dialog import WaterQualityDialog
 
 
 class MainWindow(QMainWindow):
@@ -126,6 +127,22 @@ class MainWindow(QMainWindow):
         fire_act.setShortcut("F8")
         fire_act.triggered.connect(self._on_fire_flow)
         analysis_menu.addAction(fire_act)
+
+        # --- Water Quality submenu ---
+        wq_menu = QMenu("&Water Quality", self)
+        analysis_menu.addMenu(wq_menu)
+
+        wq_age_act = QAction("Water &Age...", self)
+        wq_age_act.triggered.connect(self._on_water_quality_age)
+        wq_menu.addAction(wq_age_act)
+
+        wq_cl_act = QAction("&Chlorine Decay...", self)
+        wq_cl_act.triggered.connect(self._on_water_quality_chlorine)
+        wq_menu.addAction(wq_cl_act)
+
+        wq_trace_act = QAction("&Trace...", self)
+        wq_trace_act.triggered.connect(self._on_water_quality_trace)
+        wq_menu.addAction(wq_trace_act)
 
         analysis_menu.addSeparator()
 
@@ -1013,6 +1030,29 @@ class MainWindow(QMainWindow):
             return
         dialog = FireFlowDialog(self.api, canvas=self.canvas, parent=self)
         dialog.exec()
+
+    # =====================================================================
+    # WATER QUALITY ACTIONS
+    # =====================================================================
+
+    def _open_water_quality_dialog(self, mode):
+        """Open WaterQualityDialog in the specified mode."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network", "Load a network first.")
+            return
+        dialog = WaterQualityDialog(
+            self.api, canvas=self.canvas, mode=mode, parent=self
+        )
+        dialog.exec()
+
+    def _on_water_quality_age(self):
+        self._open_water_quality_dialog('age')
+
+    def _on_water_quality_chlorine(self):
+        self._open_water_quality_dialog('chlorine')
+
+    def _on_water_quality_trace(self):
+        self._open_water_quality_dialog('trace')
 
     def _on_demand_patterns(self):
         if self.api.wn is None:
