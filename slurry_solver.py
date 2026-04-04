@@ -459,3 +459,230 @@ def _slurry_compliance(pipe_results, fluid):
 def list_fluids():
     """Return available fluid types from the database."""
     return {name: fluid['description'] for name, fluid in SLURRY_DATABASE.items()}
+
+
+# ============================================================================
+# ADVANCED SLURRY FEATURES (I15)
+# ============================================================================
+
+def settling_velocity(d_particle_mm, rho_solid, rho_fluid=1000, mu_fluid=0.001):
+    """
+    Calculate terminal settling velocity of a single particle.
+
+    Uses Stokes' law for Re_p < 1, transitional for 1 < Re_p < 1000,
+    and Newton's law for Re_p > 1000.
+
+    Parameters
+    ----------
+    d_particle_mm : float
+        Particle diameter in mm
+    rho_solid : float
+        Solid particle density (kg/m³), e.g., 2650 for sand
+    rho_fluid : float
+        Carrier fluid density (kg/m³)
+    mu_fluid : float
+        Carrier fluid dynamic viscosity (Pa·s)
+
+    Returns dict with velocity_ms, regime, reynolds.
+    Ref: Stokes (1851), Wasp et al. (1977)
+    """
+    g = 9.81
+    d = d_particle_mm / 1000  # mm to m
+    delta_rho = rho_solid - rho_fluid
+
+    if d <= 0 or delta_rho <= 0:
+        return {'velocity_ms': 0, 'regime': 'neutral', 'reynolds': 0}
+
+    # Stokes settling velocity (laminar)
+    # V_s = (d² × (ρ_s - ρ_f) × g) / (18 × μ)
+    # Ref: Stokes (1851)
+    v_stokes = (d ** 2 * delta_rho * g) / (18 * mu_fluid)
+
+    # Check Reynolds number
+    Re_p = rho_fluid * v_stokes * d / mu_fluid
+
+    if Re_p < 1:
+        # Stokes regime (laminar settling)
+        return {
+            'velocity_ms': round(v_stokes, 4),
+            'regime': 'Stokes (laminar)',
+            'reynolds': round(Re_p, 2),
+        }
+    elif Re_p < 1000:
+        # Transitional regime — Schiller-Naumann correlation
+        # C_D = 24/Re × (1 + 0.15 × Re^0.687)
+        # Ref: Schiller & Naumann (1935)
+        # Iterative solution
+        v = v_stokes
+        for _ in range(20):
+            Re = rho_fluid * v * d / mu_fluid
+            if Re < 0.01:
+                break
+            C_D = (24 / Re) * (1 + 0.15 * Re ** 0.687)
+            v_new = math.sqrt(4 * d * delta_rho * g / (3 * C_D * rho_fluid))
+            if abs(v_new - v) < 1e-6:
+                break
+            v = v_new
+
+        Re = rho_fluid * v * d / mu_fluid
+        return {
+            'velocity_ms': round(v, 4),
+            'regime': 'transitional',
+            'reynolds': round(Re, 2),
+        }
+    else:
+        # Newton regime (turbulent settling)
+        # C_D ≈ 0.44
+        # V = sqrt(4gd(ρ_s-ρ_f) / (3 × 0.44 × ρ_f))
+        # Ref: Newton's drag law
+        v_newton = math.sqrt(4 * d * delta_rho * g / (3 * 0.44 * rho_fluid))
+        Re = rho_fluid * v_newton * d / mu_fluid
+        return {
+            'velocity_ms': round(v_newton, 4),
+            'regime': 'Newton (turbulent)',
+            'reynolds': round(Re, 2),
+        }
+
+
+def critical_deposition_velocity(d_particle_mm, pipe_diameter_mm,
+                                  rho_solid=2650, rho_fluid=1000,
+                                  concentration_vol=0.1):
+    """
+    Calculate critical deposition velocity using Durand correlation.
+
+    Below this velocity, solids begin to settle and form a bed.
+    Pipe should be operated above this velocity to maintain transport.
+
+    V_D = F_L × sqrt(2gD(S-1))
+
+    where F_L is Durand's limit deposit velocity coefficient,
+    D is pipe diameter, S = ρ_s/ρ_f is specific gravity.
+
+    Parameters
+    ----------
+    d_particle_mm : float
+        Median particle diameter (d50) in mm
+    pipe_diameter_mm : float
+        Internal pipe diameter in mm
+    rho_solid : float
+        Solid particle density (kg/m³)
+    rho_fluid : float
+        Carrier fluid density (kg/m³)
+    concentration_vol : float
+        Volumetric solids concentration (0-1), e.g., 0.10 = 10%
+
+    Returns dict with velocity_ms, durand_fl, specific_gravity.
+    Ref: Durand (1952), BHRA Fluid Engineering "Slurry Transportation"
+    """
+    g = 9.81
+    D = pipe_diameter_mm / 1000  # mm to m
+    d_p = d_particle_mm  # keep in mm for F_L lookup
+    S = rho_solid / rho_fluid  # specific gravity of solids
+
+    if D <= 0 or d_p <= 0 or S <= 1:
+        return {'velocity_ms': 0, 'durand_fl': 0, 'specific_gravity': S}
+
+    # Durand's F_L coefficient — depends on particle size and concentration
+    # Typical values: fine sand (d<0.5mm) F_L=0.8-1.2, coarse (d>2mm) F_L=1.3-1.7
+    # Ref: Durand (1952) nomogram, simplified correlation
+    if d_p < 0.1:
+        F_L = 0.8 + 2.0 * concentration_vol
+    elif d_p < 0.5:
+        F_L = 1.0 + 1.5 * concentration_vol
+    elif d_p < 2.0:
+        F_L = 1.3 + 1.0 * concentration_vol
+    else:
+        F_L = 1.5 + 0.5 * concentration_vol
+
+    # Clamp F_L to reasonable range — Durand (1952)
+    F_L = max(0.5, min(2.0, F_L))
+
+    # V_D = F_L × sqrt(2gD(S-1))
+    V_D = F_L * math.sqrt(2 * g * D * (S - 1))
+
+    return {
+        'velocity_ms': round(V_D, 2),
+        'durand_fl': round(F_L, 2),
+        'specific_gravity': round(S, 2),
+        'pipe_diameter_mm': pipe_diameter_mm,
+        'particle_d50_mm': d_p,
+        'basis': f'V_D = {F_L:.2f} × sqrt(2×{g}×{D:.3f}×({S:.2f}-1)) '
+                 f'= {V_D:.2f} m/s — Durand (1952)',
+    }
+
+
+def concentration_profile(pipe_diameter_mm, velocity_ms, d_particle_mm,
+                           rho_solid=2650, rho_fluid=1000,
+                           concentration_avg=0.1, n_points=20):
+    """
+    Calculate vertical concentration profile across pipe cross-section.
+
+    Uses Rouse equation for suspended sediment distribution:
+    C(y)/C_a = [(h-y)/y × a/(h-a)]^z
+    where z = w_s/(κ×u*), κ=0.4 (von Karman), u* = friction velocity
+
+    Parameters
+    ----------
+    pipe_diameter_mm : float
+        Pipe internal diameter (mm)
+    velocity_ms : float
+        Mean flow velocity (m/s)
+    d_particle_mm : float
+        Particle diameter (mm)
+    rho_solid, rho_fluid : float
+        Densities (kg/m³)
+    concentration_avg : float
+        Average volumetric concentration (0-1)
+    n_points : int
+        Number of vertical points to compute
+
+    Returns dict with 'y_positions', 'concentrations', 'rouse_z'.
+    Ref: Rouse (1937), Wasp et al. (1977)
+    """
+    D = pipe_diameter_mm / 1000  # m
+    if D <= 0 or velocity_ms <= 0:
+        return {'y_positions': [], 'concentrations': [], 'rouse_z': 0}
+
+    # Settling velocity
+    sv = settling_velocity(d_particle_mm, rho_solid, rho_fluid)
+    w_s = sv['velocity_ms']
+
+    # Friction velocity u* ≈ V × sqrt(f/8) where f ≈ 0.02 (typical)
+    f = 0.02  # approximate Darcy friction factor
+    u_star = velocity_ms * math.sqrt(f / 8)
+
+    if u_star < 1e-6:
+        return {'y_positions': [], 'concentrations': [], 'rouse_z': 0}
+
+    # Rouse number z = w_s / (κ × u*)
+    kappa = 0.4  # von Karman constant
+    z = w_s / (kappa * u_star)
+
+    # Generate profile
+    h = D  # pipe height = diameter (simplified)
+    a = 0.05 * h  # reference level (5% of diameter from bottom)
+
+    y_positions = []
+    concentrations = []
+
+    for i in range(n_points):
+        y = a + (h - 2 * a) * (i / (n_points - 1)) if n_points > 1 else h / 2
+        y = max(a, min(h - a, y))
+
+        # Rouse equation: C(y)/C_a = [(h-y)/y × a/(h-a)]^z
+        ratio = ((h - y) / y) * (a / (h - a))
+        if ratio > 0:
+            C_y = concentration_avg * (ratio ** z)
+        else:
+            C_y = 0
+
+        y_positions.append(round(y * 1000, 1))  # back to mm
+        concentrations.append(round(min(C_y, 0.65), 4))  # cap at 65% (packing limit)
+
+    return {
+        'y_positions': y_positions,
+        'concentrations': concentrations,
+        'rouse_z': round(z, 2),
+        'settling_velocity_ms': w_s,
+        'friction_velocity_ms': round(u_star, 4),
+    }
