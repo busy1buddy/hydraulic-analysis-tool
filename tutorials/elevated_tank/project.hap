@@ -1,0 +1,11 @@
+{
+  "inp_path": "network.inp",
+  "scenarios": [
+    {"name": "Base", "demand_multiplier": 1.0},
+    {"name": "HighDemand", "demand_multiplier": 1.8},
+    {"name": "LowDemand", "demand_multiplier": 0.4},
+    {"name": "TankEmpty", "demand_multiplier": 1.0, "note": "Set T1 InitLevel=0.5 to test near-empty behaviour"}
+  ],
+  "last_run": {},
+  "settings": {"slurry_mode": false}
+}

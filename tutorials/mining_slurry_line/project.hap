@@ -1,0 +1,11 @@
+{
+  "inp_path": "network.inp",
+  "scenarios": [
+    {"name": "WaterBase", "demand_multiplier": 1.0},
+    {"name": "SlurryBingham", "demand_multiplier": 1.0, "rheology": {"model": "bingham", "yield_stress": 15.0, "plastic_viscosity": 0.05}},
+    {"name": "SlurryPowerLaw", "demand_multiplier": 1.0, "rheology": {"model": "power_law", "k": 0.08, "n": 0.75}},
+    {"name": "HighFlow", "demand_multiplier": 1.5}
+  ],
+  "last_run": {},
+  "settings": {"slurry_mode": true}
+}

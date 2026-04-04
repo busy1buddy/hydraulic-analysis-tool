@@ -1,0 +1,134 @@
+[TITLE]
+Tutorial 3 - Pump Station Network
+R1 low-head reservoir pumped to elevated distribution zone
+Pump curve defined per AS 2941 requirements
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              60              0               1               ;  Pump discharge header (no demand)
+ J2              58              5.0             1               ;  Distribution node A
+ J3              55              8.0             1               ;  Distribution node B
+ J4              52              6.0             1               ;  Distribution node C
+ J5              50              4.0             1               ;  Distribution node D
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              20                              ;  Low-level wet well / sump (20m head)
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              J1              J2              300             300             130             0               Open    ;  Pump discharge main
+ P2              J2              J3              400             250             130             0               Open    ;  Distribution A to B
+ P3              J3              J4              350             200             130             0               Open    ;  Distribution B to C
+ P4              J4              J5              300             200             130             0               Open    ;  Distribution C to D
+ P5              J2              J5              500             250             130             0               Open    ;  Loop cross-connection
+
+[PUMPS]
+;ID              Node1           Node2           Parameters
+ PU1             R1              J1              HEAD 1          ;  Centrifugal pump - curve ID 1
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+
+[PATTERNS]
+;ID              Multipliers
+ 1               0.5  0.4  0.3  0.3  0.5  0.8
+ 1               1.2  1.5  1.3  1.0  0.9  0.8
+ 1               0.7  0.6  0.7  0.9  1.3  1.5
+ 1               1.4  1.2  1.0  0.8  0.7  0.6
+
+[CURVES]
+;ID              X-Value         Y-Value
+;Pump curve 1: Flow (LPS) vs Head (m) - 55kW centrifugal pump
+ 1               0               65
+ 1               10              62
+ 1               20              58
+ 1               30              50
+ 1               40              38
+ 1               50              20
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+ Demand Charge      	0
+
+[EMITTERS]
+
+[QUALITY]
+
+[SOURCES]
+
+[REACTIONS]
+ Order Bulk            1
+ Order Tank            1
+ Order Wall            1
+ Global Bulk           0
+ Global Wall           0
+ Limiting Potential    0
+ Roughness Correlation 0
+
+[MIXING]
+;Tank            Model
+
+[TIMES]
+ Duration            24:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+ Pattern Start       0:00
+ Report Timestep     1:00
+ Report Start        0:00
+ Start ClockTime     12 am
+ Statistic           NONE
+
+[REPORT]
+ Status              No
+ Summary             No
+ Page                0
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ CHECKFREQ           2
+ MAXCHECK            10
+ DAMPLIMIT           0
+ Unbalanced          Continue 10
+ Pattern             1
+ Demand Multiplier   1.0
+ Emitter Exponent    0.5
+ Quality             NONE mg/L
+ Diffusivity         1
+ Tolerance           0.01
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               50.00
+ J1              20.00              50.00
+ J2              40.00              60.00
+ J3              60.00              60.00
+ J4              70.00              45.00
+ J5              55.00              35.00
+
+[VERTICES]
+
+[LABELS]
+
+[BACKDROP]
+
+[TAGS]
+
+[DEMANDS]
+
+[STATUS]
+
+[END]

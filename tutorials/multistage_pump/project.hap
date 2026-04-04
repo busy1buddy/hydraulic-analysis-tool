@@ -1,0 +1,11 @@
+{
+  "inp_path": "network.inp",
+  "scenarios": [
+    {"name": "Base", "demand_multiplier": 1.0},
+    {"name": "PeakDemand", "demand_multiplier": 1.5},
+    {"name": "SinglePump", "demand_multiplier": 1.0, "note": "PU2 tripped - model by disabling PU2"},
+    {"name": "BothPumpsTrip", "demand_multiplier": 1.0, "note": "Transient analysis starting condition"}
+  ],
+  "last_run": {},
+  "settings": {"slurry_mode": false}
+}

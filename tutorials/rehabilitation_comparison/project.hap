@@ -1,0 +1,11 @@
+{
+  "inp_path": "network.inp",
+  "scenarios": [
+    {"name": "OldCastIron_Base", "demand_multiplier": 1.0, "inp_path": "network.inp"},
+    {"name": "OldCastIron_Peak", "demand_multiplier": 1.5, "inp_path": "network.inp"},
+    {"name": "Relined_Base", "demand_multiplier": 1.0, "inp_path": "network_relined.inp"},
+    {"name": "Relined_Peak", "demand_multiplier": 1.5, "inp_path": "network_relined.inp"}
+  ],
+  "last_run": {},
+  "settings": {"slurry_mode": false}
+}

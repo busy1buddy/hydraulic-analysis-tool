@@ -151,6 +151,7 @@ class NetworkCanvas(QWidget):
         self._node_ids = []
         self._pipe_ids = []
         self._selected_id = None
+        self._editor = None  # Set by CanvasEditor for edit mode routing
 
         self._setup_ui()
 
@@ -516,7 +517,7 @@ class NetworkCanvas(QWidget):
         self.element_selected.emit(nid, etype)
 
     def _on_scene_clicked(self, event):
-        """Handle click on the plot scene — used for pipe hit-testing."""
+        """Handle click on the plot scene — routing to editor or pipe hit-testing."""
         if self.api is None or self.api.wn is None:
             return
         # Map scene position to data coordinates
@@ -524,6 +525,15 @@ class NetworkCanvas(QWidget):
         vb = self.plot_widget.plotItem.vb
         mouse_point = vb.mapSceneToView(pos)
         mx, my = mouse_point.x(), mouse_point.y()
+
+        # Route through editor in edit mode
+        if self._editor and self._editor.edit_mode:
+            button = event.button()
+            if button == Qt.MouseButton.RightButton:
+                self._editor.handle_right_click(mx, my)
+            else:
+                self._editor.handle_canvas_click(mx, my)
+            return
 
         # Check if click is near any pipe (line segment)
         best_pid = None

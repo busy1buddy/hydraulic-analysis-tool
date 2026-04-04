@@ -1,0 +1,136 @@
+[TITLE]
+Tutorial 2 - Dead-End Branching Network
+Tree network with long dead-end branch
+Demonstrates water age and stagnation issues
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              48              5.0             1               ;  Main branch point
+ J2              45              4.0             1               ;  Secondary branch
+ J3              43              6.0             1               ;  Branch A terminus
+ J4              42              5.0             1               ;  Main spine node
+ J5              40              4.0             1               ;  Branch B junction
+ J6              38              3.0             1               ;  Dead-end branch entry
+ J7              37              1.5             1               ;  Dead-end mid point
+ J8              36              0.5             1               ;  Dead-end terminus (800m from source)
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              80                              ;  Service reservoir (80m head)
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              R1              J1              400             250             130             0               Open    ;  Main trunk
+ P2              J1              J2              350             200             130             0               Open    ;  Branch spine
+ P3              J2              J3              300             150             130             0               Open    ;  Branch A
+ P4              J1              J4              400             250             130             0               Open    ;  Main spine continuation
+ P5              J4              J5              350             200             130             0               Open    ;  Branch B entry
+ P6              J5              J3              250             150             130             0               Open    ;  Cross-branch
+ P7              J4              J6              300             150             120             0               Open    ;  Dead-end branch start
+ P8              J6              J7              300             150             120             0               Open    ;  Dead-end mid segment
+ P9              J7              J8              300             150             120             0               Open    ;  Dead-end final segment
+
+[PUMPS]
+;ID              Node1           Node2           Parameters
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+
+[PATTERNS]
+;ID              Multipliers
+ 1               0.5  0.4  0.3  0.3  0.5  0.8
+ 1               1.2  1.5  1.3  1.0  0.9  0.8
+ 1               0.7  0.6  0.7  0.9  1.3  1.5
+ 1               1.4  1.2  1.0  0.8  0.7  0.6
+
+[CURVES]
+;ID              X-Value         Y-Value
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+ Demand Charge      	0
+
+[EMITTERS]
+
+[QUALITY]
+
+[SOURCES]
+
+[REACTIONS]
+ Order Bulk            1
+ Order Tank            1
+ Order Wall            1
+ Global Bulk           -0.5
+ Global Wall           0
+ Limiting Potential    0
+ Roughness Correlation 0
+
+[MIXING]
+;Tank            Model
+
+[TIMES]
+ Duration            24:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+ Pattern Start       0:00
+ Report Timestep     1:00
+ Report Start        0:00
+ Start ClockTime     12 am
+ Statistic           NONE
+
+[REPORT]
+ Status              No
+ Summary             No
+ Page                0
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ CHECKFREQ           2
+ MAXCHECK            10
+ DAMPLIMIT           0
+ Unbalanced          Continue 10
+ Pattern             1
+ Demand Multiplier   1.0
+ Emitter Exponent    0.5
+ Quality             AGE mg/L
+ Diffusivity         1
+ Tolerance           0.01
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               50.00
+ J1              20.00              50.00
+ J2              35.00              65.00
+ J3              55.00              65.00
+ J4              40.00              50.00
+ J5              55.00              40.00
+ J6              60.00              50.00
+ J7              75.00              50.00
+ J8              90.00              50.00
+
+[VERTICES]
+
+[LABELS]
+
+[BACKDROP]
+
+[TAGS]
+
+[DEMANDS]
+
+[STATUS]
+
+[END]

@@ -180,9 +180,9 @@ class TestMenuCompleteness:
         assert window.properties_dock.isVisible()
         assert window.results_dock.isVisible()
 
-    def test_six_top_level_menus(self, window):
+    def test_seven_top_level_menus(self, window):
         menus = [a.text().replace('&', '') for a in window.menuBar().actions()]
-        assert menus == ['File', 'Analysis', 'Tools', 'Reports', 'View', 'Help']
+        assert menus == ['File', 'Edit', 'Analysis', 'Tools', 'Reports', 'View', 'Help']
 
 
 # =========================================================================

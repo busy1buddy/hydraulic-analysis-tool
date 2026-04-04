@@ -1,0 +1,131 @@
+[TITLE]
+Tutorial 4 - Pressure Zone Boundary with PRV
+Two pressure zones separated by pressure reducing valve
+High zone: R1 at 120m, low zone at PRV-controlled 65m HGL
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              75              4.0             1               ;  High zone node A
+ J2              78              3.0             1               ;  High zone node B
+ J3              72              5.0             1               ;  High zone node C (PRV inlet)
+ J4              45              6.0             1               ;  Low zone node A (PRV outlet)
+ J5              42              8.0             1               ;  Low zone node B
+ J6              40              5.0             1               ;  Low zone node C
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              120                             ;  High-level service reservoir (120m head)
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              R1              J1              400             300             130             0               Open    ;  High-zone main
+ P2              J1              J2              350             300             130             0               Open    ;  High-zone A to B
+ P3              J2              J3              300             300             130             0               Open    ;  High-zone B to C
+ P4              J3              J4              10              300             130             0               Open    ;  PRV bypass (very short)
+ P5              J4              J5              400             300             130             0               Open    ;  Low-zone A to B
+ P6              J5              J6              350             300             130             0               Open    ;  Low-zone B to C
+ P7              J1              J3              500             300             130             0               Open    ;  High-zone loop
+
+[PUMPS]
+;ID              Node1           Node2           Parameters
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+ V1              J3              J4              300             PRV             65              0               ;  PRV set to 65m HGL
+
+[PATTERNS]
+;ID              Multipliers
+ 1               0.5  0.4  0.3  0.3  0.5  0.8
+ 1               1.2  1.5  1.3  1.0  0.9  0.8
+ 1               0.7  0.6  0.7  0.9  1.3  1.5
+ 1               1.4  1.2  1.0  0.8  0.7  0.6
+
+[CURVES]
+;ID              X-Value         Y-Value
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+ Demand Charge      	0
+
+[EMITTERS]
+
+[QUALITY]
+
+[SOURCES]
+
+[REACTIONS]
+ Order Bulk            1
+ Order Tank            1
+ Order Wall            1
+ Global Bulk           0
+ Global Wall           0
+ Limiting Potential    0
+ Roughness Correlation 0
+
+[MIXING]
+;Tank            Model
+
+[TIMES]
+ Duration            24:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+ Pattern Start       0:00
+ Report Timestep     1:00
+ Report Start        0:00
+ Start ClockTime     12 am
+ Statistic           NONE
+
+[REPORT]
+ Status              No
+ Summary             No
+ Page                0
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ CHECKFREQ           2
+ MAXCHECK            10
+ DAMPLIMIT           0
+ Unbalanced          Continue 10
+ Pattern             1
+ Demand Multiplier   1.0
+ Emitter Exponent    0.5
+ Quality             NONE mg/L
+ Diffusivity         1
+ Tolerance           0.01
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               70.00
+ J1              20.00              75.00
+ J2              40.00              80.00
+ J3              55.00              70.00
+ J4              60.00              45.00
+ J5              75.00              42.00
+ J6              90.00              40.00
+
+[VERTICES]
+
+[LABELS]
+
+[BACKDROP]
+
+[TAGS]
+
+[DEMANDS]
+
+[STATUS]
+
+[END]

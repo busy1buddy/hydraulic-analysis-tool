@@ -1,0 +1,142 @@
+[TITLE]
+Tutorial 7 - Multistage Pump (Two Pumps in Series)
+Pumps in series for high-elevation distribution
+Transient analysis on pump trip
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              45              0               1               ;  Interstage junction (between PU1 and PU2)
+ J2              80              0               1               ;  Second pump discharge header
+ J3              85              6.0             1               ;  High-zone node A
+ J4              90              5.0             1               ;  High-zone node B (highest point)
+ J5              82              8.0             1               ;  High-zone node C
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              20                              ;  Low-level wet well (20m head)
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              J1              J2              50              300             130             0               Open    ;  Interstage pipe
+ P2              J2              J3              400             300             130             0               Open    ;  High-zone main feed
+ P3              J3              J4              350             250             130             0               Open    ;  High-zone A to B
+ P4              J4              J5              300             250             130             0               Open    ;  High-zone B to C
+ P5              J3              J5              450             250             130             0               Open    ;  High-zone loop
+
+[PUMPS]
+;ID              Node1           Node2           Parameters
+ PU1             R1              J1              HEAD 1          ;  First stage pump
+ PU2             J1              J2              HEAD 2          ;  Second stage pump (identical)
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+
+[PATTERNS]
+;ID              Multipliers
+ 1               0.5  0.4  0.3  0.3  0.5  0.8
+ 1               1.2  1.5  1.3  1.0  0.9  0.8
+ 1               0.7  0.6  0.7  0.9  1.3  1.5
+ 1               1.4  1.2  1.0  0.8  0.7  0.6
+
+[CURVES]
+;ID              X-Value         Y-Value
+;Pump curve 1: First stage - 37kW centrifugal pump
+ 1               0               55
+ 1               10              52
+ 1               20              46
+ 1               30              36
+ 1               40              22
+ 1               48              5
+;Pump curve 2: Second stage - identical 37kW pump
+ 2               0               55
+ 2               10              52
+ 2               20              46
+ 2               30              36
+ 2               40              22
+ 2               48              5
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+ Demand Charge      	0
+
+[EMITTERS]
+
+[QUALITY]
+
+[SOURCES]
+
+[REACTIONS]
+ Order Bulk            1
+ Order Tank            1
+ Order Wall            1
+ Global Bulk           0
+ Global Wall           0
+ Limiting Potential    0
+ Roughness Correlation 0
+
+[MIXING]
+;Tank            Model
+
+[TIMES]
+ Duration            24:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+ Pattern Start       0:00
+ Report Timestep     1:00
+ Report Start        0:00
+ Start ClockTime     12 am
+ Statistic           NONE
+
+[REPORT]
+ Status              No
+ Summary             No
+ Page                0
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ CHECKFREQ           2
+ MAXCHECK            10
+ DAMPLIMIT           0
+ Unbalanced          Continue 10
+ Pattern             1
+ Demand Multiplier   1.0
+ Emitter Exponent    0.5
+ Quality             NONE mg/L
+ Diffusivity         1
+ Tolerance           0.01
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               30.00
+ J1              15.00              30.00
+ J2              25.00              30.00
+ J3              45.00              55.00
+ J4              65.00              70.00
+ J5              55.00              45.00
+
+[VERTICES]
+
+[LABELS]
+
+[BACKDROP]
+
+[TAGS]
+
+[DEMANDS]
+
+[STATUS]
+
+[END]

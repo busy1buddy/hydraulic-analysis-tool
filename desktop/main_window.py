@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QMenuBar, QMenu, QStatusBar, QDockWidget,
     QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem,
     QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
-    QMessageBox, QHeaderView, QSplitter, QProgressBar,
+    QMessageBox, QHeaderView, QSplitter, QProgressBar, QPushButton,
 )
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent
 from PyQt6.QtGui import QAction, QFont, QColor
@@ -24,6 +24,7 @@ from desktop.scenario_panel import ScenarioPanel, ScenarioData
 from desktop.report_dialog import ReportDialog
 from desktop.audit_trail import AuditTrail
 from desktop.pipe_stress_panel import PipeStressPanel
+from desktop.canvas_editor import CanvasEditor
 
 
 class MainWindow(QMainWindow):
@@ -84,6 +85,19 @@ class MainWindow(QMainWindow):
         exit_act.setShortcut("Ctrl+Q")
         exit_act.triggered.connect(self.close)
         file_menu.addAction(exit_act)
+
+        # --- Edit ---
+        edit_menu = menubar.addMenu("&Edit")
+
+        self.undo_act = QAction("&Undo", self)
+        self.undo_act.setShortcut("Ctrl+Z")
+        self.undo_act.triggered.connect(self._on_undo)
+        edit_menu.addAction(self.undo_act)
+
+        self.redo_act = QAction("&Redo", self)
+        self.redo_act.setShortcut("Ctrl+Y")
+        self.redo_act.triggered.connect(self._on_redo)
+        edit_menu.addAction(self.redo_act)
 
         # --- Analysis ---
         analysis_menu = menubar.addMenu("&Analysis")
@@ -167,6 +181,19 @@ class MainWindow(QMainWindow):
         self.canvas = NetworkCanvas()
         self.canvas.element_selected.connect(self._on_canvas_element_selected)
         self.setCentralWidget(self.canvas)
+
+        # Canvas editor (manages Edit Mode interactions)
+        self.editor = CanvasEditor(self.canvas, self)
+        self.canvas._editor = self.editor
+
+        # Add Edit Mode button to canvas toolbar
+        self.canvas.edit_btn = QPushButton("Edit")
+        self.canvas.edit_btn.setCheckable(True)
+        self.canvas.edit_btn.setFont(QFont("Consolas", 9))
+        self.canvas.edit_btn.toggled.connect(self._on_edit_mode_toggled)
+        # Insert into the canvas toolbar layout (after Labels button)
+        toolbar_layout = self.canvas.layout().itemAt(0).layout()
+        toolbar_layout.insertWidget(4, self.canvas.edit_btn)
 
     # =====================================================================
     # DOCK PANELS
@@ -760,7 +787,29 @@ class MainWindow(QMainWindow):
         self._update_status_bar()
 
     # =====================================================================
-    # TOOLS / REPORTS / VIEW (stubs)
+    # EDIT MODE / UNDO / REDO
+    # =====================================================================
+
+    def _on_edit_mode_toggled(self, checked):
+        self.editor.edit_mode = checked
+
+    def _on_undo(self):
+        if hasattr(self, 'editor'):
+            self.editor.undo()
+
+    def _on_redo(self):
+        if hasattr(self, 'editor'):
+            self.editor.redo()
+
+    def keyPressEvent(self, event):
+        """Handle Escape to cancel pipe creation in edit mode."""
+        if event.key() == Qt.Key.Key_Escape and hasattr(self, 'editor') and self.editor.edit_mode:
+            self.editor.cancel_pipe_start()
+        else:
+            super().keyPressEvent(event)
+
+    # =====================================================================
+    # TOOLS / REPORTS / VIEW
     # =====================================================================
 
     def _on_quality_review(self):

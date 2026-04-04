@@ -1,0 +1,131 @@
+[TITLE]
+Tutorial 10 - Rehabilitation Comparison
+Base: old cast iron C=80, DN200-DN300
+Rehab: relined ductile iron C=130, same diameters
+Shows headloss improvement and pressure recovery
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              48              4.0             1               ;  Node A
+ J2              45              6.0             1               ;  Node B
+ J3              43              5.0             1               ;  Node C
+ J4              41              7.0             1               ;  Node D (worst pressure pre-rehab)
+ J5              39              5.0             1               ;  Node E
+ J6              37              4.0             1               ;  Node F (end of line)
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              80                              ;  Service reservoir (80m head)
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              R1              J1              400             300             80              0               Open    ;  Old cast iron trunk (C=80)
+ P2              J1              J2              500             250             80              0               Open    ;  Old cast iron main A-B
+ P3              J2              J3              450             200             80              0               Open    ;  Old cast iron main B-C
+ P4              J3              J4              400             200             80              0               Open    ;  Old cast iron main C-D
+ P5              J4              J5              350             200             80              0               Open    ;  Old cast iron main D-E
+ P6              J5              J6              500             150             80              0               Open    ;  Old cast iron end branch
+ P7              J2              J5              400             200             80              0               Open    ;  Old cast iron cross-connection
+
+[PUMPS]
+;ID              Node1           Node2           Parameters
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+
+[PATTERNS]
+;ID              Multipliers
+ 1               0.5  0.4  0.3  0.3  0.5  0.8
+ 1               1.2  1.5  1.3  1.0  0.9  0.8
+ 1               0.7  0.6  0.7  0.9  1.3  1.5
+ 1               1.4  1.2  1.0  0.8  0.7  0.6
+
+[CURVES]
+;ID              X-Value         Y-Value
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+ Demand Charge      	0
+
+[EMITTERS]
+
+[QUALITY]
+
+[SOURCES]
+
+[REACTIONS]
+ Order Bulk            1
+ Order Tank            1
+ Order Wall            1
+ Global Bulk           0
+ Global Wall           0
+ Limiting Potential    0
+ Roughness Correlation 0
+
+[MIXING]
+;Tank            Model
+
+[TIMES]
+ Duration            24:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+ Pattern Start       0:00
+ Report Timestep     1:00
+ Report Start        0:00
+ Start ClockTime     12 am
+ Statistic           NONE
+
+[REPORT]
+ Status              No
+ Summary             No
+ Page                0
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ CHECKFREQ           2
+ MAXCHECK            10
+ DAMPLIMIT           0
+ Unbalanced          Continue 10
+ Pattern             1
+ Demand Multiplier   1.0
+ Emitter Exponent    0.5
+ Quality             NONE mg/L
+ Diffusivity         1
+ Tolerance           0.01
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               50.00
+ J1              20.00              50.00
+ J2              40.00              55.00
+ J3              60.00              55.00
+ J4              70.00              40.00
+ J5              55.00              30.00
+ J6              70.00              20.00
+
+[VERTICES]
+
+[LABELS]
+
+[BACKDROP]
+
+[TAGS]
+
+[DEMANDS]
+
+[STATUS]
+
+[END]

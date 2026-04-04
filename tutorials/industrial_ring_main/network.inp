@@ -1,0 +1,138 @@
+[TITLE]
+Tutorial 9 - Industrial Ring Main (Mining/Industrial)
+Large-diameter ring main for mining or industrial estate
+DN400-DN600 DI pipes, high demands 20-50 LPS per node
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              55              25.0            1               ;  Processing plant A
+ J2              52              30.0            1               ;  Processing plant B
+ J3              48              20.0            1               ;  Concentrator feed
+ J4              45              35.0            1               ;  Mill water demand
+ J5              42              50.0            1               ;  Flotation circuit (highest demand)
+ J6              44              25.0            1               ;  Tailings thickener
+ J7              47              30.0            1               ;  Reagent mixing
+ J8              50              20.0            1               ;  Utility services
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              150                             ;  Main headworks reservoir (150m head)
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              R1              J1              500             600             130             0               Open    ;  Main trunk main
+ P2              J1              J2              600             500             130             0               Open    ;  Ring main segment A-B
+ P3              J2              J3              500             400             130             0               Open    ;  Ring main segment B-C
+ P4              J3              J4              600             400             130             0               Open    ;  Ring main segment C-D
+ P5              J4              J5              500             400             130             0               Open    ;  Ring main segment D-E
+ P6              J5              J6              600             500             130             0               Open    ;  Ring main segment E-F
+ P7              J6              J7              500             400             130             0               Open    ;  Ring main segment F-G
+ P8              J7              J8              600             400             130             0               Open    ;  Ring main segment G-H
+ P9              J8              J1              500             500             130             0               Open    ;  Ring main close (H back to A)
+ P10             J1              J4              700             500             130             0               Open    ;  Ring diameter cross-main
+ P11             J2              J6              650             400             130             0               Open    ;  Secondary cross-connection
+
+[PUMPS]
+;ID              Node1           Node2           Parameters
+
+[VALVES]
+;ID              Node1           Node2           Diameter        Type            Setting         MinorLoss
+
+[PATTERNS]
+;ID              Multipliers
+ 1               0.7  0.6  0.6  0.7  0.8  0.9
+ 1               1.0  1.0  1.0  1.0  1.0  1.0
+ 1               1.0  1.0  1.0  1.0  1.0  1.0
+ 1               1.0  1.0  0.9  0.8  0.8  0.7
+
+[CURVES]
+;ID              X-Value         Y-Value
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+ Global Efficiency  	75
+ Global Price       	0.25
+ Demand Charge      	0
+
+[EMITTERS]
+
+[QUALITY]
+
+[SOURCES]
+
+[REACTIONS]
+ Order Bulk            1
+ Order Tank            1
+ Order Wall            1
+ Global Bulk           0
+ Global Wall           0
+ Limiting Potential    0
+ Roughness Correlation 0
+
+[MIXING]
+;Tank            Model
+
+[TIMES]
+ Duration            24:00
+ Hydraulic Timestep  1:00
+ Quality Timestep    0:05
+ Pattern Timestep    1:00
+ Pattern Start       0:00
+ Report Timestep     1:00
+ Report Start        0:00
+ Start ClockTime     12 am
+ Statistic           NONE
+
+[REPORT]
+ Status              No
+ Summary             No
+ Page                0
+
+[OPTIONS]
+ Units               LPS
+ Headloss            H-W
+ Specific Gravity    1
+ Viscosity           1
+ Trials              40
+ Accuracy            0.001
+ CHECKFREQ           2
+ MAXCHECK            10
+ DAMPLIMIT           0
+ Unbalanced          Continue 10
+ Pattern             1
+ Demand Multiplier   1.0
+ Emitter Exponent    0.5
+ Quality             NONE mg/L
+ Diffusivity         1
+ Tolerance           0.01
+
+[COORDINATES]
+;Node            X-Coord            Y-Coord
+ R1              0.00               50.00
+ J1              25.00              65.00
+ J2              55.00              75.00
+ J3              80.00              65.00
+ J4              90.00              45.00
+ J5              75.00              20.00
+ J6              50.00              10.00
+ J7              25.00              20.00
+ J8              10.00              45.00
+
+[VERTICES]
+
+[LABELS]
+
+[BACKDROP]
+
+[TAGS]
+
+[DEMANDS]
+
+[STATUS]
+
+[END]
