@@ -1793,6 +1793,175 @@ class HydraulicAPI:
         return pipe_scores
 
     # =========================================================================
+    # PIPE SIZING OPTIMISATION
+    # =========================================================================
+
+    # Pipe cost database: $/m by DN (AUD, typical Australian supply+install)
+    # Ref: Rawlinsons Australian Construction Handbook 2024
+    PIPE_COST_PER_M = {
+        100: 120, 150: 160, 200: 220, 250: 310, 300: 420,
+        375: 580, 450: 750, 500: 900, 600: 1200, 750: 1800,
+        900: 2500,
+    }
+
+    # Available pipe DN sizes for optimisation (mm)
+    AVAILABLE_DN = [100, 150, 200, 250, 300, 375, 450, 500, 600, 750, 900]
+
+    def optimise_pipe_sizes(self, target_pressure_m=None, budget_limit=None):
+        """
+        Find minimum-cost pipe sizes that satisfy WSAA pressure constraints.
+
+        Uses iterative approach: start with smallest possible pipes, then
+        upsize pipes with highest headloss contribution until all nodes
+        meet minimum pressure.
+
+        Parameters
+        ----------
+        target_pressure_m : float or None
+            Minimum pressure target (default: WSAA 20 m)
+        budget_limit : float or None
+            Maximum budget in AUD (no limit if None)
+
+        Returns dict with 'recommendations', 'total_cost', 'base_cost'.
+        Ref: WSAA Design Guidelines, Rawlinsons Handbook
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        if target_pressure_m is None:
+            target_pressure_m = self.DEFAULTS['min_pressure_m']
+
+        # Record original diameters
+        original_diameters = {}
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            original_diameters[pid] = pipe.diameter
+
+        # Base cost at current sizes
+        base_cost = self._calc_network_cost()
+
+        # Run baseline analysis
+        try:
+            base_results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Baseline analysis failed: {e}'}
+
+        recommendations = []
+
+        # Find pipes that are bottlenecks (highest headloss)
+        flows = base_results.get('flows', {})
+        pressures = base_results.get('pressures', {})
+
+        # Find nodes below target
+        low_nodes = {nid for nid, p in pressures.items()
+                     if p.get('min_m', 0) < target_pressure_m}
+
+        if not low_nodes:
+            # All nodes meet target — try downsizing for cost savings
+            return {
+                'recommendations': [],
+                'total_cost': base_cost,
+                'base_cost': base_cost,
+                'savings': 0,
+                'message': f'All nodes already meet {target_pressure_m:.0f} m target. '
+                           f'No upgrades needed.',
+            }
+
+        # Rank pipes by headloss per km (highest = most constrained)
+        pipe_ranking = []
+        for pid, fdata in flows.items():
+            pipe = self.wn.get_link(pid)
+            v = fdata.get('max_velocity_ms', 0)
+            dn_mm = int(pipe.diameter * 1000)
+            # Find next available size
+            next_dn = None
+            for dn in self.AVAILABLE_DN:
+                if dn > dn_mm:
+                    next_dn = dn
+                    break
+            if next_dn is None:
+                continue
+            # Cost of upsizing
+            cost_current = self.PIPE_COST_PER_M.get(dn_mm, 0) * pipe.length
+            cost_upsize = self.PIPE_COST_PER_M.get(next_dn, 0) * pipe.length
+            pipe_ranking.append({
+                'pipe_id': pid,
+                'current_dn': dn_mm,
+                'proposed_dn': next_dn,
+                'length_m': pipe.length,
+                'velocity_ms': v,
+                'cost_increase': cost_upsize - cost_current,
+            })
+
+        # Sort by velocity (highest velocity pipes are most constrained)
+        pipe_ranking.sort(key=lambda x: x['velocity_ms'], reverse=True)
+
+        # Iteratively upsize until target met or budget exhausted
+        total_extra_cost = 0
+        for item in pipe_ranking:
+            if not low_nodes:
+                break
+            if budget_limit and total_extra_cost + item['cost_increase'] > budget_limit:
+                continue
+
+            pid = item['pipe_id']
+            new_d = item['proposed_dn'] / 1000  # mm to m
+
+            # Apply upsize
+            self.wn.get_link(pid).diameter = new_d
+
+            # Re-run analysis
+            try:
+                test_results = self.run_steady_state(save_plot=False)
+            except Exception:
+                # Revert
+                self.wn.get_link(pid).diameter = original_diameters[pid]
+                continue
+
+            # Check improvement
+            new_pressures = test_results.get('pressures', {})
+            new_low = {nid for nid, p in new_pressures.items()
+                       if p.get('min_m', 0) < target_pressure_m}
+
+            if len(new_low) < len(low_nodes):
+                # Improvement — keep this change
+                recommendations.append(item)
+                total_extra_cost += item['cost_increase']
+                low_nodes = new_low
+            else:
+                # No improvement — revert
+                self.wn.get_link(pid).diameter = original_diameters[pid]
+
+        # Restore original diameters
+        for pid, d in original_diameters.items():
+            self.wn.get_link(pid).diameter = d
+
+        new_cost = base_cost + total_extra_cost
+
+        return {
+            'recommendations': recommendations,
+            'total_cost': round(new_cost, 0),
+            'base_cost': round(base_cost, 0),
+            'cost_increase': round(total_extra_cost, 0),
+            'remaining_failures': len(low_nodes),
+            'target_pressure_m': target_pressure_m,
+        }
+
+    def _calc_network_cost(self):
+        """Calculate total pipe cost at current sizes."""
+        total = 0
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            dn_mm = int(pipe.diameter * 1000)
+            cost_per_m = self.PIPE_COST_PER_M.get(dn_mm, 0)
+            if cost_per_m == 0:
+                # Find closest DN
+                closest = min(self.AVAILABLE_DN, key=lambda x: abs(x - dn_mm))
+                cost_per_m = self.PIPE_COST_PER_M.get(closest, 200)
+            total += cost_per_m * pipe.length
+        return total
+
+    # =========================================================================
     # SURGE PROTECTION DESIGN
     # =========================================================================
 
