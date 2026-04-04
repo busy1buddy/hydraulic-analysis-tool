@@ -1,0 +1,172 @@
+"""
+Automated Review Bridge
+========================
+Flask server on localhost:7771 that spawns Claude Code CLI as a
+reviewer subprocess. No external API key needed.
+
+Start: python scripts/review_bridge.py
+Health: curl localhost:7771/health
+Submit: POST localhost:7771/review with JSON body
+"""
+
+import os
+import sys
+import json
+import subprocess
+import time
+from datetime import datetime
+
+# Ensure project root
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HISTORY_FILE = os.path.join(ROOT, 'docs', 'review_loop', 'history.jsonl')
+os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+
+try:
+    from flask import Flask, request, jsonify
+except ImportError:
+    print("Flask not installed. Run: pip install flask")
+    sys.exit(1)
+
+app = Flask(__name__)
+
+REVIEWER_PROMPT_TEMPLATE = """You are a senior hydraulic engineer and software architect \
+reviewing output from an autonomous Claude Code session building a professional \
+hydraulic analysis desktop tool.
+
+The tool uses PyQt6, WNTR, TSNet, and custom slurry solvers targeting \
+Australian water and mining engineers.
+Standards: WSAA, AS/NZS 1477, AS 2280, AS/NZS 4130, AS 4058.
+Current test suite: 410+ passing, 12 xfailed.
+
+TASK COMPLETED: {context}
+
+OUTPUT TO REVIEW:
+{output}
+
+SPECIFIC QUESTION: {question}
+
+Review for:
+- Hydraulic calculation correctness
+- Australian standards compliance
+- UI decisions appropriate for professional engineers
+- Regressions vs previous state
+- Test coverage adequacy
+- Anything a professional engineer would notice is missing
+
+Respond in valid JSON only. No text outside the JSON:
+{{
+  "assessment": "one paragraph honest assessment",
+  "quality": "GOOD | ACCEPTABLE | NEEDS_WORK | BLOCKER",
+  "issues": ["specific issue 1", "specific issue 2"],
+  "next_instructions": "exact text for Claude Code to act on, or empty string if nothing needed",
+  "can_continue": true
+}}"""
+
+
+def _run_claude_reviewer(prompt):
+    """Run claude CLI and return its stdout."""
+    try:
+        result = subprocess.run(
+            ["claude", "--print", "--dangerously-skip-permissions", prompt],
+            capture_output=True, text=True, timeout=120,
+            cwd=ROOT,
+        )
+        return result.stdout.strip(), result.returncode
+    except FileNotFoundError:
+        return '{"assessment": "Claude CLI not found on PATH", "quality": "NEEDS_WORK", "issues": ["claude CLI not installed"], "next_instructions": "", "can_continue": true}', 1
+    except subprocess.TimeoutExpired:
+        return '{"assessment": "Review timed out after 120s", "quality": "ACCEPTABLE", "issues": ["timeout"], "next_instructions": "", "can_continue": true}', 1
+
+
+def _parse_json_from_output(text):
+    """Extract the first JSON object from text."""
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Find JSON in the output
+    start = text.find('{')
+    if start == -1:
+        return None
+
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i+1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
+def _log_exchange(context, question, response):
+    """Append to history.jsonl."""
+    entry = {
+        'timestamp': datetime.now().isoformat(),
+        'context': context,
+        'question': question,
+        'response': response,
+    }
+    with open(HISTORY_FILE, 'a') as f:
+        f.write(json.dumps(entry) + '\n')
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok', 'reviewer': 'claude-code-cli'})
+
+
+@app.route('/review', methods=['POST'])
+def review():
+    data = request.get_json(force=True)
+    output = data.get('output', '')
+    context = data.get('context', '')
+    question = data.get('question', '')
+
+    prompt = REVIEWER_PROMPT_TEMPLATE.format(
+        output=output, context=context, question=question
+    )
+
+    stdout, rc = _run_claude_reviewer(prompt)
+
+    parsed = _parse_json_from_output(stdout)
+    if parsed is None:
+        parsed = {
+            'assessment': f'Could not parse reviewer response. Raw: {stdout[:500]}',
+            'quality': 'NEEDS_WORK',
+            'issues': ['Response was not valid JSON'],
+            'next_instructions': '',
+            'can_continue': True,
+        }
+
+    _log_exchange(context, question, parsed)
+
+    return jsonify(parsed)
+
+
+@app.route('/history', methods=['GET'])
+def history():
+    entries = []
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    # Return last 20
+    return jsonify(entries[-20:])
+
+
+if __name__ == '__main__':
+    print(f"Review bridge starting on http://localhost:7771")
+    print(f"History: {HISTORY_FILE}")
+    app.run(host='127.0.0.1', port=7771, debug=False)

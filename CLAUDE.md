@@ -94,6 +94,24 @@ Layer 6 — Import:   importers/ (produce .inp files, never run simulations)
 - Uncertain about a standard value -> check AS/NZS source, document reference in a code comment before writing the value
 - Two agents disagree on a finding that affects a calculation -> stop and surface to the human
 
+### Automated Review Loop
+
+After completing any phase, feature, or significant fix:
+
+1. Check bridge: `curl -s localhost:7771/health`
+2. If not running: `scripts\start_review_loop.bat`
+3. Collect summary of what was built (files, test counts, key decisions)
+4. Submit:
+   ```
+   python scripts/submit_for_review.py ^
+     --output "[summary]" ^
+     --context "[task name]" ^
+     --question "[what to assess]"
+   ```
+5. Read `docs/review_loop/next_instructions.md`
+6. `can_continue: true` -> proceed to next task
+7. `can_continue: false` -> fix issues, resubmit, do not proceed
+
 ### Sub-Agent Routing Rules
 
 **Agents** (defined in `.claude/agents/`):

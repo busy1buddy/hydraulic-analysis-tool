@@ -301,7 +301,7 @@ class MainWindow(QMainWindow):
 
         self.node_results_table = QTableWidget(0, 5)
         self.node_results_table.setHorizontalHeaderLabels(
-            ["ID", "Elevation (m)", "Pressure (m)", "Head (m)", "WSAA Status"]
+            ["ID", "Elevation (m)", "Min Pressure (m)", "Head (m)", "WSAA Status"]
         )
         self.node_results_table.horizontalHeader().setStretchLastSection(True)
         self.node_results_table.setFont(QFont("Consolas", 9))
@@ -928,19 +928,23 @@ class MainWindow(QMainWindow):
             except Exception:
                 elev = "--"
 
+            min_p = pdata.get('min_m', 0)
             avg_p = pdata.get('avg_m', 0)
             max_p = pdata.get('max_m', 0)
             head = node.elevation + avg_p if elev != "--" else avg_p
 
-            # WSAA compliance check — WSAA WSA 03-2011 Table 3.1
-            if avg_p < 20.0:
+            # WSAA compliance uses MINIMUM pressure across all timesteps
+            # — WSAA WSA 03-2011 Table 3.1: if pressure drops below 20m
+            # at any time (e.g., 7am peak demand), it fails
+            wsaa_p = min_p
+            if wsaa_p < 20.0:
                 status = "FAIL (<20 m)"
-            elif avg_p > 50.0:
+            elif max_p > 50.0:
                 status = "FAIL (>50 m)"
             else:
                 status = "PASS"
 
-            items = [jid, elev, f"{avg_p:.1f}", f"{head:.1f}", status]
+            items = [jid, elev, f"{min_p:.1f}", f"{head:.1f}", status]
             for col, val in enumerate(items):
                 item = QTableWidgetItem(str(val))
                 if "FAIL" in str(val):

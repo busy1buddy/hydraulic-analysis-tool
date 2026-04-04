@@ -203,6 +203,39 @@ class TestEPSExecution:
                 return
         # Even if no warnings, the check ran (network may have adequate pressure)
 
+    def test_wsaa_uses_minimum_not_average_in_ui(self, window, app):
+        """The node results table must show min pressure and check WSAA against it."""
+        from PyQt6.QtGui import QColor
+
+        wn = window.api.wn
+        wn.add_pattern('peak_test', RESIDENTIAL_PATTERN)
+        for jid in wn.junction_name_list:
+            junc = wn.get_node(jid)
+            if junc.demand_timeseries_list:
+                junc.demand_timeseries_list[0].pattern_name = 'peak_test'
+
+        wn.options.time.duration = 24 * 3600
+        wn.options.time.hydraulic_timestep = 3600
+        wn.options.time.pattern_timestep = 3600
+
+        results = window.api.run_steady_state(save_plot=False)
+        window._on_analysis_finished(results)
+        app.processEvents()
+
+        # Check that the table header says "Min Pressure"
+        header = window.node_results_table.horizontalHeaderItem(2).text()
+        assert 'Min' in header, f"Header should say Min Pressure, got: {header}"
+
+        # For each junction, the pressure shown in col 2 should be min_m (not avg_m)
+        for row in range(window.node_results_table.rowCount()):
+            jid = window.node_results_table.item(row, 0).text()
+            shown_p = float(window.node_results_table.item(row, 2).text())
+            pdata = results['pressures'].get(jid, {})
+            min_p = pdata.get('min_m', 0)
+            assert abs(shown_p - min_p) < 0.2, (
+                f"{jid}: table shows {shown_p} but min_m is {min_p}"
+            )
+
     def test_eps_animation_panel_populated(self, window, app):
         """After EPS, animation panel should have frames."""
         wn = window.api.wn
