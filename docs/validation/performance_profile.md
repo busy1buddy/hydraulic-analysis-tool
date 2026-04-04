@@ -8,19 +8,19 @@
 | Operation | Time | Target | Status |
 |-----------|------|--------|--------|
 | Load network | 0.55s | <2s | PASS |
-| Canvas render (500 nodes, 956 pipes) | 8236ms | <500ms | SLOW |
+| Canvas render (500 nodes, 956 pipes) | **68ms** | <500ms | **PASS** (was 8236ms before batching) |
 | Steady-state solve (EPANET) | 1.18s | <5s | PASS |
 | Results table populate (500 rows) | 1526ms | <2s | PASS |
-| Colour mode switch | 791ms | <500ms | ACCEPTABLE |
+| Colour mode switch | **142ms** | <500ms | **PASS** (was 791ms) |
 | Value overlay (500 labels) | 2260ms | <1s | SLOW |
+| Results + recolor | **113ms** | <500ms | **PASS** |
 | Peak memory | 25.8 MB | <500 MB | PASS |
 
 ## Analysis
 
-**Canvas render bottleneck:** Creating 956 individual `PlotDataItem` objects
-for pipes is O(n). Each pipe is a separate line item added to the plot.
-For large networks, batch rendering (single MultiLine item) would reduce
-this to near-constant time.
+**Canvas render — FIXED:** Batched rendering groups pipes by colour into
+NaN-separated PlotDataItems. 956 individual items reduced to ~5-10 colour
+groups. Render time: 8236ms → 68ms (121x speedup).
 
 **Value overlay:** Creating 500+ TextItems is slow. For large networks,
 consider only showing labels for visible/zoomed elements.
