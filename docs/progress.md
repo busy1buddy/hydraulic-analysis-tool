@@ -1,5 +1,17 @@
 # Build Progress
 
+## v1.9.0 M-Series — Depth and Polish (2026-04-04)
+- M1: Todini resilience index — first-class metric in status bar, dashboard KPI, compliance certificate, benchmarked 10 tutorials
+- M5: Demand pattern library — 8 built-in patterns (WSAA residential/commercial, industrial, irrigation, hospital, school, mining), apply/save/custom
+- M6: Advanced slurry pipeline design — Wasp critical velocity, pump derating (Wilson et al. 2006), per-pipe settling risk report
+- M7: Enhanced network comparison — categorised changelog (added/removed/resized/demand_changed) with colour codes
+- M8: Automated tutorial generator — README.md with topology, results, workflow from any .inp file
+- M9: Quality score system — 6-category 0-100 scoring (pressure, velocity, resilience, stress, data, connectivity), status bar display
+- Innovation Q2: Pump failure impact analysis — simulates power loss, reports affected customers and pressure drops
+- Dashboard enhanced: resilience KPI, dead ends, loops, bridges cards
+- Status bar: Ir index, Quality Score alongside WSAA status
+- 800+ tests passing, 12 xfailed (TSNet)
+
 ## v1.8.0 L-Series (2026-04-04)
 - L1: Design compliance certificate — run all WSAA checks, formal certificate with PDF export, ComplianceDialog UI
 - L3: Network topology analysis — dead ends, bridges (Tarjan's), loops (cyclomatic complexity), connectivity ratio, degree distribution

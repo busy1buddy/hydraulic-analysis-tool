@@ -3909,6 +3909,111 @@ class HydraulicAPI:
         results.sort(key=lambda x: x['criticality_index'], reverse=True)
         return results
 
+    def pump_failure_impact(self, pump_id=None):
+        """
+        Analyse impact of pump station power loss on customer supply.
+
+        Simulates pump failure by closing the pump and running steady-state
+        analysis. Reports which customers lose adequate pressure and by how much.
+
+        Parameters
+        ----------
+        pump_id : str or None
+            Specific pump to fail. If None, analyses all pumps.
+
+        Returns dict with per-pump failure impact:
+        'pump_id', 'affected_nodes', 'pressure_drop', 'customers_without_supply'.
+
+        Ref: WSAA WSA 03-2011 — minimum service pressure 20 m during outage
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded'}
+
+        pump_ids = [pump_id] if pump_id else list(self.wn.pump_name_list)
+
+        if not pump_ids:
+            return {'error': 'No pumps in network', 'pump_count': 0}
+
+        # Baseline pressures
+        try:
+            base_results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Baseline analysis failed: {e}'}
+
+        base_pressures = base_results.get('pressures', {})
+
+        impacts = []
+        for pid in pump_ids:
+            try:
+                pump = self.wn.get_link(pid)
+            except KeyError:
+                impacts.append({
+                    'pump_id': pid,
+                    'error': f'Pump {pid} not found',
+                })
+                continue
+
+            original_status = pump.initial_status
+
+            # Close pump
+            pump.initial_status = wntr.network.LinkStatus(0)
+
+            try:
+                fail_results = self.run_steady_state(save_plot=False)
+                fail_pressures = fail_results.get('pressures', {})
+
+                affected = []
+                total_pressure_drop = 0
+                n_below_min = 0
+
+                for jid, base_p in base_pressures.items():
+                    base_avg = base_p.get('avg_m', 0)
+                    fail_avg = fail_pressures.get(jid, {}).get('avg_m', 0)
+                    drop = base_avg - fail_avg
+
+                    if drop > 1.0:  # meaningful pressure drop (> 1 m)
+                        affected.append({
+                            'node': jid,
+                            'base_pressure_m': round(base_avg, 1),
+                            'failure_pressure_m': round(fail_avg, 1),
+                            'drop_m': round(drop, 1),
+                        })
+                        total_pressure_drop += drop
+
+                    if fail_avg < self.DEFAULTS['min_pressure_m']:
+                        n_below_min += 1
+
+                affected.sort(key=lambda x: x['drop_m'], reverse=True)
+
+                impacts.append({
+                    'pump_id': pid,
+                    'affected_nodes': affected,
+                    'n_affected': len(affected),
+                    'customers_without_supply': n_below_min,
+                    'max_pressure_drop_m': round(max((a['drop_m'] for a in affected), default=0), 1),
+                    'avg_pressure_drop_m': round(total_pressure_drop / max(len(affected), 1), 1),
+                    'severity': ('CRITICAL' if n_below_min > len(base_pressures) * 0.5
+                                else 'HIGH' if n_below_min > 0
+                                else 'LOW'),
+                })
+
+            except Exception as e:
+                impacts.append({
+                    'pump_id': pid,
+                    'error': f'Solver failed with pump {pid} off: network may be pump-dependent',
+                    'severity': 'CRITICAL',
+                    'customers_without_supply': len(base_pressures),
+                })
+
+            finally:
+                pump.initial_status = original_status
+
+        return {
+            'impacts': impacts,
+            'total_pumps_analysed': len(impacts),
+            'summary': f'{len(impacts)} pump(s) analysed',
+        }
+
     # =========================================================================
     # NETWORK COMPARISON
     # =========================================================================
