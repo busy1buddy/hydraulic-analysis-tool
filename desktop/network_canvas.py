@@ -1047,7 +1047,6 @@ class NetworkCanvas(QWidget):
                     x2 = tile['lon_br']
                     y2 = tile['lat_tl']  # top
 
-                import pyqtgraph as pg
                 img_item = pg.ImageItem()
                 # Convert QImage to numpy array
                 img_rgba = img.convertToFormat(QImage.Format.Format_RGBA8888)
