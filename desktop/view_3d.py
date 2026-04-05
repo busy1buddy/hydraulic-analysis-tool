@@ -38,11 +38,15 @@ class View3D(QWidget):
     """
 
     def __init__(self, api, results=None, parent=None):
-        super().__init__(parent)
+        # Force a top-level Window so this widget becomes its own OS
+        # window instead of rendering as an embedded child that
+        # overlaps the main window's dock panels.
+        super().__init__(parent, Qt.WindowType.Window)
         self.api = api
         self.results = results
         self.setWindowTitle("3D Network View")
         self.setMinimumSize(800, 600)
+        self.resize(1000, 700)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -115,11 +119,11 @@ class View3D(QWidget):
         all_xyz = np.array(list(node_pos.values()))
         center = all_xyz.mean(axis=0)
 
-        # Scale Z for visibility (elevation range is usually much smaller than XY)
-        z_range = all_xyz[:, 2].max() - all_xyz[:, 2].min()
+        # Elevation exaggeration: 5x makes terrain readable without
+        # distorting the network into an abstract sculpture.
         xy_range = max(all_xyz[:, 0].max() - all_xyz[:, 0].min(),
                        all_xyz[:, 1].max() - all_xyz[:, 1].min())
-        z_scale = (xy_range / max(z_range, 1)) * 0.3  # exaggerate Z by 30% of XY range
+        z_scale = 5.0
 
         # Render nodes as scatter
         spots = []
@@ -175,15 +179,20 @@ class View3D(QWidget):
                 pos=pts, color=color, width=2, antialias=True)
             self.gl_widget.addItem(line)
 
-        # Set camera
-        self.gl_widget.setCameraPosition(distance=xy_range * 0.8)
+        # Default camera: 30 deg elevation, 45 deg azimuth, framed to
+        # the network's XY extent so the user sees the whole layout.
+        self._fit_distance = max(xy_range * 1.5, 100.0)
+        self.gl_widget.setCameraPosition(
+            distance=self._fit_distance,
+            elevation=30,
+            azimuth=45,
+        )
 
     def _reset_view(self):
         if HAS_GL:
-            wn = self.api.wn if self.api else None
-            if wn:
-                self.gl_widget.setCameraPosition(
-                    elevation=30, azimuth=45)
+            dist = getattr(self, '_fit_distance', 1000.0)
+            self.gl_widget.setCameraPosition(
+                distance=dist, elevation=30, azimuth=45)
 
     def _view_top(self):
         if HAS_GL:
