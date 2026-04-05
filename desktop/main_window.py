@@ -57,6 +57,13 @@ class MainWindow(QMainWindow):
         self._hap_file = None
         self._last_results = None
         self._probe_tooltip = None  # Created lazily
+        # Slurry params persist across runs; user edits via Analysis > Slurry.
+        # Defaults match the "Iron ore tailings" preset in slurry_params_dialog.
+        self._slurry_params = {
+            'yield_stress': 15.0,
+            'plastic_viscosity': 0.05,
+            'density': 1800.0,
+        }
 
         self.setWindowTitle("Hydraulic Analysis Tool — v2.9.0")
         self.setMinimumSize(QSize(1200, 800))
@@ -203,6 +210,13 @@ class MainWindow(QMainWindow):
         self.slurry_act.setCheckable(True)
         self.slurry_act.toggled.connect(self._on_slurry_toggle)
         analysis_menu.addAction(self.slurry_act)
+
+        slurry_params_act = QAction("Slurry &Parameters...", self)
+        slurry_params_act.triggered.connect(self._on_edit_slurry_params)
+        slurry_params_act.setToolTip(
+            "Edit Bingham-plastic parameters: yield stress, plastic "
+            "viscosity, density")
+        analysis_menu.addAction(slurry_params_act)
 
         analysis_menu.addSeparator()
         design_check_act = QAction("&Design Compliance Check...", self)
@@ -380,7 +394,12 @@ class MainWindow(QMainWindow):
         self.canvas.fit_btn.setToolTip("Fit — zoom to show all network elements (Ctrl+F)")
         self.canvas.labels_btn.setToolTip("Labels — toggle node/pipe ID labels on the canvas")
 
-        toolbar_layout.insertWidget(4, self.canvas.edit_btn)
+        # NOTE: NetworkCanvas adds combo + Fit + Labels (3 items) -- we append
+        # Edit/Values/Probe using addWidget. insertWidget(4, ...) used to be
+        # correct before the "Color:" label and a trailing stretch were
+        # removed, and left a "QBoxLayout::insert: index N out of range"
+        # warning printed on every launch.
+        toolbar_layout.addWidget(self.canvas.edit_btn)
 
         # Values overlay toggle
         self.values_btn = QPushButton("Values")
@@ -391,7 +410,7 @@ class MainWindow(QMainWindow):
             "Values — show numeric pressure/velocity labels on every element"
         )
         self.values_btn.toggled.connect(self._on_values_toggled)
-        toolbar_layout.insertWidget(5, self.values_btn)
+        toolbar_layout.addWidget(self.values_btn)
 
         # Probe tool button
         self.probe_btn = QPushButton("Probe")
@@ -402,7 +421,7 @@ class MainWindow(QMainWindow):
             "Probe — click any element to inspect all hydraulic result variables"
         )
         self.probe_btn.toggled.connect(self._on_probe_mode_toggled)
-        toolbar_layout.insertWidget(6, self.probe_btn)
+        toolbar_layout.addWidget(self.probe_btn)
 
         # Wire probe signal from canvas
         self.canvas.probe_requested.connect(self._on_probe_requested)
@@ -914,11 +933,9 @@ class MainWindow(QMainWindow):
         atype = 'slurry' if self.slurry_act.isChecked() else 'steady'
         params = {}
         if atype == 'slurry':
-            params['slurry'] = {
-                'yield_stress': 10.0,
-                'plastic_viscosity': 0.01,
-                'density': 1500,
-            }
+            # Use stored slurry params, or default them. User can edit
+            # via Analysis > Slurry Mode toggle (which prompts the dialog).
+            params['slurry'] = self._slurry_params
         self._run_analysis(atype, params)
 
     def _on_run_transient(self):
@@ -1412,7 +1429,29 @@ class MainWindow(QMainWindow):
                 self.pipe_results_table.setItem(row, col, item)
 
     def _on_slurry_toggle(self, checked):
+        # Toggle only flips the mode -- parameters are edited through
+        # Analysis > Slurry Parameters... Previously the dialog was popped
+        # from here, which froze headless tests and made the toggle modal.
+        if checked:
+            p = self._slurry_params
+            self.status_bar.showMessage(
+                f"Slurry mode ON (tau_y={p['yield_stress']:.1f} Pa, "
+                f"mu_p={p['plastic_viscosity']:.3f} Pa.s, "
+                f"rho={p['density']:.0f} kg/m3). "
+                f"Edit via Analysis > Slurry Parameters...", 5000)
         self._update_status_bar()
+
+    def _on_edit_slurry_params(self):
+        """Open the slurry parameter editor dialog."""
+        from desktop.slurry_params_dialog import SlurryParamsDialog
+        dlg = SlurryParamsDialog(initial=self._slurry_params, parent=self)
+        if dlg.exec() == dlg.DialogCode.Accepted:
+            self._slurry_params = dlg.params()
+            p = self._slurry_params
+            self.status_bar.showMessage(
+                f"Slurry parameters updated: tau_y={p['yield_stress']:.1f} Pa, "
+                f"mu_p={p['plastic_viscosity']:.3f} Pa.s, "
+                f"rho={p['density']:.0f} kg/m3", 5000)
 
     # =====================================================================
     # DEMAND PATTERNS / EPS

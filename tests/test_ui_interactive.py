@@ -627,6 +627,52 @@ class TestSlurryParameterValidation:
         assert window.pipe_results_table.horizontalHeaderItem(4).text() == \
             "Headloss (m/km)"
 
+    def test_slurry_dialog_values_reach_solver(self, window, app):
+        """Regression: what the user sets in SlurryParamsDialog is what
+        analysis_worker passes to bingham_plastic_headloss. Previously
+        params were hard-coded at tau_y=10/mu_p=0.01/rho=1500 with no UI."""
+        from desktop.slurry_params_dialog import SlurryParamsDialog
+        from desktop.analysis_worker import AnalysisWorker
+
+        # Dialog returns the values set on it
+        dlg = SlurryParamsDialog(
+            initial={'yield_stress': 15.0, 'plastic_viscosity': 0.05,
+                     'density': 1800.0})
+        params = dlg.params()
+        assert params == {'yield_stress': 15.0,
+                          'plastic_viscosity': 0.05,
+                          'density': 1800.0}
+
+        # Window default matches expected preset
+        assert window._slurry_params == {
+            'yield_stress': 15.0, 'plastic_viscosity': 0.05,
+            'density': 1800.0}
+
+        # Worker receives the exact params via the params dict
+        captured = {}
+        real_headloss = __import__('slurry_solver').bingham_plastic_headloss
+
+        def spy(**kw):
+            captured.update(kw)
+            return real_headloss(**kw)
+
+        import slurry_solver
+        slurry_solver.bingham_plastic_headloss = spy
+        try:
+            worker = AnalysisWorker(
+                window.api, 'slurry',
+                {'slurry': {'yield_stress': 15.0,
+                            'plastic_viscosity': 0.05,
+                            'density': 1800.0}})
+            worker.run()  # synchronous
+        finally:
+            slurry_solver.bingham_plastic_headloss = real_headloss
+
+        assert captured, "bingham_plastic_headloss was never called"
+        assert captured['tau_y'] == 15.0
+        assert captured['mu_p'] == 0.05
+        assert captured['density'] == 1800.0
+
 
 # =========================================================================
 # Area 7 — Report generation
