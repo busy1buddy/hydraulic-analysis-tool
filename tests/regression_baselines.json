@@ -7,6 +7,14 @@
     "quality_score": 91.9,
     "resilience_index": null
   },
+  "demo_network": {
+    "max_velocity_ms": 2.39,
+    "min_pressure_m": 12.1,
+    "n_junctions": 10,
+    "n_pipes": 11,
+    "quality_score": 74.5,
+    "resilience_index": null
+  },
   "elevated_tank": {
     "max_velocity_ms": 0.66,
     "min_pressure_m": -50051864.0,

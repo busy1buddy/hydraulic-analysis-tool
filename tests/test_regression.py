@@ -28,6 +28,7 @@ TUTORIAL_NETWORKS = [
     'pressure_zone_boundary', 'fire_flow_demand',
     'mining_slurry_line', 'multistage_pump', 'elevated_tank',
     'industrial_ring_main', 'rehabilitation_comparison',
+    'demo_network',
 ]
 
 

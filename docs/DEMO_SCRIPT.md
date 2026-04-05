@@ -1,127 +1,193 @@
-# 30-Second Demo: Mining Slurry Pipeline Safety Case
+# 5-Minute Demo Script
 
-**Scenario:** An engineer is bidding for a 20 km slurry line on a copper
-project. The CEO asks "What's our safety story for the regulator?"
+**Audiences:** Water utility operations manager · Mining safety engineer ·
+Consulting firm principal · University hydraulics lecturer
 
-This is what the tool does in 30 seconds.
+**Goal:** Show the end-to-end flow from "open a network" to "regulator-ready
+safety case" in a single sitting, using the built-in `demo_network` and
+`mining_slurry_line` tutorials.
+
+**Setup** (before the demo):
+
+```bash
+python main_app.py
+```
+
+Let the UI open with a blank canvas. You're ready.
 
 ---
 
-## The Demo (live walkthrough)
+## Act 1 — Instant WSAA check (60 seconds)
 
-```python
-from epanet_api import HydraulicAPI
+**Pitch:** "Most utilities wait three days for a network study. We do this
+live."
 
-api = HydraulicAPI()
+1. **Help > Run Demo** (one click)
+2. Watch the status bar walk through four stages (1.5 s each):
+   - Loading network
+   - Running steady-state
+   - Identifying violations
+   - Summarising
 
-# 1. Load the pipeline (1 second)
-api.load_network('tutorials/mining_slurry_line/network.inp')
+3. A popup appears with the health grade and root-cause list:
 
-# 2. Run steady-state (2 seconds)
-steady = api.run_steady_state()
+   ```
+   Network health: Grade C (65/100)
+   3 WSAA violations detected.
 
-# 3. Generate the full safety case (3 seconds)
-report = api.safety_case_report(
-    wave_speed_ms=1100,                    # AS 2280 ductile iron
-    valve_closure_s=0.5,                   # worst-case rapid closure
-    max_transient_pressure_m=150.0,        # PN15 rating
-    slurry_critical_velocity_ms=1.8,       # Durand critical velocity
-)
+   Root cause analysis found 3 issues:
+     - Low Pressure at J9
+       Fix 1: Upsize P10 DN80 → DN100 (~$56,000)
+     - Low Pressure at J10
+       Fix 1: Upsize P11 DN100 → DN150 (~$45,000)
+     - High Velocity at P10
+       Fix 1: Upsize P10 DN80 → DN100 (~$56,000)
+   ```
 
-# 4. Show the verdict (instant)
-print(report['overall_verdict'])
-#   APPROVED / CONDITIONAL APPROVAL / NOT APPROVED
-
-for section in report['sections']:
-    print(f"{section['section']}: {section['overall']}")
-    for check in section['checks']:
-        print(f"  {check['item']:35s} "
-              f"measured={check.get('measured')} "
-              f"margin={check.get('margin', '-')} "
-              f"[{check['status']}]")
-```
-
-**Output (on a real slurry line):**
-
-```
-NOT APPROVED
-
-1. Steady-State Compliance: PASS
-   Minimum service pressure           measured=24.3 m    margin=+4.3 m    [PASS]
-   Maximum static pressure            measured=48.1 m    margin=+1.9 m    [PASS]
-   Maximum pipe velocity              measured=1.94 m/s  margin=+0.06 m/s [PASS]
-
-2. Worst-Case Transient (Joukowsky): FAIL
-   Surge head rise (Joukowsky)        measured=217.6 m                    [INFO]
-   Peak transient pressure            measured=265.7 m   margin=-115.7 m  [FAIL]
-
-3. Water Hammer Mitigation: REVIEW
-   Longest pipe length                measured=3200 m                     [INFO]
-   Critical period 2L/a               measured=5.82 s                     [INFO]
-   Valve closure vs critical period   measured=0.50 s    margin=-5.32 s   [REVIEW]
-
-4. Slurry Settling Risk: FAIL
-   7 pipes below critical deposition velocity
-```
+**Talking point:** *"Ten nodes. Three violations. Costed remediation.
+Ten seconds."*
 
 ---
 
-## Why this is CEO-grade
+## Act 2 — Live sensitivity ("what if demand grows 20%?") (60 seconds)
 
-- **Regulatory verdict in 6 seconds** — not a 3-week consulting report.
-- **Every number cites its Australian Standard** — WSAA WSA 03-2011,
-  AS 2200, AS 2280, Durand 1952. No unexplained thresholds.
-- **Margins, not just pass/fail** — CEO sees exactly *how close* to the
-  limit, so risk can be priced, not just flagged.
-- **Failures come with the fix** — "surge protection required, valve
-  closure within critical period" — not a vague "check transient."
-- **Signature block with RPEQ disclaimer** — formal submission ready.
+**Pitch:** "Your council's planning department asks: can the network
+handle 20% population growth? Watch."
 
-## What this beats
+1. Open the **What-If panel** (dockable right side)
+2. Slide **Demand** to **120%**
+3. Wait 150 ms (debounce) — the canvas colours refresh immediately
 
-| Tool | This output? | Time |
-|------|--------------|------|
-| WaterGEMS (Bentley, ~US$15K) | Steady-state only — no safety verdict | Hours |
-| AFT Fathom (~US$10K) | Transient only — no WSAA context | Hours |
-| Manual consulting report | Yes, but takes 3 weeks | 3 weeks |
-| **This tool** | **Full safety case with verdict** | **6 seconds** |
+4. Status label updates:
+   ```
+   Updated: min pressure 8.1 m, max velocity 2.87 m/s
+   (120% demand, 100% C, +0 m source)
+   ```
 
-## Demo Closing Line
+5. Slide back to **100%**, then slide **Source head** to **+20 m**
 
-> "Every pipeline you design, we can hand the regulator a defensible
-> safety case in the time it takes to finish a coffee. That's our
-> commercial edge."
+6. Status updates:
+   ```
+   Updated: min pressure 32.3 m, max velocity 2.39 m/s
+   (100% demand, 100% C, +20 m source)
+   ```
+
+**Talking point:** *"Boosting the reservoir by 20 m fixes the pressure
+side entirely — but velocity's still out. That's a pump decision, not
+a pipe decision. The tool told us in 3 seconds what used to take a
+consultant a week."*
 
 ---
 
-## Companion: 60-second water utility demo (live UI)
+## Act 3 — Root cause analysis (60 seconds)
 
-Use `tutorials/demo_network/network.inp` — 10 nodes, 11 pipes, one
-ring main, two branches, deliberate pressure and velocity violations.
+**Pitch:** "Knowing a node fails is easy. Knowing *why* and *what to do
+about it* is where this tool earns its keep."
 
-**Steps:**
+1. From the terminal or dev console:
+   ```python
+   api.root_cause_analysis()
+   ```
 
-1. `python main_app.py` → opens the desktop UI
-2. **Help > Run Demo** (one click)
-3. Watch: status bar walks through *Load → Analyse → Violations → Summary*
-4. Popup: network health grade + root-cause analysis + ranked fix options
-   with estimated AUD costs
+2. Show one explanation from the output:
+   ```
+   Issue: low_pressure at J9
+     Measured: 12.1 m (WSAA min 20 m, deficit 7.9 m)
+     Root cause: Pressure at J9 is 12.1 m. Pipe P10 carries
+       12.0 LPS at 2.39 m/s through DN80 — this is the limiting
+       segment.
+     Fix 1: Upsize P10 DN80 → DN100 (~$56,000)
+            Lowers velocity and headloss on the critical path.
+     Fix 2: Parallel main alongside P10 (DN80) (~$45,000)
+            Halves carrying burden, reduces headloss ~75%.
+   ```
 
-**Output the engineer sees:**
+3. Point to `cost_assumptions`:
+   ```
+   Source: Rawlinsons 2026 SEQ metro
+   Uncertainty: ±15%
+   ```
 
-```
-Network health: Grade C (65/100)
-3 WSAA violations detected.
+**Talking point:** *"Every fix comes with a costed rationale citing
+the Rawlinsons edition. When your client asks where the numbers come
+from, you have an answer."*
 
-Root cause analysis found 3 issues:
-  - Low Pressure at J9
-    Fix 1: Upsize P10 DN80 → DN100 (~$56,000)
-  - Low Pressure at J10
-    Fix 1: Upsize P11 DN100 → DN150 (~$45,000)
-  - High Velocity at P10
-    Fix 1: Upsize P10 DN80 → DN100 (~$56,000)
-```
+---
 
-**Key talking point:** *"One click. Ten seconds. The engineer now has a
-costed remediation plan they can put in front of a council committee."*
+## Act 4 — Mining slurry, critical deposition velocity (60 seconds)
 
+**Pitch:** "Water networks are one half of our market. The other half
+is mining — and slurry is where competitors fall apart."
+
+1. **File > Open** → `tutorials/mining_slurry_line/network.inp`
+2. Press **F5** — steady state runs
+3. From console:
+   ```python
+   api.slurry_design_report(
+       d_particle_mm=0.5, rho_solid=2650,
+       concentration_vol=0.15, rho_fluid=1000, mu_fluid=0.001)
+   ```
+
+4. Sample output:
+   ```
+   Pipe P1: 1.94 m/s [OK]
+   Pipe P2: 1.42 m/s [AT RISK: below Durand 1.63 m/s]
+   Pipe P3: 0.88 m/s [SETTLING: below Wasp 1.28 m/s]
+   ```
+
+5. Show the Durand reference: *Durand (1952)* and Wasp formula in
+   the on-screen `knowledge_base('bingham_plastic')`.
+
+**Talking point:** *"Durand 1952, Wasp 1977 — this is literally the
+textbook, wired directly into our analysis. No hand-calcs, no
+spreadsheets."*
+
+---
+
+## Act 5 — Safety Case Report (60 seconds)
+
+**Pitch:** "Here's what makes the regulator sign off."
+
+1. **Analysis > Safety Case Report...**
+2. Fill in:
+   - **Certifying Engineer:** Jane Smith, RPEQ #12345
+   - **Project Ref:** DEMO-2026-0001
+3. Leave parameters at defaults, click **Preview Verdict**
+4. Red "**NOT APPROVED**" banner appears
+5. Scroll the summary — point to:
+   - WSAA Steady-State: FAIL (3 violations)
+   - Joukowsky Transient: PASS
+   - Water Hammer: REVIEW (valve closure within critical period)
+   - Signature block: `is_digitally_signed: False` + yellow warning
+   - `network_sha256` audit hash
+   - `issued_utc_iso8601` timestamp
+6. Click **Export to JSON...**
+
+**Talking point:** *"One click, full audit trail. SHA-256 hash so the
+regulator can verify the file hasn't been tampered with. ISO 8601 UTC
+timestamp. Visual-only signature disclaimer so legal can't come back
+and say we misrepresented it. Ready for submission."*
+
+---
+
+## Closing (optional 30 s)
+
+**The one-liner:** *"Five minutes. Five acts. Design, stress-test,
+diagnose, optimise, certify. This is what the next generation of
+Australian hydraulic engineers will expect — and we ship it today."*
+
+---
+
+## For the academic audience
+
+**University use case:** Assign students `tutorials/demo_network` for
+a semester project. Deliverables:
+1. Run `api.validate_network()` — explain each integrity check.
+2. Use `api.explain_analysis()` (Learning Mode) to understand the
+   pressure/velocity/compliance lessons.
+3. Use the What-If panel to derive the sensitivity of the network
+   to demand growth and roughness degradation.
+4. Generate a safety case and critique the rigid-pipe assumption
+   for PVC/PE sections.
+5. Compare their manual calcs to `api.knowledge_base('hazen_williams')`
+   for fidelity.
