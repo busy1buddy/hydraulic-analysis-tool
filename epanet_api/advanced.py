@@ -2150,12 +2150,24 @@ class AdvancedMixin:
         if self.wn is None:
             return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
-        from datetime import datetime
+        from datetime import datetime, timezone
+        import hashlib
+
+        # Network hash for audit trail — reads the .inp file if present
+        network_hash = None
+        if self._inp_file and os.path.exists(self._inp_file):
+            try:
+                with open(self._inp_file, 'rb') as f:
+                    network_hash = hashlib.sha256(f.read()).hexdigest()
+            except Exception:
+                network_hash = None
 
         report = {
             'title': 'Pipeline Safety Case Report',
             'network': (self._inp_file or 'Unnamed network'),
+            'network_sha256': network_hash,
             'issued': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'issued_utc_iso8601': datetime.now(timezone.utc).isoformat(),
             'software_version': getattr(self, 'SOFTWARE_VERSION', 'unknown'),
             'sections': [],
             'overall_verdict': 'APPROVED',
@@ -2334,12 +2346,16 @@ class AdvancedMixin:
             'prepared_by': 'EPANET Hydraulic Analysis Toolkit',
             'reviewer': '(sign here)',
             'date': '(sign here)',
+            'is_digitally_signed': False,
             'disclaimer': (
                 'Safety Case auto-generated from model inputs. Requires '
                 'review by a Chartered/RPEQ engineer prior to submission. '
                 'Model assumptions must be validated against field data. '
                 'Rigid-pipe wave speed assumption is conservative; '
-                'validate against manufacturer data for PVC/PE lines.'),
+                'validate against manufacturer data for PVC/PE lines. '
+                'Signature block is visual only - not cryptographically '
+                'signed. For legally binding compliance case, obtain '
+                'engineer wet signature or digital certificate.'),
         }
 
         return report
@@ -2869,8 +2885,22 @@ class AdvancedMixin:
             'cost_assumptions': {
                 'currency': 'AUD',
                 'year': 2026,
-                'source': 'Rawlinsons Construction Cost Guide typical unit '
-                          'rates for installed buried main, ductile iron',
+                'cost_source': 'Rawlinsons Construction Cost Guide typical '
+                               'unit rates for installed buried main, '
+                               'ductile iron',
+                'cost_source_edition': 'Rawlinsons 2026 (SEQ metro)',
+                'uncertainty_pct': 15,
+                'notes': (
+                    'Unit rates are indicative for metropolitan '
+                    'Brisbane/Sydney/Melbourne greenfield trenching. '
+                    '+-15% typical variance. Adjust for: regional '
+                    'freight (+10-25%), rock excavation (+30-60%), '
+                    'urban reinstatement (+40-100%), wet trench '
+                    'dewatering (+15-30%).'),
+                'defensibility': (
+                    'Cite this edition and apply local factors in the '
+                    'design basis report. For tender-grade estimates, '
+                    'obtain supplier quotes and trade-contractor pricing.'),
             },
             'note': (
                 'Root cause identified from steady-state headloss. '

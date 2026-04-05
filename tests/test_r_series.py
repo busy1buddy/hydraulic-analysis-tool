@@ -291,7 +291,14 @@ class TestRootCauseAnalysis:
         a = _undersized_network()
         r = a.root_cause_analysis()
         assert 'cost_assumptions' in r
-        assert r['cost_assumptions']['currency'] == 'AUD'
+        ca = r['cost_assumptions']
+        assert ca['currency'] == 'AUD'
+        # Regulator-grade defensibility fields
+        assert 'cost_source' in ca
+        assert 'cost_source_edition' in ca
+        assert 'uncertainty_pct' in ca
+        assert ca['uncertainty_pct'] > 0
+        assert 'defensibility' in ca
 
     def test_identifies_high_velocity(self):
         a = _undersized_network()

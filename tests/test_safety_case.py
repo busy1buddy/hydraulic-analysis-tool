@@ -117,6 +117,30 @@ class TestSafetyCaseReport:
         all_text = str(r['assumptions']).lower()
         assert 'rigid' in all_text or 'conservative' in all_text
 
+    def test_audit_trail_fields_present(self):
+        a = _simple_api()
+        r = a.safety_case_report()
+        # ISO8601 UTC timestamp
+        assert 'issued_utc_iso8601' in r
+        assert 'T' in r['issued_utc_iso8601']
+        # Network hash field (may be None if network was created in-memory)
+        assert 'network_sha256' in r
+        # Signature flag
+        assert r['signature_block']['is_digitally_signed'] is False
+        # Disclaimer names the limitation
+        disc = r['signature_block']['disclaimer'].lower()
+        assert 'cryptographic' in disc or 'visual only' in disc
+
+    def test_network_hash_populated_for_loaded_file(self, tmp_path):
+        """When loaded from an .inp file, network_sha256 must be populated."""
+        a = _simple_api()
+        inp_path = str(tmp_path / 'net.inp')
+        a.write_inp(inp_path)
+        a.load_network(inp_path)
+        r = a.safety_case_report()
+        assert r['network_sha256'] is not None
+        assert len(r['network_sha256']) == 64  # SHA-256 hex length
+
     def test_fast_closure_triggers_review(self):
         a = _simple_api()
         # 0.01s closure on 500m pipe with a=1100 → critical period ~0.9s

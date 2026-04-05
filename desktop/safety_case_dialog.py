@@ -31,6 +31,17 @@ class SafetyCaseDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
+        # Disclaimer banner — audit + legality
+        banner = QLabel(
+            "⚠ Signature block is visual only — not cryptographically "
+            "signed. Obtain engineer wet signature or digital certificate "
+            "for legally binding compliance case.")
+        banner.setWordWrap(True)
+        banner.setStyleSheet(
+            "background-color: #fff3cd; color: #856404; "
+            "border: 1px solid #ffeaa7; padding: 6px; border-radius: 3px;")
+        layout.addWidget(banner)
+
         # Project metadata
         meta_box = QGroupBox("Project Metadata")
         meta_form = QFormLayout(meta_box)

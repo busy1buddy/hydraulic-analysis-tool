@@ -142,3 +142,51 @@ def test_reset_returns_sliders_to_defaults(panel):
     assert panel.demand_slider.value() == 100
     assert panel.rough_slider.value() == 100
     assert panel.source_slider.value() == 0
+
+
+def test_baseline_invariant_after_sliders(panel, app):
+    """After slider manipulation + restore_baseline(), the underlying
+    network model must match its original state. This prevents test
+    contamination and ensures scenario reproducibility."""
+    wn = panel.api.wn
+
+    # Snapshot of original values
+    orig_demand = wn.get_node('J1').demand_timeseries_list[0].base_value
+    orig_c = wn.get_link('P1').roughness
+    orig_head = wn.get_node('R1').base_head
+
+    # Move sliders to extremes
+    panel.demand_slider.setValue(200)
+    panel.rough_slider.setValue(50)
+    panel.source_slider.setValue(20)
+
+    import time
+    for _ in range(10):
+        app.processEvents()
+        time.sleep(0.05)
+
+    # Restore and verify original state
+    panel.restore_baseline()
+
+    assert abs(
+        wn.get_node('J1').demand_timeseries_list[0].base_value - orig_demand
+    ) < 1e-9
+    assert abs(wn.get_link('P1').roughness - orig_c) < 1e-9
+    assert abs(wn.get_node('R1').base_head - orig_head) < 1e-9
+
+
+def test_close_restores_baseline(panel, app):
+    """Closing the panel must leave the network in its original state."""
+    wn = panel.api.wn
+    orig_demand = wn.get_node('J1').demand_timeseries_list[0].base_value
+
+    panel.demand_slider.setValue(150)
+    import time
+    for _ in range(8):
+        app.processEvents()
+        time.sleep(0.05)
+
+    panel.close()
+    assert abs(
+        wn.get_node('J1').demand_timeseries_list[0].base_value - orig_demand
+    ) < 1e-9

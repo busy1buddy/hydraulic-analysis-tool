@@ -149,6 +149,38 @@ class WhatIfPanel(QWidget):
         self.rough_slider.setValue(100)
         self.source_slider.setValue(0)
 
+    def restore_baseline(self):
+        """Write the originally-captured demands/roughness/source heads
+        back to the network model. Call this before the panel is destroyed
+        so any consumer of `api.wn` sees the original model state."""
+        if self.api is None or self.api.wn is None:
+            return
+        wn = self.api.wn
+        if self._original_demands:
+            for jid, base in self._original_demands.items():
+                try:
+                    wn.get_node(jid).demand_timeseries_list[0].base_value = base
+                except Exception:
+                    pass
+        if self._original_roughness:
+            for pid, base_c in self._original_roughness.items():
+                try:
+                    wn.get_link(pid).roughness = base_c
+                except Exception:
+                    pass
+        if self._original_source_heads:
+            for rid, base_h in self._original_source_heads.items():
+                try:
+                    wn.get_node(rid).base_head = base_h
+                except Exception:
+                    pass
+
+    def closeEvent(self, event):
+        """Restore baseline state when the panel is closed so the
+        underlying network model is not left in a mutated state."""
+        self.restore_baseline()
+        super().closeEvent(event)
+
     def _on_any_change(self):
         if self.api is None or self.api.wn is None:
             return
