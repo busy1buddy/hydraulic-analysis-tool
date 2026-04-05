@@ -79,6 +79,33 @@ consultant a week."*
 
 ---
 
+## Act 2.5 — The 30-second question (bonus, 20 seconds)
+
+**Pitch:** "Junior engineers spend an afternoon on this question. Watch."
+
+1. From the console:
+   ```python
+   api.find_best_upgrade().top_5
+   ```
+
+2. Output (instant):
+   ```
+   P10 DN80  -> DN100 : gain 1.1 m pressure, $56,000 (best value: 0.020 m/$1k)
+   P11 DN100 -> DN150 : gain 3.4 m pressure, $45,000 (value: 0.076 m/$1k)
+   P4  DN200 -> DN250 : gain 0.2 m pressure, $67,000 (value: 0.003 m/$1k)
+   ...
+   ```
+
+3. Point at the recommendation string:
+   > *"Upgrade P11 from DN100 -> DN150 for $45,000 AUD. Improves min
+   >  pressure by 3.4 m (best value: 0.076 m per $1,000)."*
+
+**Talking point:** *"That's every single-pipe upgrade option, ranked
+by pressure-gain-per-dollar, in under a second. No spreadsheet, no
+manual iteration."*
+
+---
+
 ## Act 3 — Root cause analysis (60 seconds)
 
 **Pitch:** "Knowing a node fails is easy. Knowing *why* and *what to do
