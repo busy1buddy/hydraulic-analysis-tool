@@ -22,8 +22,8 @@
 <body>
   <h1>Hydraulic Analysis Tool -- Interactive Driver Report</h1>
   <div class="summary">
-    <p>Generated: 2026-04-05 15:26:30</p>
-    <p>Total: 48 steps | PASS: 46 | FAIL: 2 |
+    <p>Generated: 2026-04-05 16:07:24</p>
+    <p>Total: 48 steps | PASS: 48 | FAIL: 0 |
        CRITICAL: 0</p>
   </div>
   
@@ -42,7 +42,7 @@
   <div class="step pass">
     <div class="action">S03: Click Fit button</div>
     <div class="check">Check: Canvas autoRange applied</div>
-    <div class="result">PASS: viewRange: [[-286.80326530612246, 1286.8032653061225], [-403.52842648896296, 903.528426488963]]</div>
+    <div class="result">PASS: viewRange: [[-372.6455615144481, 1372.645561514448], [-147.37419354838707, 647.374193548387]]</div>
     <img src="driver_screenshots/S03.png" loading="lazy" />
   </div>
   <div class="step pass">
@@ -51,16 +51,16 @@
     <div class="result">PASS: labels_btn=True, _show_labels=True</div>
     <img src="driver_screenshots/S04.png" loading="lazy" />
   </div>
-  <div class="step fail">
+  <div class="step pass">
     <div class="action">S05: Select pipe P1</div>
     <div class="check">Check: Properties panel has &gt;0 rows</div>
-    <div class="result">FAIL: properties rows: 0</div>
+    <div class="result">PASS: properties rows: 7</div>
     <img src="driver_screenshots/S05.png" loading="lazy" />
   </div>
-  <div class="step fail">
+  <div class="step pass">
     <div class="action">S06: Select junction J1</div>
     <div class="check">Check: Properties panel shows J1 data</div>
-    <div class="result">FAIL: properties rows: 0</div>
+    <div class="result">PASS: properties rows: 6</div>
     <img src="driver_screenshots/S06.png" loading="lazy" />
   </div>
   <div class="step pass">
@@ -124,9 +124,9 @@
     <img src="driver_screenshots/S16.png" loading="lazy" />
   </div>
   <div class="step pass">
-    <div class="action">S17: Raise What-If tab</div>
-    <div class="check">Check: What-If dock active and tabified</div>
-    <div class="result">PASS: what_if visible=True, tabified with=[&#x27;scenario_dock&#x27;]</div>
+    <div class="action">S17: Show What-If floating panel</div>
+    <div class="check">Check: What-If dock visible and floating</div>
+    <div class="result">PASS: floating=True, visible=True</div>
     <img src="driver_screenshots/S17.png" loading="lazy" />
   </div>
   <div class="step pass">

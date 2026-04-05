@@ -273,17 +273,19 @@ def act_2_first_analysis(w):
 
 
 def act_3_whatif(w):
-    # S17 click What-If tab
+    # S17 show What-If floating panel
     def s17():
+        w.what_if_dock.setVisible(True)
         w.what_if_dock.raise_()
         QTest.qWait(200)
-        # What-If should be in the left tab group now
-        tabified = w.tabifiedDockWidgets(w.what_if_dock)
-        ok = len(tabified) > 0 and w.what_if_dock.isVisible()
+        # What-If is now a floating panel, not tabified
+        floating = w.what_if_dock.isFloating()
+        visible = w.what_if_dock.isVisible()
+        ok = floating and visible
         return ("PASS" if ok else "FAIL",
-                f"what_if visible={w.what_if_dock.isVisible()}, "
-                f"tabified with={[d.objectName() for d in tabified]}")
-    yield ("S17", "Raise What-If tab", "What-If dock active and tabified", s17)
+                f"floating={floating}, visible={visible}")
+    yield ("S17", "Show What-If floating panel",
+           "What-If dock visible and floating", s17)
 
     # S18 demand 150%
     def s18():
