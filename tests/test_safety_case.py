@@ -104,6 +104,19 @@ class TestSafetyCaseReport:
         assert surge_section['overall'] == 'FAIL'
         assert r['overall_verdict'] == 'NOT APPROVED'
 
+    def test_assumptions_documented(self):
+        """Report must explicitly document modelling assumptions for regulator."""
+        a = _simple_api()
+        r = a.safety_case_report()
+        assert 'assumptions' in r
+        assert len(r['assumptions']) >= 3
+        topics = ' '.join(str(a.get('item', '')) for a in r['assumptions'])
+        assert 'Joukowsky' in topics
+        assert 'Critical period' in topics or 'critical' in topics.lower()
+        # Rigid-pipe assumption must be called out
+        all_text = str(r['assumptions']).lower()
+        assert 'rigid' in all_text or 'conservative' in all_text
+
     def test_fast_closure_triggers_review(self):
         a = _simple_api()
         # 0.01s closure on 500m pipe with a=1100 → critical period ~0.9s

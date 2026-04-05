@@ -2310,6 +2310,26 @@ class AdvancedMixin:
             else:
                 report['overall_verdict'] = 'CONDITIONAL APPROVAL'
 
+        # Explicit documentation of model assumptions for regulatory review
+        report['assumptions'] = [
+            {'item': 'Joukowsky head rise',
+             'formula': 'dH = a x dV / g',
+             'note': 'Density-independent for head-based pressure; for '
+                     'slurry PRESSURE units use rho_slurry x a x dV.'},
+            {'item': 'Critical period 2L/a',
+             'note': 'Assumes rigid pipe wave speed. For PVC/PE the '
+                     'effective wave speed is lower (pipe compliance), '
+                     'so 2L/a here is CONSERVATIVE - real critical '
+                     'period on flexible pipe will be longer.'},
+            {'item': 'Wave speed',
+             'value_ms': wave_speed_ms,
+             'note': 'AS 2280 default 1100 m/s for ductile iron. '
+                     'PVC ~450 m/s, PE ~250-400 m/s.'},
+            {'item': 'Pressure units',
+             'note': 'All pressures in m head (water gauge). Convert '
+                     'to kPa via P_kPa = rho x g x H / 1000.'},
+        ]
+
         report['signature_block'] = {
             'prepared_by': 'EPANET Hydraulic Analysis Toolkit',
             'reviewer': '(sign here)',
@@ -2317,7 +2337,9 @@ class AdvancedMixin:
             'disclaimer': (
                 'Safety Case auto-generated from model inputs. Requires '
                 'review by a Chartered/RPEQ engineer prior to submission. '
-                'Model assumptions must be validated against field data.'),
+                'Model assumptions must be validated against field data. '
+                'Rigid-pipe wave speed assumption is conservative; '
+                'validate against manufacturer data for PVC/PE lines.'),
         }
 
         return report
