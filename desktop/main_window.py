@@ -438,6 +438,12 @@ class MainWindow(QMainWindow):
         self._colourmap_widget = ColourMapWidget(horizontal=True)
         self._colourmap_widget.colour_map_changed.connect(self._on_colourmap_changed)
         self._colour_bar = ColourBar(self._colourmap_widget)
+        # Wire the canvas to the colourmap immediately so _push_colourmap_range
+        # has a widget reference when results arrive, not only after the user
+        # first touches the colourmap controls. Assign the attribute directly
+        # (set_colourmap() calls _apply_colors which needs _pipe_segments,
+        # which is not populated until a network is rendered).
+        self.canvas._colourmap_widget = self._colourmap_widget
 
         toolbar_layout.addSpacing(12)
         toolbar_layout.addWidget(self._colourmap_widget, 1)

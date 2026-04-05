@@ -262,6 +262,7 @@ class NetworkCanvas(QWidget):
     def set_results(self, results):
         """Set analysis results and re-color the network."""
         self.results = results
+        self._push_colourmap_range()
         self._apply_colors()
 
     def render(self):
@@ -581,7 +582,48 @@ class NetworkCanvas(QWidget):
             self.legend.set_scale(mode, [("No data", QColor(108, 112, 134))])
 
     def _on_color_mode_changed(self, mode):
+        self._push_colourmap_range()
         self._apply_colors()
+
+    def _push_colourmap_range(self):
+        """Auto-detect data range for the current colour mode and push it
+        to the ColourMapWidget so Min/Max boxes and the ColourBar strip
+        reflect the real hydraulic data instead of the 0-100 defaults."""
+        if self._colourmap_widget is None or self.results is None:
+            return
+        mode = self.color_mode_combo.currentText()
+        pressures = self.results.get('pressures', {})
+        flows = self.results.get('flows', {})
+        values = []
+        unit = mode
+        if mode in ("Pressure", "WSAA Compliance"):
+            values = [p.get('avg_m') for p in pressures.values()
+                      if p.get('avg_m') is not None]
+            unit = "Pressure (m)"
+        elif mode == "Pressure Min (EPS)":
+            values = [p.get('min_m') for p in pressures.values()
+                      if p.get('min_m') is not None]
+            unit = "Min Pressure (m)"
+        elif mode == "Pressure Max (EPS)":
+            values = [p.get('max_m') for p in pressures.values()
+                      if p.get('max_m') is not None]
+            unit = "Max Pressure (m)"
+        elif mode == "Velocity":
+            values = [abs(f.get('max_velocity_ms',
+                                 f.get('avg_velocity_ms', 0.0)))
+                      for f in flows.values()
+                      if f.get('max_velocity_ms') is not None
+                      or f.get('avg_velocity_ms') is not None]
+            unit = "Velocity (m/s)"
+        if not values:
+            return
+        # set_data_values is silent; set_range+set_unit each emit
+        # colour_map_changed which re-enters _apply_colors via the main
+        # window. That's fine -- it's only two extra paints and the
+        # ColourBar needs the signal to repaint its gradient and unit.
+        self._colourmap_widget.set_data_values(values)
+        self._colourmap_widget.set_range(min(values), max(values))
+        self._colourmap_widget.set_unit(unit)
 
     def _fit_view(self):
         """Auto-fit to show all elements with padding."""
