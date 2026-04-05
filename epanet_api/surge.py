@@ -27,7 +27,7 @@ class SurgeMixin:
         Ref: AS/NZS 2566, Wylie & Streeter (1993), Thorley (2004)
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         surge_m = transient_results.get('max_surge_m', 0)
         surge_kPa = transient_results.get('max_surge_kPa', 0)
@@ -325,7 +325,7 @@ class SurgeMixin:
         Ref: Thorley (2004), Wylie & Streeter (1978)
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Find the longest pipe or specified pipe
         if pipe_id:

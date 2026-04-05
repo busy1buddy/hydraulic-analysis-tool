@@ -181,6 +181,9 @@ class NetworkCanvas(QWidget):
         self.color_mode_combo.addItems(self.COLOR_MODES)
         self.color_mode_combo.setFont(QFont("Consolas", 9))
         self.color_mode_combo.currentTextChanged.connect(self._on_color_mode_changed)
+        self.color_mode_combo.setToolTip(
+            "Colour nodes and pipes by the selected result value.\n"
+            "Pressure (m head), Velocity (m/s), Flow (LPS), etc.")
         toolbar.addWidget(QLabel("Color:"))
         toolbar.addWidget(self.color_mode_combo)
 

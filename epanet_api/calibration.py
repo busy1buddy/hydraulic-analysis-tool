@@ -28,7 +28,7 @@ class CalibrationMixin:
         Ref: WSAA Design Guidelines — sensitivity analysis
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Run baseline
         try:
@@ -148,7 +148,7 @@ class CalibrationMixin:
         Ref: Kapelan et al. (2005) "Uncertainty Assessment of WDS"
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         rng = np.random.RandomState(seed)
 
@@ -253,7 +253,7 @@ class CalibrationMixin:
         import wntr
 
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Default material grouping by roughness value clusters
         if material_groups is None:
@@ -406,7 +406,7 @@ class CalibrationMixin:
         Ref: WSAA Best Practice Guidelines for Leakage Management
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Sum of customer demands
         total_demand_lps = 0

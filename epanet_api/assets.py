@@ -87,7 +87,7 @@ class AssetsMixin:
         if not hasattr(self, '_pipe_conditions'):
             self._pipe_conditions = {}
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if current_year is None:
             from datetime import date
@@ -305,7 +305,7 @@ class AssetsMixin:
         Returns dict with template path and element counts.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         try:
             import pandas as pd
@@ -562,7 +562,7 @@ class AssetsMixin:
              replacement", AWWA Journal 71(5):248-258
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if forecast_years is None:
             forecast_years = [2030, 2040, 2050]

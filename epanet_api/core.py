@@ -121,7 +121,7 @@ class CoreMixin:
     def get_network_summary(self):
         """Return a summary dict of the current network."""
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         return {
             'junctions': len(self.wn.junction_name_list),

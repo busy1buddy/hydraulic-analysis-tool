@@ -62,6 +62,9 @@ class ColourMapWidget(QWidget):
         self.cmap_combo.addItems(COLOURMAP_LABELS)
         self.cmap_combo.setFont(font)
         self.cmap_combo.currentIndexChanged.connect(self._emit_changed)
+        self.cmap_combo.setToolTip(
+            "Colour map palette for results overlay.\n"
+            "Viridis is colour-blind friendly and print-safe.")
         row1.addWidget(self.cmap_combo)
         layout.addLayout(row1)
 
@@ -74,6 +77,9 @@ class ColourMapWidget(QWidget):
         self.min_spin.setValue(self._vmin)
         self.min_spin.setFont(font)
         self.min_spin.valueChanged.connect(self._on_spin_changed)
+        self.min_spin.setToolTip(
+            "Minimum value for colour scale.\n"
+            "Values below this map to the lowest colour.")
         row2.addWidget(self.min_spin)
 
         row2.addWidget(QLabel("Max:"))
@@ -83,6 +89,9 @@ class ColourMapWidget(QWidget):
         self.max_spin.setValue(self._vmax)
         self.max_spin.setFont(font)
         self.max_spin.valueChanged.connect(self._on_spin_changed)
+        self.max_spin.setToolTip(
+            "Maximum value for colour scale.\n"
+            "Values above this map to the highest colour.")
         row2.addWidget(self.max_spin)
         layout.addLayout(row2)
 
@@ -91,6 +100,9 @@ class ColourMapWidget(QWidget):
         self.log_check = QCheckBox("Log scale")
         self.log_check.setFont(font)
         self.log_check.stateChanged.connect(self._emit_changed)
+        self.log_check.setToolTip(
+            "Use log10 scale for colour mapping.\n"
+            "Useful when values span several orders of magnitude.")
         row3.addWidget(self.log_check)
 
         self.reset_btn = QPushButton("Reset")

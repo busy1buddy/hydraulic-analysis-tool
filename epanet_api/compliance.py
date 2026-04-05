@@ -25,7 +25,7 @@ class ComplianceMixin:
         Returns dict with per-check results and overall COMPLIANT/NON-COMPLIANT.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         certificate = {
             'network_name': os.path.basename(self._inp_file) if self._inp_file else 'Unknown',
@@ -267,7 +267,7 @@ class ComplianceMixin:
         Returns dict with total score, grade, and per-category breakdown.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if results is None:
             try:

@@ -28,7 +28,7 @@ class AnalysisMixin:
         Returns dict with pressures, flows, velocities, and compliance check.
         """
         if self.wn is None:
-            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         sim = wntr.sim.EpanetSimulator(self.wn)
         self.steady_results = sim.run_sim()
@@ -191,7 +191,7 @@ class AnalysisMixin:
         Returns dict with residual pressures, compliance, and plot path.
         """
         if self.wn is None:
-            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Store original demand and apply fire flow
         node = self.wn.get_node(node_id)
@@ -323,7 +323,7 @@ class AnalysisMixin:
         and compliance items.
         """
         if self.wn is None:
-            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Save original settings
         original_duration = self.wn.options.time.duration
@@ -458,7 +458,7 @@ class AnalysisMixin:
             parameters        : {'initial_conc', 'bulk_coeff', 'wall_coeff'}
         """
         if self.wn is None:
-            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         original_duration = self.wn.options.time.duration
         original_quality_param = getattr(self.wn.options.quality, 'parameter', 'NONE')
@@ -569,7 +569,7 @@ class AnalysisMixin:
             compliance        : list (informational only)
         """
         if self.wn is None:
-            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         original_duration = self.wn.options.time.duration
         original_quality_param = getattr(self.wn.options.quality, 'parameter', 'NONE')
@@ -654,7 +654,7 @@ class AnalysisMixin:
         Returns dict with transient pressures, surge values, compliance.
         """
         if self._inp_file is None:
-            return {'error': 'No network file. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         ws = wave_speed or self.DEFAULTS['wave_speed_ms']
 
@@ -847,7 +847,7 @@ class AnalysisMixin:
         Returns dict with transient pressures, surge values, compliance.
         """
         if self._inp_file is None:
-            return {'error': 'No network file. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         ws = wave_speed or self.DEFAULTS['wave_speed_ms']
 
@@ -893,7 +893,7 @@ class AnalysisMixin:
         Returns dict with transient pressures, surge values, compliance.
         """
         if self._inp_file is None:
-            return {'error': 'No network file. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         ws = wave_speed or self.DEFAULTS['wave_speed_ms']
 
@@ -1114,7 +1114,7 @@ class AnalysisMixin:
             Path to the generated report file.
         """
         if self.wn is None:
-            return {'error': 'No network loaded. Call load_network() or create_network() first.'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # -- Build enriched network summary with node/link details --
         summary = self.get_network_summary()

@@ -59,7 +59,7 @@ class AdvancedMixin:
         """
         self.__init_zones()
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
         if results is None:
             results = self.run_steady_state(save_plot=False)
 
@@ -149,7 +149,7 @@ class AdvancedMixin:
         Ref: Standard hydraulic design practice — longitudinal section
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
         if len(node_path) < 2:
             return {'error': 'Path must contain at least 2 nodes'}
 
@@ -258,7 +258,7 @@ class AdvancedMixin:
         Ref: Pump fundamentals — Karassik et al. (2008)
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         try:
             pump = self.wn.get_link(pump_name)
@@ -400,7 +400,7 @@ class AdvancedMixin:
         Ref: WSAA Design Guidelines, Rawlinsons Handbook
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if target_pressure_m is None:
             target_pressure_m = self.DEFAULTS['min_pressure_m']
@@ -559,7 +559,7 @@ class AdvancedMixin:
         Ref: WSAA Water Quality Management Guidelines
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if target_residual_mgl is None:
             target_residual_mgl = self.WSAA_MIN_CHLORINE_MGL
@@ -639,7 +639,7 @@ class AdvancedMixin:
         Returns dict with timestep results and comparison metrics.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         import csv as csv_mod
         with open(csv_path, 'r') as f:
@@ -723,7 +723,7 @@ class AdvancedMixin:
         Returns dict with 'issues' list and 'suggestions'.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         issues = []
 
@@ -871,7 +871,7 @@ class AdvancedMixin:
         Returns dict with all assessment sections.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         assessment = {
             'network_name': os.path.basename(self._inp_file) if self._inp_file else 'Unknown',
@@ -975,7 +975,7 @@ class AdvancedMixin:
         Returns dict with generated file paths.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         name = os.path.splitext(
             os.path.basename(self._inp_file) if self._inp_file else 'network'
@@ -1148,7 +1148,7 @@ class AdvancedMixin:
         Returns dict with count of nodes updated.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         pattern_data = self.get_pattern(pattern_id)
         if 'error' in pattern_data:
@@ -1408,7 +1408,7 @@ class AdvancedMixin:
         top 3 recommendations.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         summary = self.get_network_summary()
         try:
@@ -1533,7 +1533,7 @@ class AdvancedMixin:
         Returns dict with lessons, explanations, and reference links.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if results is None:
             try:
@@ -1660,7 +1660,7 @@ class AdvancedMixin:
         Returns dict structured for a live dashboard view.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if results is None:
             try:
@@ -1776,7 +1776,7 @@ class AdvancedMixin:
         Returns dict with 'markdown' string ready to write to .md file.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         wn = self.wn
         n_junc = len(wn.junction_name_list)
@@ -2019,7 +2019,7 @@ class AdvancedMixin:
         Returns dict with metrics, bottleneck candidates, and recommendations.
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         import time as _time
 

@@ -110,10 +110,15 @@ class AnimationPanel(QWidget):
         self.speed_combo.setCurrentIndex(2)   # default 1x
         self.speed_combo.setFont(font)
         self.speed_combo.currentIndexChanged.connect(self._on_speed_changed)
+        self.speed_combo.setToolTip(
+            "Animation playback speed.\n"
+            "1x = real time, 4x = 4× faster.")
         ctrl_row.addWidget(self.speed_combo)
 
         self.loop_check = QCheckBox("Loop")
         self.loop_check.setFont(font)
+        self.loop_check.setToolTip(
+            "Continuously replay the animation when it reaches the end.")
         ctrl_row.addWidget(self.loop_check)
 
         ctrl_row.addStretch()

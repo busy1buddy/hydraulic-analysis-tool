@@ -33,7 +33,7 @@ class SlurryMixin:
         Ref: Wilson, Addie & Clift (2006); Durand (1952); Wasp et al. (1977)
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         from slurry_solver import (critical_deposition_velocity,
                                     wasp_critical_velocity,

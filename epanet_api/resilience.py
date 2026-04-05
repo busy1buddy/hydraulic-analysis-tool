@@ -30,7 +30,7 @@ class ResilienceMixin:
              a resilience index based heuristic approach". Urban Water 2(2):115-122
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if results is None:
             try:
@@ -42,7 +42,7 @@ class ResilienceMixin:
         flows = results.get('flows', {})
 
         if not pressures or not flows:
-            return {'error': 'No results available'}
+            return {'error': 'No analysis results available. Fix: Run api.run_steady_state() first.'}
 
         h_min = self.DEFAULTS['min_pressure_m']  # WSAA 20 m
 
@@ -127,7 +127,7 @@ class ResilienceMixin:
              a resilience index based heuristic approach"
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         try:
             results = self.run_steady_state(save_plot=False)
@@ -138,7 +138,7 @@ class ResilienceMixin:
         flows = results.get('flows', {})
 
         if not pressures or not flows:
-            return {'error': 'No results available'}
+            return {'error': 'No analysis results available. Fix: Run api.run_steady_state() first.'}
 
         import math
 
@@ -225,7 +225,7 @@ class ResilienceMixin:
         Ref: Wagner et al. (1988) "Reliability of Water Distribution Systems"
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         n_junctions = len(self.wn.junction_name_list)
         if n_junctions == 0:
@@ -296,7 +296,7 @@ class ResilienceMixin:
         Ref: WSAA WSA 03-2011 — minimum service pressure 20 m during outage
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         pump_ids = [pump_id] if pump_id else list(self.wn.pump_name_list)
 
@@ -406,7 +406,7 @@ class ResilienceMixin:
              water distribution system vulnerability"
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Build network graph for downstream analysis
         adj = {}

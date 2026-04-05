@@ -29,7 +29,7 @@ class ForecastingMixin:
         Ref: WSAA Demand Forecasting Guidelines
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if forecast_years is None:
             forecast_years = [2030, 2040, 2050]
@@ -145,7 +145,7 @@ class ForecastingMixin:
              BoM State of Climate Report 2020
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         if target_years is None:
             target_years = [2030, 2040, 2050, 2070]

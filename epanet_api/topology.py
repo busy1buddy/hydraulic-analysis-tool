@@ -25,7 +25,7 @@ class TopologyMixin:
         Ref: Walski (2001) "Pipe Network Simplification"
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         before = {
             'nodes': len(self.wn.junction_name_list),
@@ -123,7 +123,7 @@ class TopologyMixin:
         Ref: Graph theory for water distribution, Todini & Pilati (1988)
         """
         if self.wn is None:
-            return {'error': 'No network loaded'}
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
         # Build adjacency from pipe connections
         adj = {}  # node -> set of (neighbor, pipe_id)
