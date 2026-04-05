@@ -184,21 +184,37 @@ class NetworkCanvas(QWidget):
         self.color_mode_combo.setToolTip(
             "Colour nodes and pipes by the selected result value.\n"
             "Pressure (m head), Velocity (m/s), Flow (LPS), etc.")
-        toolbar.addWidget(QLabel("Color:"))
         toolbar.addWidget(self.color_mode_combo)
+
+        # Toolbar buttons need a minimum width or the layout engine clips
+        # the text (we observed "Labels" rendered as ".abel:" at 1400 px width).
+        # Combo sits in a narrow (~360 px) canvas toolbar. Let it expand
+        # to fill remaining horizontal space and shrink below its natural
+        # width if necessary (buttons stay fixed).
+        from PyQt6.QtWidgets import QSizePolicy
+        self.color_mode_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.color_mode_combo.setMinimumWidth(80)
+        self.color_mode_combo.currentTextChanged.connect(
+            lambda t: self.color_mode_combo.setToolTip(f"Colour by: {t}"))
+        self.color_mode_combo.setToolTip(
+            f"Colour by: {self.color_mode_combo.currentText()}")
+        toolbar.setSpacing(4)
 
         self.fit_btn = QPushButton("Fit")
         self.fit_btn.setFont(QFont("Consolas", 9))
+        self.fit_btn.setMinimumWidth(48)
         self.fit_btn.clicked.connect(self._fit_view)
         toolbar.addWidget(self.fit_btn)
 
         self.labels_btn = QPushButton("Labels")
         self.labels_btn.setCheckable(True)
         self.labels_btn.setFont(QFont("Consolas", 9))
+        self.labels_btn.setMinimumWidth(62)
         self.labels_btn.toggled.connect(self._toggle_labels)
         toolbar.addWidget(self.labels_btn)
 
-        toolbar.addStretch()
+        # No stretch — let the Expanding combo absorb remaining width.
         layout.addLayout(toolbar)
 
         # Plot widget

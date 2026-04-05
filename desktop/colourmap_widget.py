@@ -326,7 +326,9 @@ class ColourBar(QWidget):
             # Format: for values in typical hydraulic range, avoid
             # scientific notation (e.g. show "100", not "1e+02").
             av = abs(v)
-            if av >= 1000 or (0 < av < 0.01):
+            if v == 0:
+                label = "0"
+            elif av >= 1000 or av < 0.01:
                 label = f"{v:.2g}"
             elif av >= 10:
                 label = f"{v:.0f}"

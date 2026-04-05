@@ -43,6 +43,7 @@ from desktop.view_3d import View3D
 from desktop.report_scheduler import ReportSchedulerDialog
 from desktop.pipe_profile_dialog import PipeProfileDialog
 from desktop.dashboard_widget import DashboardWidget
+from desktop.what_if_panel import WhatIfPanel
 
 
 class MainWindow(QMainWindow):
@@ -312,6 +313,11 @@ class MainWindow(QMainWindow):
         self.toggle_results_act.setChecked(True)
         view_menu.addAction(self.toggle_results_act)
 
+        self.toggle_what_if_act = QAction("&What-If Panel", self)
+        self.toggle_what_if_act.setCheckable(True)
+        self.toggle_what_if_act.setChecked(True)
+        view_menu.addAction(self.toggle_what_if_act)
+
         # --- Help ---
         help_menu = menubar.addMenu("&Help")
 
@@ -351,10 +357,13 @@ class MainWindow(QMainWindow):
         self.editor = CanvasEditor(self.canvas, self)
         self.canvas._editor = self.editor
 
-        # Add Edit Mode button to canvas toolbar
+        # Add Edit Mode button to canvas toolbar. Every toolbar button gets
+        # a minimum width or the layout clips the label at 1400 px (observed
+        # "Labels" -> ".abel:" on live UX walkthrough).
         self.canvas.edit_btn = QPushButton("Edit")
         self.canvas.edit_btn.setCheckable(True)
         self.canvas.edit_btn.setFont(QFont("Consolas", 9))
+        self.canvas.edit_btn.setMinimumWidth(55)
         self.canvas.edit_btn.setToolTip(
             "Edit Mode — add/move/delete nodes and pipes on the canvas"
         )
@@ -372,6 +381,7 @@ class MainWindow(QMainWindow):
         self.values_btn = QPushButton("Values")
         self.values_btn.setCheckable(True)
         self.values_btn.setFont(QFont("Consolas", 9))
+        self.values_btn.setMinimumWidth(62)
         self.values_btn.setToolTip(
             "Values — show numeric pressure/velocity labels on every element"
         )
@@ -382,6 +392,7 @@ class MainWindow(QMainWindow):
         self.probe_btn = QPushButton("Probe")
         self.probe_btn.setCheckable(True)
         self.probe_btn.setFont(QFont("Consolas", 9))
+        self.probe_btn.setMinimumWidth(60)
         self.probe_btn.setToolTip(
             "Probe — click any element to inspect all hydraulic result variables"
         )
@@ -463,11 +474,21 @@ class MainWindow(QMainWindow):
         results_layout = QVBoxLayout(results_widget)
         results_layout.setContentsMargins(4, 4, 4, 4)
 
+        # Observed in live UX walkthrough: default column widths were clipping
+        # the headers ("Min Pressure (m)" -> "in Pressure (m",
+        # "Velocity (m/s)" -> "/elocity (m/s)"). ResizeToContents on the
+        # fixed-width columns guarantees the header text fits; the last
+        # column stretches to fill the remaining space.
+        from PyQt6.QtWidgets import QHeaderView
+
         self.node_results_table = QTableWidget(0, 5)
         self.node_results_table.setHorizontalHeaderLabels(
             ["ID", "Elevation (m)", "Min Pressure (m)", "Head (m)", "WSAA Status"]
         )
-        self.node_results_table.horizontalHeader().setStretchLastSection(True)
+        node_hdr = self.node_results_table.horizontalHeader()
+        for c in range(4):
+            node_hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        node_hdr.setStretchLastSection(True)
         self.node_results_table.setFont(QFont("Consolas", 9))
         self.node_results_table.setMinimumHeight(120)
         self.node_results_table.verticalHeader().setVisible(False)
@@ -476,7 +497,10 @@ class MainWindow(QMainWindow):
         self.pipe_results_table.setHorizontalHeaderLabels(
             ["ID", "Diameter (DN)", "Length (m)", "Velocity (m/s)", "Headloss (m/km)"]
         )
-        self.pipe_results_table.horizontalHeader().setStretchLastSection(True)
+        pipe_hdr = self.pipe_results_table.horizontalHeader()
+        for c in range(4):
+            pipe_hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        pipe_hdr.setStretchLastSection(True)
         self.pipe_results_table.setFont(QFont("Consolas", 9))
         self.pipe_results_table.setMinimumHeight(120)
         self.pipe_results_table.verticalHeader().setVisible(False)
@@ -529,6 +553,24 @@ class MainWindow(QMainWindow):
         # Tab animation and dashboard alongside results
         self.tabifyDockWidget(self.results_dock, self.animation_dock)
         self.tabifyDockWidget(self.results_dock, self.dashboard_dock)
+
+        # --- What-If Sensitivity Panel (tabbed with Properties on the right) ---
+        self.what_if_dock = QDockWidget("What-If", self)
+        self.what_if_dock.setObjectName("what_if_dock")
+        self.what_if_dock.setFeatures(_dock_features)
+        self.what_if_dock.setMinimumWidth(240)
+        self.what_if_panel = WhatIfPanel(api=self.api)
+        self.what_if_panel.analysis_updated.connect(self._on_analysis_finished)
+        self.what_if_panel.analysis_failed.connect(
+            lambda msg: self.status_bar.showMessage(f"What-If: {msg}", 5000)
+        )
+        self.what_if_dock.setWidget(self.what_if_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.what_if_dock)
+        self.tabifyDockWidget(self.properties_dock, self.what_if_dock)
+        # Properties is the default active tab on the right side
+        self.properties_dock.raise_()
+        self.toggle_what_if_act.toggled.connect(self.what_if_dock.setVisible)
+        self.what_if_dock.visibilityChanged.connect(self.toggle_what_if_act.setChecked)
         # Show results as the initially visible bottom tab
         self.results_dock.raise_()
 
@@ -606,6 +648,7 @@ class MainWindow(QMainWindow):
         self.node_results_table.setRowCount(0)
         self.pipe_results_table.setRowCount(0)
         self.canvas.set_api(None)  # clear canvas
+        self.what_if_panel.set_api(self.api)
         self._update_status_bar()
         self.setWindowTitle("Hydraulic Analysis Tool — v2.9.0")
 
@@ -625,6 +668,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
             self.canvas.set_api(self.api)
             self.dashboard_widget.update_dashboard(self.api)
+            self.what_if_panel.set_api(self.api)
         except Exception as e:
             QMessageBox.critical(self, "Load Error",
                                 f"Could not load network file.\n\n{type(e).__name__}: {e}")
@@ -978,6 +1022,12 @@ class MainWindow(QMainWindow):
         # Update dashboard
         self.dashboard_widget.update_dashboard(self.api, results)
 
+        # Raise the Results dock so the engineer sees the numeric results they
+        # just computed. _populate_eps_animation() above raises the Animation
+        # dock when multi-timestep EPS data is present — that hides Results
+        # unless we raise it again here.
+        self.results_dock.raise_()
+
         self.status_bar.showMessage("Analysis complete.", 5000)
 
         # Show surge protection wizard if transient surge > 30 m
@@ -1017,8 +1067,10 @@ class MainWindow(QMainWindow):
         pipe_data = results.get('pipes_transient', {})
 
         self.animation_panel.set_transient_data(timestamps, node_data, pipe_data)
-        # Raise the animation dock so the user can see it
-        self.animation_dock.raise_()
+        # NOTE: intentionally NOT calling animation_dock.raise_() here.
+        # Transient analysis populates the Animation panel but the engineer
+        # wants to see the Results tables first. They can click the Animation
+        # tab to scrub through frames when they want.
 
     def _populate_eps_animation(self, raw_results):
         """Load EPS multi-timestep data into AnimationPanel."""
@@ -1052,7 +1104,8 @@ class MainWindow(QMainWindow):
             pipe_data[lid] = pd
 
         self.animation_panel.set_transient_data(timestamps, node_data, pipe_data)
-        self.animation_dock.raise_()
+        # Do NOT raise animation_dock — leave Results visible. User switches
+        # to the Animation tab manually.
 
     def _on_animation_frame(self, frame: int):
         """
@@ -1549,6 +1602,7 @@ class MainWindow(QMainWindow):
                 self._populate_explorer()
                 self._update_status_bar()
                 self.canvas.set_api(self.api)
+                self.what_if_panel.set_api(self.api)
                 self.setWindowTitle(
                     f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(inp)}")
                 QMessageBox.information(self, "Import Complete",
@@ -1764,6 +1818,7 @@ class MainWindow(QMainWindow):
             self._update_status_bar()
             self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
             self.canvas.set_api(self.api)
+            self.what_if_panel.set_api(self.api)
         except Exception as e:
             QMessageBox.critical(self, "Load Error",
                                  f"Could not load tutorial file.\n\n{type(e).__name__}: {e}")
@@ -1819,6 +1874,7 @@ class MainWindow(QMainWindow):
                     self._update_status_bar()
                     self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
                     self.canvas.set_api(self.api)
+                    self.what_if_panel.set_api(self.api)
                     event.acceptProposedAction()
                     self.status_bar.showMessage(f"Loaded {os.path.basename(path)}", 3000)
                 except Exception as e:
@@ -1893,6 +1949,7 @@ class MainWindow(QMainWindow):
                 self._populate_explorer()
                 self._update_status_bar()
                 self.canvas.set_api(self.api)
+                self.what_if_panel.set_api(self.api)
                 self.setWindowTitle(
                     f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(last_file)}")
             except Exception:
