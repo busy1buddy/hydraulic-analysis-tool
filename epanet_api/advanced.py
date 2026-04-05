@@ -2115,3 +2115,209 @@ class AdvancedMixin:
                 'branches. Validate skeletonised model against full model '
                 'before using in design.'),
         }
+
+    # =========================================================================
+    # SAFETY CASE REPORT — formal regulatory submission (Innovation #2)
+    # =========================================================================
+
+    def safety_case_report(self, wave_speed_ms=1100, valve_closure_s=0.5,
+                           max_transient_pressure_m=150.0,
+                           slurry_critical_velocity_ms=None):
+        """
+        Generate a formal Safety Case Report for regulatory submission.
+
+        Assesses pipeline failure risk with explicit margins:
+          - Steady-state pressure/velocity compliance
+          - Transient surge adequacy (worst-case Joukowsky)
+          - Water hammer worst-case scenario
+          - Slurry settling risk (critical velocity margin) — if applicable
+        All outputs cite the relevant Australian Standard and include
+        pass/fail margins (not just pass/fail).
+
+        Parameters
+        ----------
+        wave_speed_ms : float
+            Wave speed for surge calculation (AS 2280 default 1100 m/s)
+        valve_closure_s : float
+            Worst-case (instantaneous) valve closure time
+        max_transient_pressure_m : float
+            Maximum allowable transient pressure (PN rating in m head)
+        slurry_critical_velocity_ms : float or None
+            If set, performs slurry settling margin check per pipe
+
+        Returns dict suitable for formal regulatory PDF submission.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        from datetime import datetime
+
+        report = {
+            'title': 'Pipeline Safety Case Report',
+            'network': (self._inp_file or 'Unnamed network'),
+            'issued': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'software_version': getattr(self, 'SOFTWARE_VERSION', 'unknown'),
+            'sections': [],
+            'overall_verdict': 'APPROVED',
+            'verdict_reasons': [],
+        }
+
+        # Steady-state compliance
+        try:
+            steady = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Steady-state solve failed: {e}. '
+                             f'Fix: Check network connectivity and demand balance.'}
+
+        pressures = steady.get('pressures', {})
+        flows = steady.get('flows', {})
+        p_min = min((p.get('min_m', 0) for p in pressures.values()),
+                    default=0)
+        p_max = max((p.get('max_m', 0) for p in pressures.values()),
+                    default=0)
+        v_max = max((f.get('max_velocity_ms', 0) for f in flows.values()),
+                    default=0)
+
+        wsaa_p_min = self.DEFAULTS['min_pressure_m']
+        wsaa_p_max = self.DEFAULTS['max_pressure_m']
+        wsaa_v_max = self.DEFAULTS['max_velocity_ms']
+
+        s1 = {
+            'section': '1. Steady-State Compliance',
+            'standard': 'WSAA WSA 03-2011 Table 3.1',
+            'checks': [
+                {'item': 'Minimum service pressure',
+                 'measured': f'{p_min:.1f} m',
+                 'limit': f'>= {wsaa_p_min} m',
+                 'margin': f'{p_min - wsaa_p_min:+.1f} m',
+                 'status': 'PASS' if p_min >= wsaa_p_min else 'FAIL'},
+                {'item': 'Maximum static pressure',
+                 'measured': f'{p_max:.1f} m',
+                 'limit': f'<= {wsaa_p_max} m',
+                 'margin': f'{wsaa_p_max - p_max:+.1f} m',
+                 'status': 'PASS' if p_max <= wsaa_p_max else 'FAIL'},
+                {'item': 'Maximum pipe velocity',
+                 'measured': f'{v_max:.2f} m/s',
+                 'limit': f'<= {wsaa_v_max} m/s',
+                 'margin': f'{wsaa_v_max - v_max:+.2f} m/s',
+                 'status': 'PASS' if v_max <= wsaa_v_max else 'FAIL'},
+            ],
+            'overall': ('PASS' if all([p_min >= wsaa_p_min,
+                                        p_max <= wsaa_p_max,
+                                        v_max <= wsaa_v_max])
+                        else 'FAIL'),
+        }
+        report['sections'].append(s1)
+        if s1['overall'] == 'FAIL':
+            report['verdict_reasons'].append('Steady-state compliance FAIL')
+
+        # Worst-case Joukowsky surge
+        surge_head = wave_speed_ms * v_max / 9.81
+        peak_transient_m = p_max + surge_head
+        surge_margin_m = max_transient_pressure_m - peak_transient_m
+
+        s2 = {
+            'section': '2. Worst-Case Transient (Joukowsky)',
+            'standard': 'AS 2200; Wylie & Streeter Fluid Transients',
+            'assumptions': {
+                'wave_speed_ms': wave_speed_ms,
+                'trigger_velocity_ms': round(v_max, 3),
+                'closure_scenario': 'instantaneous (upper bound)',
+            },
+            'checks': [
+                {'item': 'Surge head rise (Joukowsky)',
+                 'measured': f'{surge_head:.1f} m',
+                 'formula': 'dH = a x dV / g',
+                 'status': 'INFO'},
+                {'item': 'Peak transient pressure',
+                 'measured': f'{peak_transient_m:.1f} m',
+                 'limit': f'<= {max_transient_pressure_m:.0f} m (PN rating)',
+                 'margin': f'{surge_margin_m:+.1f} m',
+                 'status': 'PASS' if surge_margin_m >= 0 else 'FAIL'},
+            ],
+            'overall': 'PASS' if surge_margin_m >= 0 else 'FAIL',
+        }
+        report['sections'].append(s2)
+        if s2['overall'] == 'FAIL':
+            report['verdict_reasons'].append(
+                'Transient pressure exceeds PN rating')
+
+        # Water hammer mitigation adequacy
+        max_pipe_length = max(
+            (self.wn.get_link(pid).length
+             for pid in self.wn.pipe_name_list), default=0)
+        critical_period_s = 2 * max_pipe_length / wave_speed_ms
+        closure_adequate = valve_closure_s >= critical_period_s
+
+        s3 = {
+            'section': '3. Water Hammer Mitigation',
+            'standard': 'AS 2200; TSNet transient analysis',
+            'checks': [
+                {'item': 'Longest pipe length (critical path)',
+                 'measured': f'{max_pipe_length:.0f} m',
+                 'status': 'INFO'},
+                {'item': 'Critical period 2L/a',
+                 'measured': f'{critical_period_s:.2f} s',
+                 'status': 'INFO'},
+                {'item': 'Valve closure time vs critical period',
+                 'measured': f'{valve_closure_s:.2f} s',
+                 'limit': f'>= {critical_period_s:.2f} s for slow closure',
+                 'margin': f'{valve_closure_s - critical_period_s:+.2f} s',
+                 'status': ('PASS' if closure_adequate
+                            else 'REVIEW - rapid closure; surge protection required')},
+            ],
+            'overall': 'PASS' if closure_adequate else 'REVIEW',
+        }
+        report['sections'].append(s3)
+        if not closure_adequate:
+            report['verdict_reasons'].append(
+                'Valve closure is within critical period - surge '
+                'protection (accumulator, bypass, or slow-close valve) '
+                'must be installed')
+
+        # Slurry settling risk (optional)
+        if slurry_critical_velocity_ms is not None:
+            settling_issues = []
+            for pid, f in flows.items():
+                v = f.get('max_velocity_ms', 0)
+                margin = v - slurry_critical_velocity_ms
+                if margin < 0:
+                    settling_issues.append({
+                        'pipe': pid,
+                        'velocity_ms': round(v, 2),
+                        'critical_ms': slurry_critical_velocity_ms,
+                        'margin_ms': round(margin, 2),
+                    })
+            s4 = {
+                'section': '4. Slurry Settling Risk',
+                'standard': 'Durand (1952); Wilson/Addie/Clift (2006)',
+                'critical_velocity_ms': slurry_critical_velocity_ms,
+                'n_pipes_below_critical': len(settling_issues),
+                'issues': settling_issues[:20],
+                'overall': 'PASS' if not settling_issues else 'FAIL',
+            }
+            report['sections'].append(s4)
+            if settling_issues:
+                report['verdict_reasons'].append(
+                    f'{len(settling_issues)} pipes below critical '
+                    f'deposition velocity - sediment accumulation risk')
+
+        # Verdict
+        if report['verdict_reasons']:
+            if any('FAIL' in r or 'exceeds' in r or 'critical' in r
+                    for r in report['verdict_reasons']):
+                report['overall_verdict'] = 'NOT APPROVED'
+            else:
+                report['overall_verdict'] = 'CONDITIONAL APPROVAL'
+
+        report['signature_block'] = {
+            'prepared_by': 'EPANET Hydraulic Analysis Toolkit',
+            'reviewer': '(sign here)',
+            'date': '(sign here)',
+            'disclaimer': (
+                'Safety Case auto-generated from model inputs. Requires '
+                'review by a Chartered/RPEQ engineer prior to submission. '
+                'Model assumptions must be validated against field data.'),
+        }
+
+        return report
