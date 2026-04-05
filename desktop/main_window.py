@@ -554,21 +554,36 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.results_dock, self.animation_dock)
         self.tabifyDockWidget(self.results_dock, self.dashboard_dock)
 
-        # --- What-If Sensitivity Panel (tabbed with Properties on the right) ---
+        # --- What-If Sensitivity Panel (tabbed with Explorer/Scenarios on the left) ---
+        # The Right-area tabify is fragile (Qt silently drops the tab-group
+        # when docks have differing minimum widths), but the Left-area tab
+        # group already holds Explorer+Scenarios and merges correctly.
         self.what_if_dock = QDockWidget("What-If", self)
         self.what_if_dock.setObjectName("what_if_dock")
         self.what_if_dock.setFeatures(_dock_features)
-        self.what_if_dock.setMinimumWidth(240)
+        self.what_if_dock.setMinimumWidth(220)
         self.what_if_panel = WhatIfPanel(api=self.api)
         self.what_if_panel.analysis_updated.connect(self._on_analysis_finished)
         self.what_if_panel.analysis_failed.connect(
             lambda msg: self.status_bar.showMessage(f"What-If: {msg}", 5000)
         )
         self.what_if_dock.setWidget(self.what_if_panel)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.what_if_dock)
-        self.tabifyDockWidget(self.properties_dock, self.what_if_dock)
-        # Properties is the default active tab on the right side
-        self.properties_dock.raise_()
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.what_if_dock)
+        # Qt's tabifyDockWidget is fragile during init — we have to remove
+        # the dock, re-add it, and tabify AFTER the initial show. A zero-ms
+        # QTimer does this on the next event-loop turn. Without this dance,
+        # what_if_dock is not merged into the explorer/scenario tab group
+        # and its geometry remains parked offscreen.
+        from PyQt6.QtCore import QTimer as _QTimer
+        def _tabify_what_if():
+            self.removeDockWidget(self.what_if_dock)
+            self.what_if_dock.setFloating(False)
+            self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea,
+                               self.what_if_dock)
+            self.tabifyDockWidget(self.scenario_dock, self.what_if_dock)
+            self.what_if_dock.setVisible(True)
+            self.explorer_dock.raise_()
+        _QTimer.singleShot(0, _tabify_what_if)
         self.toggle_what_if_act.toggled.connect(self.what_if_dock.setVisible)
         self.what_if_dock.visibilityChanged.connect(self.toggle_what_if_act.setChecked)
         # Show results as the initially visible bottom tab
