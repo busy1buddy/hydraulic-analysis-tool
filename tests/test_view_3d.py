@@ -69,7 +69,13 @@ class TestView3D:
     def test_3d_items_created(self, qapp, api_with_results):
         api, results = api_with_results
         view = View3D(api, results=results)
-        # Should have grid + scatter + pipe lines
+        # Scene build is deferred to showEvent so the GLViewWidget's
+        # GL context is ready before items compile their shaders.
+        view.show()
+        qapp.processEvents()
+        from PyQt6.QtTest import QTest
+        QTest.qWait(50)
+        qapp.processEvents()
         items = view.gl_widget.items
         assert len(items) >= 2  # at least grid + scatter
 

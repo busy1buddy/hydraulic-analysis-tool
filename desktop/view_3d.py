@@ -19,7 +19,7 @@ except ImportError:
     HAS_GL = False
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 
@@ -87,12 +87,29 @@ class View3D(QWidget):
         self.gl_widget.setBackgroundColor(30, 30, 46)  # Catppuccin Mocha
         layout.addWidget(self.gl_widget)
 
-        # Add grid
+        # Render items lazily -- GLLinePlotItem / GLScatterPlotItem
+        # compile their shaders on first paint against whatever GL
+        # context is current. If we add items before the GLViewWidget
+        # has been shown, those shaders are created in the wrong
+        # context and every paintGL raises
+        # `glUseProgram(N): invalid value`. Defer until showEvent fires.
+        self._rendered = False
+
+    def showEvent(self, event):
+        """Render the scene on first show, once the GL context exists."""
+        super().showEvent(event)
+        if HAS_GL and not self._rendered:
+            self._rendered = True
+            # Let Qt finish initialising the GL context before we add
+            # items. A zero-delay timer runs on the next event-loop tick.
+            QTimer.singleShot(0, self._build_scene)
+
+    def _build_scene(self):
+        """Populate the GLViewWidget after its context is ready."""
         grid = gl.GLGridItem()
         grid.setSize(1000, 1000)
         grid.setSpacing(100, 100)
         self.gl_widget.addItem(grid)
-
         self._render_network()
 
     def _render_network(self):
