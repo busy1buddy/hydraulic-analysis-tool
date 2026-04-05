@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Interactive Driver Report</title>
+  <style>
+    body { font-family: monospace; background: #1e1e2e; color: #cdd6f4;
+           max-width: 1400px; margin: 0 auto; padding: 20px; }
+    h1 { color: #89b4fa; }
+    .summary { background: #313244; padding: 15px; border-radius: 4px; }
+    .step { border: 1px solid #313244; margin: 10px 0; padding: 12px;
+            border-radius: 4px; }
+    .pass { border-left: 4px solid #a6e3a1; }
+    .fail { border-left: 4px solid #f38ba8; }
+    .critical-fail { border-left: 4px solid #ff0000; background: #2d1b1b; }
+    img { max-width: 100%; border: 1px solid #45475a; margin-top: 8px;
+          display: block; }
+    .action { color: #89b4fa; font-weight: bold; font-size: 1.1em; }
+    .check { color: #f9e2af; margin-top: 4px; }
+    .result { font-size: 1.0em; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Hydraulic Analysis Tool -- Interactive Driver Report</h1>
+  <div class="summary">
+    <p>Generated: 2026-04-05 15:26:30</p>
+    <p>Total: 48 steps | PASS: 46 | FAIL: 2 |
+       CRITICAL: 0</p>
+  </div>
+  
+  <div class="step pass">
+    <div class="action">S01: App launches, default state</div>
+    <div class="check">Check: Window title contains version; 7 menus present</div>
+    <div class="result">PASS: title=&#x27;Hydraulic Analysis Tool — v2.9.0&#x27;, menus=7</div>
+    <img src="driver_screenshots/S01.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S02: File &gt; Open demo_network/network.inp</div>
+    <div class="check">Check: 10 junctions, 11 pipes loaded</div>
+    <div class="result">PASS: Loaded 10 junctions, 11 pipes</div>
+    <img src="driver_screenshots/S02.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S03: Click Fit button</div>
+    <div class="check">Check: Canvas autoRange applied</div>
+    <div class="result">PASS: viewRange: [[-286.80326530612246, 1286.8032653061225], [-403.52842648896296, 903.528426488963]]</div>
+    <img src="driver_screenshots/S03.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S04: Click Labels button</div>
+    <div class="check">Check: Labels toggled on</div>
+    <div class="result">PASS: labels_btn=True, _show_labels=True</div>
+    <img src="driver_screenshots/S04.png" loading="lazy" />
+  </div>
+  <div class="step fail">
+    <div class="action">S05: Select pipe P1</div>
+    <div class="check">Check: Properties panel has &gt;0 rows</div>
+    <div class="result">FAIL: properties rows: 0</div>
+    <img src="driver_screenshots/S05.png" loading="lazy" />
+  </div>
+  <div class="step fail">
+    <div class="action">S06: Select junction J1</div>
+    <div class="check">Check: Properties panel shows J1 data</div>
+    <div class="result">FAIL: properties rows: 0</div>
+    <img src="driver_screenshots/S06.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S07: Click Values button</div>
+    <div class="check">Check: Numeric overlay enabled</div>
+    <div class="result">PASS: values_btn=True, _show_values=True</div>
+    <img src="driver_screenshots/S07.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S08: Click Values button again</div>
+    <div class="check">Check: Overlay disabled</div>
+    <div class="result">PASS: values_btn=False</div>
+    <img src="driver_screenshots/S08.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S09: Press F5 (steady state)</div>
+    <div class="check">Check: Analysis completes, results dict populated</div>
+    <div class="result">PASS: results_keys=[&#x27;pressures&#x27;, &#x27;flows&#x27;, &#x27;compliance&#x27;]</div>
+    <img src="driver_screenshots/S09.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S10: Check Results tab after analysis</div>
+    <div class="check">Check: Results dock is visible tab</div>
+    <div class="result">PASS: results_dock visible=True, animation=True, dashboard=True</div>
+    <img src="driver_screenshots/S10.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S11: Verify Results table populated</div>
+    <div class="check">Check: node_results_table.rowCount() &gt; 0</div>
+    <div class="result">PASS: node_results rows=10</div>
+    <img src="driver_screenshots/S11.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S12: Set colour mode to &#x27;Pressure&#x27;</div>
+    <div class="check">Check: combo.currentText() == &#x27;Pressure&#x27;</div>
+    <div class="result">PASS: mode set to &#x27;Pressure&#x27;, got &#x27;Pressure&#x27;</div>
+    <img src="driver_screenshots/S12.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S13: Set colour mode to &#x27;Velocity&#x27;</div>
+    <div class="check">Check: combo.currentText() == &#x27;Velocity&#x27;</div>
+    <div class="result">PASS: mode set to &#x27;Velocity&#x27;, got &#x27;Velocity&#x27;</div>
+    <img src="driver_screenshots/S13.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S14: Set colour mode to &#x27;WSAA Compliance&#x27;</div>
+    <div class="check">Check: combo.currentText() == &#x27;WSAA Compliance&#x27;</div>
+    <div class="result">PASS: mode set to &#x27;WSAA Compliance&#x27;, got &#x27;WSAA Compliance&#x27;</div>
+    <img src="driver_screenshots/S14.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S15: Enable Probe mode</div>
+    <div class="check">Check: Probe mode flag set</div>
+    <div class="result">PASS: probe_btn=True, _probe_mode=True</div>
+    <img src="driver_screenshots/S15.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S16: Raise Dashboard tab</div>
+    <div class="check">Check: Dashboard widget alive</div>
+    <div class="result">PASS: dashboard widget present=True</div>
+    <img src="driver_screenshots/S16.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S17: Raise What-If tab</div>
+    <div class="check">Check: What-If dock active and tabified</div>
+    <div class="result">PASS: what_if visible=True, tabified with=[&#x27;scenario_dock&#x27;]</div>
+    <img src="driver_screenshots/S17.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S18: Set demand slider to 150%</div>
+    <div class="check">Check: Status label mentions 150%</div>
+    <div class="result">PASS: status: Updated: min pressure -24.8 m, max velocity 3.58 m/s (150% demand, 100% C, +0 m source)</div>
+    <img src="driver_screenshots/S18.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S19: Check canvas refreshed after What-If</div>
+    <div class="check">Check: _last_results populated</div>
+    <div class="result">PASS: min pressure at 150%: -24.8</div>
+    <img src="driver_screenshots/S19.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S20: Verify What-If status label</div>
+    <div class="check">Check: Status shows min pressure + max velocity</div>
+    <div class="result">PASS: status text: Updated: min pressure -24.8 m, max velocity 3.58 m/s (150% demand, 100% C, +0 m source)</div>
+    <img src="driver_screenshots/S20.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S21: Reset demand to 100%</div>
+    <div class="check">Check: Status mentions 100%</div>
+    <div class="result">PASS: status: Updated: min pressure 12.1 m, max velocity 2.39 m/s (100% demand, 100% C, +0 m source)</div>
+    <img src="driver_screenshots/S21.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S22: Verify pressures at 100%</div>
+    <div class="check">Check: Min pressure in normal range 10-20 m</div>
+    <div class="result">PASS: min pressure at 100%: 12.1 (expected 10-20 m)</div>
+    <img src="driver_screenshots/S22.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S23: File &gt; Open mining_slurry_line/network.inp</div>
+    <div class="check">Check: Mining network loaded</div>
+    <div class="result">PASS: mining network: 4 pipes</div>
+    <img src="driver_screenshots/S23.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S24: Open Analysis &gt; Slurry Parameters</div>
+    <div class="check">Check: Dialog becomes visible</div>
+    <div class="result">PASS: dialog visible=True, title=&#x27;Slurry Parameters (Bingham Plastic)&#x27;</div>
+    <img src="driver_screenshots/S24.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S25: Verify slurry dialog default params</div>
+    <div class="check">Check: tau_y=15, mu_p=0.05, rho=1800</div>
+    <div class="result">PASS: params={&#x27;yield_stress&#x27;: 15.0, &#x27;plastic_viscosity&#x27;: 0.05, &#x27;density&#x27;: 1800.0} (expected tau_y=15, mu_p=0.05, rho=1800)</div>
+    <img src="driver_screenshots/S25.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S26: Accept slurry parameters</div>
+    <div class="check">Check: Window._slurry_params persisted</div>
+    <div class="result">PASS: window params={&#x27;yield_stress&#x27;: 15.0, &#x27;plastic_viscosity&#x27;: 0.05, &#x27;density&#x27;: 1800.0}</div>
+    <img src="driver_screenshots/S26.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S27: Enable Analysis &gt; Slurry Mode</div>
+    <div class="check">Check: slurry_act is checked</div>
+    <div class="result">PASS: slurry_act=True</div>
+    <img src="driver_screenshots/S27.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S28: Run F5 in slurry mode</div>
+    <div class="check">Check: results[&#x27;slurry&#x27;] populated</div>
+    <div class="result">PASS: slurry keys in results: True, n_pipes=4</div>
+    <img src="driver_screenshots/S28.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S29: Check column header for slurry mode</div>
+    <div class="check">Check: &#x27;Headloss Slurry (m/km)&#x27; in headers</div>
+    <div class="result">PASS: headers=[&#x27;ID&#x27;, &#x27;Diameter (DN)&#x27;, &#x27;Length (m)&#x27;, &#x27;Velocity (m/s)&#x27;, &#x27;Headloss Slurry (m/km)&#x27;, &#x27;Regime&#x27;, &#x27;Re_B&#x27;]</div>
+    <img src="driver_screenshots/S29.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S30: CRITICAL: verify slurry headloss magnitude</div>
+    <div class="check">Check: At least one pipe &gt; 5 m/km slurry headloss</div>
+    <div class="result">PASS: max slurry headloss=24.1 m/km (pipe P1)</div>
+    <img src="driver_screenshots/S30.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S31: File &gt; Open demo_network (back from mining)</div>
+    <div class="check">Check: Demo network reloaded</div>
+    <div class="result">PASS: demo loaded, junctions=10</div>
+    <img src="driver_screenshots/S31.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S32: Press F5 for baseline</div>
+    <div class="check">Check: Analysis finished</div>
+    <div class="result">PASS: results: True</div>
+    <img src="driver_screenshots/S32.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S33: Generate DOCX report (via API)</div>
+    <div class="check">Check: DOCX file created in output/</div>
+    <div class="result">PASS: file exists: True</div>
+    <img src="driver_screenshots/S33.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S34: Verify DOCX file size &gt; 10KB</div>
+    <div class="check">Check: output/*.docx exists and &gt;10KB</div>
+    <div class="result">PASS: driver_test.docx: 38147 bytes (threshold 10KB)</div>
+    <img src="driver_screenshots/S34.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S35: Analysis &gt; Design Compliance Check</div>
+    <div class="check">Check: Method runs without exception</div>
+    <div class="result">PASS: design_compliance_check returned without raising</div>
+    <img src="driver_screenshots/S35.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S36: Close compliance dialog</div>
+    <div class="check">Check: Dialogs close cleanly</div>
+    <div class="result">PASS: found 0 dialogs, closed</div>
+    <img src="driver_screenshots/S36.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S37: File &gt; New (clear network)</div>
+    <div class="check">Check: wn set to None</div>
+    <div class="result">PASS: wn after new: None</div>
+    <img src="driver_screenshots/S37.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S38: Press F5 with no network</div>
+    <div class="check">Check: &#x27;No Network&#x27; warning shown</div>
+    <div class="result">PASS: dialogs captured: [(&#x27;warning&#x27;, &#x27;No Network&#x27;, &#x27;No network loaded. Use File &gt; Open (Ctrl+O) to load an .inp file.&#x27;)]</div>
+    <img src="driver_screenshots/S38.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S39: Open corrupted file</div>
+    <div class="check">Check: Loader raises on garbage</div>
+    <div class="result">PASS: raised=True (ENSyntaxError)</div>
+    <img src="driver_screenshots/S39.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S40: Verify Load Error dialog wiring</div>
+    <div class="check">Check: _on_open_inp wraps exception in QMessageBox.critical</div>
+    <div class="result">PASS: error dialog wiring present: True</div>
+    <img src="driver_screenshots/S40.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S41: Root cause analysis without results</div>
+    <div class="check">Check: No crash, graceful return</div>
+    <div class="result">PASS: rca returned: dict</div>
+    <img src="driver_screenshots/S41.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S42: Close any error dialogs</div>
+    <div class="check">Check: Dialogs dismissable</div>
+    <div class="result">PASS: closed 0 remaining dialogs</div>
+    <img src="driver_screenshots/S42.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S43: File &gt; Open demo for edit mode</div>
+    <div class="check">Check: Demo reloaded, J1 coords captured</div>
+    <div class="result">PASS: loaded, J1 at (200.0, 0.0)</div>
+    <img src="driver_screenshots/S43.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S44: F5 baseline analysis</div>
+    <div class="check">Check: Analysis completed</div>
+    <div class="result">PASS: baseline min p=12.1</div>
+    <img src="driver_screenshots/S44.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S45: Click Edit button</div>
+    <div class="check">Check: edit_btn is checked</div>
+    <div class="result">PASS: edit_btn=True</div>
+    <img src="driver_screenshots/S45.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S46: Move J1 by +50, +50</div>
+    <div class="check">Check: J1 coordinates updated</div>
+    <div class="result">PASS: J1 moved to (250.0, 50.0) (expected (250.0, 50.0))</div>
+    <img src="driver_screenshots/S46.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S47: Verify canvas rendered moved J1</div>
+    <div class="check">Check: canvas._node_positions[&#x27;J1&#x27;] changed</div>
+    <div class="result">PASS: canvas has J1 at (250.0, 50.0), orig was (200.0, 0.0)</div>
+    <img src="driver_screenshots/S47.png" loading="lazy" />
+  </div>
+  <div class="step pass">
+    <div class="action">S48: Undo move (restore J1)</div>
+    <div class="check">Check: J1 coordinates restored</div>
+    <div class="result">PASS: J1 restored to (200.0, 0.0)</div>
+    <img src="driver_screenshots/S48.png" loading="lazy" />
+  </div>
+</body>
+</html>

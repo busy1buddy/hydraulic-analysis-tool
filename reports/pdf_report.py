@@ -15,6 +15,46 @@ except ImportError:
     HAS_FPDF = False
 
 
+# Helvetica is a Latin-1 font and cannot render unicode glyphs like m², °,
+# μ, ≤, ≥, en/em-dashes that appear throughout the engineering data
+# (slurry rheology, WSAA labels, statistics). Sanitize every string we
+# write so the user never sees "Character X outside range of Helvetica".
+_UNICODE_MAP = {
+    '\u00b2': '^2',    # ²  (m², mm²)
+    '\u00b3': '^3',    # ³  (m³)
+    '\u00b0': ' deg',  # °
+    '\u00b5': 'u',     # µ (micro sign)
+    '\u03bc': 'u',     # μ (Greek mu)
+    '\u2264': '<=',    # ≤
+    '\u2265': '>=',    # ≥
+    '\u2013': '-',     # en-dash
+    '\u2014': '--',    # em-dash
+    '\u2022': '*',     # bullet
+    '\u00b1': '+/-',   # ±
+    '\u00d7': 'x',     # ×
+    '\u2192': '->',    # →
+    '\u2190': '<-',    # ←
+    '\u2026': '...',   # ellipsis
+    '\u00a0': ' ',     # nbsp
+    '\u2018': "'",     # ’
+    '\u2019': "'",     # ‘
+    '\u201c': '"',     # "
+    '\u201d': '"',     # "
+}
+
+
+def _sanitize(text):
+    """Replace unicode glyphs that Helvetica (Latin-1) can't render."""
+    if text is None:
+        return ''
+    s = str(text)
+    for u, ascii_equiv in _UNICODE_MAP.items():
+        if u in s:
+            s = s.replace(u, ascii_equiv)
+    # Drop anything still outside Latin-1
+    return s.encode('latin-1', 'replace').decode('latin-1')
+
+
 # =========================================================================
 # PUBLIC API
 # =========================================================================
@@ -55,7 +95,30 @@ class _EPANETPdf(FPDF if HAS_FPDF else object):
         if not HAS_FPDF:
             return
         super().__init__()
-        self._report_title = report_title
+        self._report_title = _sanitize(report_title)
+
+    # Override text-writing methods so callers don't have to sanitize
+    # every string they pass in. Helvetica cannot render unicode glyphs
+    # that appear freely in our hydraulic data (m^2, deg, mu, >=, --, etc).
+    def cell(self, *args, **kw):
+        if 'text' in kw:
+            kw['text'] = _sanitize(kw['text'])
+        elif 'txt' in kw:
+            kw['txt'] = _sanitize(kw['txt'])
+        elif len(args) >= 3:
+            args = list(args)
+            args[2] = _sanitize(args[2])
+        return super().cell(*args, **kw)
+
+    def multi_cell(self, *args, **kw):
+        if 'text' in kw:
+            kw['text'] = _sanitize(kw['text'])
+        elif 'txt' in kw:
+            kw['txt'] = _sanitize(kw['txt'])
+        elif len(args) >= 3:
+            args = list(args)
+            args[2] = _sanitize(args[2])
+        return super().multi_cell(*args, **kw)
 
     def header(self):
         self.set_font('Helvetica', 'B', 9)

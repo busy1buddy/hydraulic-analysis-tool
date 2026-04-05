@@ -135,6 +135,7 @@ class ComplianceDialog(QDialog):
 
         try:
             from fpdf import FPDF
+            from reports.pdf_report import _sanitize  # Latin-1 safe
 
             pdf = FPDF()
             pdf.add_page()
@@ -143,9 +144,9 @@ class ComplianceDialog(QDialog):
             pdf.ln(5)
 
             pdf.set_font('Helvetica', '', 10)
-            pdf.cell(0, 8, f"Network: {self.certificate['network_name']}", ln=True)
-            pdf.cell(0, 8, f"Date: {self.certificate['date']}", ln=True)
-            pdf.cell(0, 8, f"Software: v{self.certificate['software_version']}", ln=True)
+            pdf.cell(0, 8, _sanitize(f"Network: {self.certificate['network_name']}"), ln=True)
+            pdf.cell(0, 8, _sanitize(f"Date: {self.certificate['date']}"), ln=True)
+            pdf.cell(0, 8, _sanitize(f"Software: v{self.certificate['software_version']}"), ln=True)
             pdf.ln(5)
 
             # Checks table
@@ -165,10 +166,10 @@ class ComplianceDialog(QDialog):
                 else:
                     pdf.set_text_color(0, 0, 0)
 
-                pdf.cell(60, 8, check.get('check', ''), border=1)
-                pdf.cell(20, 8, status, border=1)
-                pdf.cell(50, 8, check.get('standard', ''), border=1)
-                pdf.cell(60, 8, check.get('details', '')[:40], border=1, ln=True)
+                pdf.cell(60, 8, _sanitize(check.get('check', '')), border=1)
+                pdf.cell(20, 8, _sanitize(status), border=1)
+                pdf.cell(50, 8, _sanitize(check.get('standard', '')), border=1)
+                pdf.cell(60, 8, _sanitize(check.get('details', ''))[:40], border=1, ln=True)
 
             pdf.set_text_color(0, 0, 0)
             pdf.ln(10)
@@ -176,14 +177,14 @@ class ComplianceDialog(QDialog):
             # Overall
             overall = self.certificate['overall_status']
             pdf.set_font('Helvetica', 'B', 14)
-            pdf.cell(0, 15, f"Overall Status: {overall}", ln=True, align='C')
+            pdf.cell(0, 15, _sanitize(f"Overall Status: {overall}"), ln=True, align='C')
 
             summary = self.certificate.get('summary', {})
             pdf.set_font('Helvetica', '', 10)
             pdf.cell(0, 8,
-                     f"Checks: {summary.get('total_checks', 0)} total, "
-                     f"{summary.get('passed', 0)} passed, "
-                     f"{summary.get('failed', 0)} failed",
+                     _sanitize(f"Checks: {summary.get('total_checks', 0)} total, "
+                               f"{summary.get('passed', 0)} passed, "
+                               f"{summary.get('failed', 0)} failed"),
                      ln=True, align='C')
 
             pdf.output(path)
