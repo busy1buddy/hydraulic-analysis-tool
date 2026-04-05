@@ -61,7 +61,7 @@ class AnalysisWorker(QThread):
                 self.progress.emit(60)
 
                 # Add slurry analysis for each pipe
-                from slurry_solver import bingham_headloss
+                from slurry_solver import bingham_plastic_headloss
                 slurry_results = {}
                 slurry_params = self.params.get('slurry', {})
                 tau_y = slurry_params.get('yield_stress', 10.0)
@@ -76,13 +76,13 @@ class AnalysisWorker(QThread):
                     Q_m3s = abs(avg_lps) / 1000
 
                     if Q_m3s > 0 and pipe.diameter > 0:
-                        slurry = bingham_headloss(
-                            Q_m3s=Q_m3s,
+                        slurry = bingham_plastic_headloss(
+                            flow_m3s=Q_m3s,
                             diameter_m=pipe.diameter,
                             length_m=pipe.length,
+                            density=density,
                             tau_y=tau_y,
                             mu_p=mu_p,
-                            density=density,
                             roughness_mm=0.1,
                         )
                         slurry_results[pid] = slurry
@@ -100,12 +100,24 @@ class AnalysisWorker(QThread):
         except Exception as e:
             # Map exceptions to engineer-friendly messages
             msg = str(e)
-            if 'convergence' in msg.lower() or 'infeasible' in msg.lower():
-                msg = "Solver did not converge — check network connectivity and boundary conditions."
-            elif 'no network' in msg.lower():
+            lower = msg.lower()
+            if 'error 200' in lower or 'errors in input file' in lower:
+                msg = ("EPANET refused the network file. Common causes:\n"
+                       "  - a pipe connects to a node that doesn't exist\n"
+                       "  - a junction has no elevation\n"
+                       "  - the [OPTIONS] block is missing Units/Headloss\n"
+                       "Open the .inp file in a text editor and check for typos.")
+            elif 'error 20' in lower or 'error 2' in lower:
+                # Other EPANET 2xx errors are input-file related
+                msg = f"EPANET rejected the input file:\n{msg}"
+            elif 'convergence' in lower or 'infeasible' in lower:
+                msg = ("Solver did not converge -- check network connectivity "
+                       "and boundary conditions.")
+            elif 'no network' in lower:
                 msg = "No network loaded. Open a .inp file first."
-            elif 'negative' in msg.lower() or 'sqrt' in msg.lower():
-                msg = "Numerical instability — try adjusting simulation parameters or simplifying pump curves."
+            elif 'negative' in lower or 'sqrt' in lower:
+                msg = ("Numerical instability -- try adjusting simulation "
+                       "parameters or simplifying pump curves.")
             else:
                 msg = f"Analysis failed: {msg}"
             self.error.emit(msg)

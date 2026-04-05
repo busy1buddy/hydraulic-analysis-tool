@@ -75,6 +75,11 @@ class MainWindow(QMainWindow):
         # Enable drag-and-drop of .inp files onto the main window
         self.setAcceptDrops(True)
 
+        # NOTE: _restore_session() is NOT called here. The production entry
+        # point (main_app.py) calls it after constructing the window so the
+        # feature works for end users, while tests that instantiate
+        # MainWindow directly start with a clean empty state.
+
     # =====================================================================
     # MENUS
     # =====================================================================

@@ -89,7 +89,8 @@ def main():
 
     window = MainWindow()
 
-    # If a file was passed as argument, open it
+    # If a file was passed as argument, open it. Otherwise restore the
+    # last-opened file from saved preferences (session persistence).
     if len(sys.argv) > 1:
         filepath = sys.argv[1]
         if os.path.isfile(filepath) and filepath.endswith('.inp'):
@@ -98,9 +99,12 @@ def main():
             window._populate_explorer()
             window._update_status_bar()
             window.canvas.set_api(window.api)
+            window.what_if_panel.set_api(window.api)
             window.setWindowTitle(
                 f"Hydraulic Analysis Tool — {os.path.basename(filepath)}"
             )
+    else:
+        window._restore_session()
 
     window.show()
     sys.exit(app.exec())
