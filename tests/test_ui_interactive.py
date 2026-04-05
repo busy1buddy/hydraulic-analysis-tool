@@ -577,6 +577,56 @@ class TestSlurryParameterValidation:
         window.slurry_act.setChecked(False)
         app.processEvents()
 
+    def test_pipe_results_table_shows_slurry_headloss_not_water(self, window, app):
+        """Regression: the pipe results table used to show water
+        Hazen-Williams headloss even when slurry mode was active, a
+        ~10x accuracy bug. Verify the slurry value is displayed."""
+        # Build a synthetic results dict with BOTH water flows and slurry data
+        results = window.api.run_steady_state(save_plot=False)
+        # Pick first pipe with non-trivial flow
+        pid = None
+        for p, f in results['flows'].items():
+            if abs(f.get('avg_lps', 0)) > 0.1:
+                pid = p
+                break
+        assert pid is not None, "No pipe with flow found in demo network"
+        pipe = window.api.get_link(pid)
+        Q_m3s = abs(results['flows'][pid]['avg_lps']) / 1000
+        # Compute a deliberately-large slurry headloss
+        slurry = bingham_plastic_headloss(
+            flow_m3s=Q_m3s, diameter_m=pipe.diameter, length_m=pipe.length,
+            density=1800, tau_y=15, mu_p=0.05, roughness_mm=0.1)
+        results['slurry'] = {pid: slurry}
+        window._populate_pipe_results(results)
+        app.processEvents()
+
+        # Find the row
+        hdr = [window.pipe_results_table.horizontalHeaderItem(i).text()
+               for i in range(window.pipe_results_table.columnCount())]
+        assert "Headloss Slurry (m/km)" in hdr, \
+            f"Header missing slurry label: {hdr}"
+        assert "Regime" in hdr, f"Header missing Regime col: {hdr}"
+        assert "Re_B" in hdr, f"Header missing Re_B col: {hdr}"
+        hl_col = hdr.index("Headloss Slurry (m/km)")
+        row = None
+        for r in range(window.pipe_results_table.rowCount()):
+            if window.pipe_results_table.item(r, 0).text() == pid:
+                row = r
+                break
+        assert row is not None
+        displayed = float(window.pipe_results_table.item(row, hl_col).text())
+        expected_per_km = slurry['headloss_m'] / pipe.length * 1000
+        assert abs(displayed - expected_per_km) < 0.5, \
+            f"Displayed {displayed} != expected {expected_per_km:.1f} m/km"
+
+        # And water-only mode reverts to 5 columns with "Headloss (m/km)"
+        water_only = {'flows': results['flows'], 'compliance': []}
+        window._populate_pipe_results(water_only)
+        app.processEvents()
+        assert window.pipe_results_table.columnCount() == 5
+        assert window.pipe_results_table.horizontalHeaderItem(4).text() == \
+            "Headloss (m/km)"
+
 
 # =========================================================================
 # Area 7 — Report generation

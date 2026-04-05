@@ -1330,8 +1330,32 @@ class MainWindow(QMainWindow):
                 self.node_results_table.setItem(row, col, item)
 
     def _populate_pipe_results(self, results):
-        """Fill the pipe results table."""
+        """Fill the pipe results table.
+
+        In slurry mode (results contains 'slurry'), the headloss column
+        shows Bingham-plastic headloss from slurry_solver -- NOT the
+        Hazen-Williams water value -- and the table grows two columns
+        (Regime, Re_B). Previously the table always showed the water
+        headloss, which was a ~10x accuracy bug for slurry users.
+        """
         flows = results.get('flows', {})
+        slurry_data = results.get('slurry')  # {pid: {headloss_m, regime, reynolds, ...}} or None
+        is_slurry = bool(slurry_data)
+
+        # Reconfigure columns depending on mode
+        if is_slurry:
+            hdr = ["ID", "Diameter (DN)", "Length (m)", "Velocity (m/s)",
+                   "Headloss Slurry (m/km)", "Regime", "Re_B"]
+        else:
+            hdr = ["ID", "Diameter (DN)", "Length (m)", "Velocity (m/s)",
+                   "Headloss (m/km)"]
+        if self.pipe_results_table.columnCount() != len(hdr):
+            self.pipe_results_table.setColumnCount(len(hdr))
+            for c in range(len(hdr) - 1):
+                self.pipe_results_table.horizontalHeader().setSectionResizeMode(
+                    c, QHeaderView.ResizeMode.ResizeToContents)
+            self.pipe_results_table.horizontalHeader().setStretchLastSection(True)
+        self.pipe_results_table.setHorizontalHeaderLabels(hdr)
         self.pipe_results_table.setRowCount(0)
 
         for pid, fdata in flows.items():
@@ -1342,27 +1366,44 @@ class MainWindow(QMainWindow):
                 pipe = self.api.get_link(pid)
                 dn = f"{int(pipe.diameter * 1000)} mm"
                 length = f"{pipe.length:.1f}"
+                pipe_length = pipe.length
+                pipe_diameter = pipe.diameter
+                pipe_roughness = pipe.roughness
             except Exception:
                 dn = "--"
                 length = "--"
+                pipe_length = 0
+                pipe_diameter = 0
+                pipe_roughness = 130
 
             v = fdata.get('max_velocity_ms', 0)
-            # Headloss per km approximation
             avg_lps = abs(fdata.get('avg_lps', 0))
-            try:
-                pipe = self.api.get_link(pid)
-                if pipe.length > 0 and pipe.diameter > 0:
-                    # Hazen-Williams headloss per km
-                    Q_m3s = avg_lps / 1000
-                    hl_per_m = (10.67 * Q_m3s ** 1.852) / (
-                        pipe.roughness ** 1.852 * pipe.diameter ** 4.87)
-                    hl_per_km = hl_per_m * 1000
+
+            if is_slurry and pid in slurry_data:
+                # Use slurry-solver headloss
+                sd = slurry_data[pid]
+                if pipe_length > 0:
+                    hl_per_km = sd.get('headloss_m', 0) / pipe_length * 1000
                 else:
                     hl_per_km = 0
-            except Exception:
-                hl_per_km = 0
+                regime = sd.get('regime', '--')
+                re_b = sd.get('reynolds', 0)
+                items = [pid, dn, length, f"{v:.2f}",
+                         f"{hl_per_km:.1f}", regime, f"{re_b:.0f}"]
+            else:
+                # Hazen-Williams water headloss per km
+                try:
+                    if pipe_length > 0 and pipe_diameter > 0:
+                        Q_m3s = avg_lps / 1000
+                        hl_per_m = (10.67 * Q_m3s ** 1.852) / (
+                            pipe_roughness ** 1.852 * pipe_diameter ** 4.87)
+                        hl_per_km = hl_per_m * 1000
+                    else:
+                        hl_per_km = 0
+                except Exception:
+                    hl_per_km = 0
+                items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}"]
 
-            items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}"]
             for col, val in enumerate(items):
                 item = QTableWidgetItem(str(val))
                 # Flag velocity > 2.0 m/s — WSAA WSA 03-2011
