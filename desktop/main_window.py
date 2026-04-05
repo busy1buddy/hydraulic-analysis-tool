@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self._last_results = None
         self._probe_tooltip = None  # Created lazily
 
-        self.setWindowTitle("Hydraulic Analysis Tool")
+        self.setWindowTitle("Hydraulic Analysis Tool — v2.9.0")
         self.setMinimumSize(QSize(1200, 800))
         self.resize(1400, 900)
 
@@ -65,6 +65,11 @@ class MainWindow(QMainWindow):
         self._setup_central_widget()
         self._setup_dock_panels()
         self._setup_status_bar()
+
+        # Initial prompt — tells the user what to do first
+        self.status_bar.showMessage(
+            "Ready — open a network (File > Open, Ctrl+O) or "
+            "Help > Run Demo to start.", 0)
 
         # Enable drag-and-drop of .inp files onto the main window
         self.setAcceptDrops(True)
@@ -597,7 +602,7 @@ class MainWindow(QMainWindow):
         self.pipe_results_table.setRowCount(0)
         self.canvas.set_api(None)  # clear canvas
         self._update_status_bar()
-        self.setWindowTitle("Hydraulic Analysis Tool")
+        self.setWindowTitle("Hydraulic Analysis Tool — v2.9.0")
 
     def _on_open_inp(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -612,7 +617,7 @@ class MainWindow(QMainWindow):
             self._current_file = path
             self._populate_explorer()
             self._update_status_bar()
-            self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
+            self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
             self.canvas.set_api(self.api)
             self.dashboard_widget.update_dashboard(self.api)
         except Exception as e:
@@ -654,7 +659,7 @@ class MainWindow(QMainWindow):
             with open(path, 'w') as f:
                 json.dump(project, f, indent=2)
             self.status_bar.showMessage(f"Saved to {path}", 3000)
-            self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
+            self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
         except Exception as e:
             QMessageBox.critical(self, "Save Error", str(e))
 
@@ -1523,7 +1528,7 @@ class MainWindow(QMainWindow):
                 self._update_status_bar()
                 self.canvas.set_api(self.api)
                 self.setWindowTitle(
-                    f"Hydraulic Analysis Tool — {os.path.basename(inp)}")
+                    f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(inp)}")
                 QMessageBox.information(self, "Import Complete",
                     f"Loaded network from bundle:\n{os.path.basename(inp)}")
             else:
@@ -1735,7 +1740,7 @@ class MainWindow(QMainWindow):
             self._current_file = path
             self._populate_explorer()
             self._update_status_bar()
-            self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
+            self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
             self.canvas.set_api(self.api)
         except Exception as e:
             QMessageBox.critical(self, "Load Error",
@@ -1790,7 +1795,7 @@ class MainWindow(QMainWindow):
                     self._current_file = path
                     self._populate_explorer()
                     self._update_status_bar()
-                    self.setWindowTitle(f"Hydraulic Analysis Tool — {os.path.basename(path)}")
+                    self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
                     self.canvas.set_api(self.api)
                     event.acceptProposedAction()
                     self.status_bar.showMessage(f"Loaded {os.path.basename(path)}", 3000)
@@ -1867,7 +1872,7 @@ class MainWindow(QMainWindow):
                 self._update_status_bar()
                 self.canvas.set_api(self.api)
                 self.setWindowTitle(
-                    f"Hydraulic Analysis Tool — {os.path.basename(last_file)}")
+                    f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(last_file)}")
             except Exception:
                 pass
         w = prefs.get('window_width')

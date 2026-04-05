@@ -85,7 +85,7 @@ consultant a week."*
 
 1. From the console:
    ```python
-   api.find_best_upgrade().top_5
+   api.find_best_upgrade()['top_5']
    ```
 
 2. Output (instant):

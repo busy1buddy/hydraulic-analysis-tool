@@ -1,6 +1,21 @@
 # Blockers — Items Requiring Human Judgment
 
-**Last updated:** 2026-04-04 (v1.3.0 + I-series autonomous development)
+**Last updated:** 2026-04-05 (v3.0.0-rc1 visual QA)
+
+## Visual QA Items Needing Human Session (v3.0.0 release)
+
+| Item | Why Human Needed | Suggested Action |
+|------|-----------------|------------------|
+| Layout cramping at 1200×800 min size | Headless tests can't verify visual overlap | 30-min session resizing the window, checking dock panels |
+| Colour-blind accessibility of WSAA pass/fail | Red/green-only may fail WCAG contrast | Run through a colour-blind simulator |
+| DPI scaling on 4K monitors | Unknown behaviour at 150%/200% system scaling | Launch on a 4K display |
+| Slurry mode discoverability | Only in Analysis menu; no visible toolbar indicator when active | Consider a status-bar slurry indicator |
+| Run Demo visible progress | 4-step QTimer chain shows only status-bar text during 1.5 s run | Consider a progress dialog with step counter |
+| Status bar `--` placeholders pre-load | "Nodes: 0, Pipes: 0, WSAA: --" looks unfinished on launch | Consider `(load network)` or hide until loaded |
+
+See `docs/VISUAL_QA.md` for the full 10-step walkthrough results.
+
+---
 
 ## Active Items Needing Human Decision
 

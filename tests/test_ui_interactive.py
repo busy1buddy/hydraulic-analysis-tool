@@ -164,7 +164,7 @@ class TestMenuCompleteness:
         assert window.explorer_tree.topLevelItemCount() == 0
         assert window.node_results_table.rowCount() == 0
         assert window.pipe_results_table.rowCount() == 0
-        assert "Hydraulic Analysis Tool" == window.windowTitle()
+        assert "Hydraulic Analysis Tool" in window.windowTitle()
 
     def test_view_toggle_properties(self, window, app):
         window.toggle_properties_act.setChecked(False)
