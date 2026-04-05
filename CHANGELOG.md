@@ -2,6 +2,108 @@
 
 All notable changes to the Hydraulic Analysis Tool.
 
+## [v2.6.1] — 2026-04-05
+
+### Changed
+- **Regulatory hardening** (reviewer HIGH findings): safety case now
+  includes `network_sha256` audit hash, `issued_utc_iso8601` timestamp,
+  `is_digitally_signed` flag and explicit "visual only" disclaimer
+- `WhatIfPanel.restore_baseline()` on close — sliders no longer leave
+  the underlying network mutated
+- `root_cause_analysis` cost attribution: `cost_source`,
+  `cost_source_edition`, `uncertainty_pct`, and defensibility guidance
+  added to every output
+
+## [v2.6.0] — 2026-04-05
+
+### Added
+- **I4 What-If Sensitivity Panel** — live sliders for demand (50-200%),
+  roughness (50-150%), source head (±20 m) with 150 ms debounced
+  re-analysis and `analysis_updated` signal
+
+## [v2.5.0] — 2026-04-05
+
+### Added
+- **R2 Safety Case Report dialog** — Analysis menu, engineer/project
+  fields, wave speed / valve closure / PN rating inputs, verdict
+  preview, JSON export with signature block
+- **R3 Demo network** (`tutorials/demo_network/network.inp`) —
+  10 junctions with deliberate violations
+- **R4 Help > Run Demo** — one-click guided tour: load → analyse →
+  violations → root cause popup
+- **R5 `export_geojson()`** — Point + LineString features with
+  pressure/velocity/WSAA status properties (no shapely dependency)
+- **R6 `validate_network()`** — isolated nodes, zero-length/diameter
+  pipes, disconnected subgraphs, negative elevations, missing source,
+  duplicate IDs, pumps missing curves
+- **I3 Demand pattern wizard** — `generate_demand_pattern` and
+  `apply_demand_pattern` for WSAA residential/commercial/industrial
+- **I5 `root_cause_analysis()`** — traces low-pressure and
+  high-velocity violations to limiting pipes, ranks upsize vs parallel
+  main fixes with Rawlinsons AUD unit costs
+
+## [v2.4.0] — 2026-04-05
+
+### Added / Changed
+- **Q1 Actionable error messages** — 48 `return {'error': ...}`
+  sites updated with `Fix:` guidance
+- **Q2-Q4 UI polish** — tooltips on colourmap/animation/canvas
+  widgets, status bar always populated, numeric labels carry units
+- **Q5 Keyboard navigation tests** — Escape closes dialogs cleanly
+
+## [v2.3.1] — 2026-04-05
+
+### Added
+- **P1 `tests/test_workflows.py`** — four end-to-end workflows
+  (utility morning check <30 s, mining slurry design <60 s,
+  rehabilitation planning <15 s, new network from Excel <10 s)
+- **P2 `tests/test_regression.py`** — 10 tutorial networks with
+  baselined metrics; test fails on >5% drift
+- **P3 `tests/test_memory.py`** — 20 sequential loads must stay
+  within +50 MB RSS
+- **P4 `tests/test_api_contract.py`** — auto-discovers all public
+  methods, enforces docstring + graceful `wn=None` handling
+- **P5 `tests/test_ui_smoke.py`** — offscreen MainWindow smoke
+
+## [v2.3.0] — 2026-04-05
+
+### Added
+- **O8 `portfolio_analysis()`** — compare N networks with grade
+  distribution across the portfolio
+- **O9 Engineering Knowledge Base** — 12 canonical topics with
+  formulas, units, standards and references
+- **O10 `performance_profile()`** — size categorisation and
+  skeletonisation recommendations for large networks
+
+## [v2.2.1] — 2026-04-05
+
+### Changed
+- **O2 Climate projection** includes DOI-traceable scenario metadata
+  (CSIRO/BoM 2015 + IPCC AR6 WG1)
+- **O7 Lamont break forecast** returns 95% CI bounds and liability
+  caveats (Kleiner & Rajani 2001)
+- **`tests/test_kb_fidelity.py`** cross-checks KB formulas against
+  active solvers within 2%
+
+## [v2.2.0] — 2026-04-05
+
+### Added
+- **O1 `explain_analysis()`** — graduate-engineer tutorial mode
+- **O2 `climate_demand_projection()`** — CSIRO/IPCC RCP scenarios
+- **O3 `water_security_analysis()`** — USEPA source reachability
+- **O4 `operations_dashboard()`** — operator snapshot with
+  traffic-light status
+- **O5 `generate_network_documentation()`** — Markdown design basis
+- **O6 `network_health_summary()`** — one-paragraph prose grade
+- **O7 `lamont_break_forecast()`** — exponential break rate model
+
+## [v2.1.0] — 2026-04-05
+
+### Changed
+- **Architecture split** — monolithic `epanet_api.py` (5919 lines)
+  refactored into a 12-mixin package while preserving the public
+  interface (`from epanet_api import HydraulicAPI`)
+
 ## [v2.0.0] — 2026-04-04
 
 ### Added

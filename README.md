@@ -1,10 +1,28 @@
-# Hydraulic Analysis Tool v2.0.0
+# Hydraulic Analysis Tool v2.6.1
 
 Professional hydraulic analysis desktop application for Australian water supply and mining engineers. Combines EPANET steady-state, TSNet transient, and non-Newtonian slurry solvers with WSAA compliance checking, network visualisation, and automated reporting.
 
 Built to rival PumpSim ($15K), AFT Fathom ($10K), and WaterGEMS ($15K) — at zero cost.
 
-**833 automated tests | 10 tutorial networks | Australian standards built-in**
+**1012 automated tests | 11 tutorial networks | Australian standards built-in**
+
+## What's New in v2.5-v2.6
+
+- **Safety Case Report** — formal regulatory output with Joukowsky
+  surge, water hammer 2L/a, optional slurry settling, SHA-256 audit
+  hash, signature block disclaimer. `Analysis > Safety Case Report...`
+- **Root Cause Analysis** — traces WSAA violations to limiting pipes,
+  ranks fixes (upsize vs parallel main) with AUD unit costs
+- **Live Sensitivity Panel** — sliders for demand, roughness, source
+  head with 150 ms debounced re-analysis
+- **Network Validator** — pre-analysis integrity check for isolated
+  nodes, disconnected subgraphs, missing sources
+- **GIS Export** — GeoJSON with WSAA status properties
+- **Demand Pattern Wizard** — WSAA diurnal curves
+- **Help > Run Demo** — one-click guided tour
+- **Pump Efficiency Analysis** — annual energy cost estimates
+- **Automated Sensitivity Report** — ranked parameter drivers
+- **Emergency Pipe Burst** — rapid 2am ops assessment with actions
 
 ## Quick Start
 

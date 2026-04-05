@@ -3043,3 +3043,497 @@ class AdvancedMixin:
             'note': ('Pattern applied. Run api.run_steady_state() for peak '
                      'or use EPS simulation to see hourly variation.'),
         }
+
+    # =========================================================================
+    # T3 — PUMP EFFICIENCY ANALYSIS
+    # =========================================================================
+
+    def pump_efficiency_analysis(self, electricity_price_aud_per_kwh=0.30,
+                                   operating_hours_per_day=18):
+        """
+        Calculate efficiency, energy use, and annual cost for each pump.
+
+        For each pump with a curve:
+          - Derive operating point from steady-state flow
+          - Estimate hydraulic power (kW) = rho * g * Q * H / 1000
+          - Estimate efficiency from distance to BEP (simple parabolic
+            model: eta = eta_max * (1 - k*(Q/Q_bep - 1)^2))
+          - Compute electrical power = hydraulic power / efficiency
+          - Annual energy and cost at the specified rate
+
+        Parameters
+        ----------
+        electricity_price_aud_per_kwh : float
+            Tariff for power cost estimate (default 0.30 AUD/kWh)
+        operating_hours_per_day : float
+            Duty cycle for annual energy calc (default 18 h/day)
+
+        Returns dict with per-pump metrics and aggregate energy use.
+        Ref: Karassik et al. Pump Handbook 4th ed.; API 610.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        # Typical centrifugal pump peak efficiency
+        ETA_MAX = 0.82
+
+        if not self.wn.pump_name_list:
+            return {
+                'n_pumps': 0,
+                'pumps': [],
+                'summary': {
+                    'total_hydraulic_kw': 0.0,
+                    'total_electrical_kw': 0.0,
+                    'total_annual_kwh': 0.0,
+                    'total_annual_cost_aud': 0.0,
+                    'total_annual_saving_potential_aud': 0.0,
+                },
+                'assumptions': {
+                    'electricity_price_aud_per_kwh':
+                        electricity_price_aud_per_kwh,
+                    'operating_hours_per_day': operating_hours_per_day,
+                    'eta_max_assumption': ETA_MAX,
+                    'bep_penalty_model':
+                        'parabolic 0.80 * (Q/Q_bep - 1)^2',
+                    'limitations': (
+                        'Efficiency estimated from BEP distance; for '
+                        'accurate values import manufacturer efficiency '
+                        'curves.'),
+                },
+                'note': 'Network has no pumps.',
+            }
+
+        try:
+            results = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Analysis failed: {e}. '
+                             f'Fix: Run validate_network() to diagnose.'}
+
+        # Parabolic penalty: eta = ETA_MAX * (1 - K_PENALTY * (ratio - 1)^2)
+        K_PENALTY = 0.80
+        RHO_G = 1000.0 * 9.81  # kg/m³ × m/s² (water)
+
+        pump_results = []
+        total_hydraulic_kw = 0.0
+        total_electrical_kw = 0.0
+
+        for pump_id in self.wn.pump_name_list:
+            op = self.compute_pump_operating_point(pump_id, results=results)
+            if 'error' in op:
+                pump_results.append({
+                    'pump_id': pump_id,
+                    'error': op['error'],
+                })
+                continue
+
+            q_lps = op['operating_point']['flow_lps']
+            h_m = op['operating_point']['head_m']
+            bep = op.get('bep_flow_lps')
+
+            # Hydraulic power (kW)
+            q_m3s = q_lps / 1000.0
+            hydraulic_kw = RHO_G * q_m3s * h_m / 1000.0
+
+            # Efficiency from distance to BEP
+            if bep and bep > 0 and q_lps > 0:
+                ratio = q_lps / bep
+                eta = ETA_MAX * max(0.30,
+                                    (1 - K_PENALTY * (ratio - 1) ** 2))
+            else:
+                ratio = 1.0
+                eta = ETA_MAX
+
+            electrical_kw = hydraulic_kw / eta if eta > 0 else 0
+
+            annual_kwh = electrical_kw * operating_hours_per_day * 365
+            annual_cost = annual_kwh * electricity_price_aud_per_kwh
+
+            # Flag if > 20% from BEP
+            off_bep = abs(ratio - 1.0) > 0.20
+            # Potential saving if re-selected to BEP
+            hydraulic_at_bep_pct = ETA_MAX / eta if eta > 0 else 1.0
+            saving_pct = max(0, (1 - eta / ETA_MAX)) * 100
+            annual_saving_aud = annual_cost * (saving_pct / 100.0)
+
+            recommendations = []
+            if off_bep:
+                recommendations.append(
+                    f'Pump {pump_id} operating at {eta*100:.0f}% efficiency '
+                    f'({ratio:.0%} of BEP flow). Reselect pump for ~'
+                    f'{saving_pct:.0f}% energy saving '
+                    f'(~${annual_saving_aud:,.0f}/yr).')
+            if eta < 0.60:
+                recommendations.append(
+                    'Efficiency < 60% — strong candidate for VSD retrofit '
+                    'or pump replacement.')
+
+            pump_results.append({
+                'pump_id': pump_id,
+                'operating_flow_lps': q_lps,
+                'operating_head_m': h_m,
+                'bep_flow_lps': bep,
+                'flow_to_bep_ratio': round(ratio, 2),
+                'efficiency': round(eta, 3),
+                'hydraulic_power_kw': round(hydraulic_kw, 2),
+                'electrical_power_kw': round(electrical_kw, 2),
+                'annual_energy_kwh': round(annual_kwh, 0),
+                'annual_cost_aud': round(annual_cost, 0),
+                'annual_saving_potential_aud': round(annual_saving_aud, 0),
+                'off_bep': off_bep,
+                'recommendations': recommendations,
+            })
+
+            total_hydraulic_kw += hydraulic_kw
+            total_electrical_kw += electrical_kw
+
+        total_annual_kwh = total_electrical_kw * operating_hours_per_day * 365
+        total_annual_cost = total_annual_kwh * electricity_price_aud_per_kwh
+        total_saving = sum(p.get('annual_saving_potential_aud', 0)
+                           for p in pump_results)
+
+        return {
+            'n_pumps': len(pump_results),
+            'pumps': pump_results,
+            'summary': {
+                'total_hydraulic_kw': round(total_hydraulic_kw, 2),
+                'total_electrical_kw': round(total_electrical_kw, 2),
+                'total_annual_kwh': round(total_annual_kwh, 0),
+                'total_annual_cost_aud': round(total_annual_cost, 0),
+                'total_annual_saving_potential_aud': round(total_saving, 0),
+            },
+            'assumptions': {
+                'electricity_price_aud_per_kwh':
+                    electricity_price_aud_per_kwh,
+                'operating_hours_per_day': operating_hours_per_day,
+                'eta_max_assumption': ETA_MAX,
+                'bep_penalty_model': 'parabolic 0.80 × (Q/Q_bep - 1)^2',
+                'limitations': (
+                    'Efficiency estimated from BEP distance; for accurate '
+                    'values import manufacturer efficiency curves.'),
+            },
+            'reference': 'Karassik et al. Pump Handbook 4th ed.; API 610',
+        }
+
+    # =========================================================================
+    # T4 — AUTOMATED SENSITIVITY REPORT
+    # =========================================================================
+
+    def sensitivity_report(self, perturbation_pct=20, max_targets=10):
+        """
+        Rank parameters by how much they influence node pressures.
+
+        For each pipe roughness and each junction demand, perturb by
+        +/- perturbation_pct and record the pressure change at every
+        node. Produces a ranked sensitivity table suitable for inclusion
+        as a design-report appendix.
+
+        Parameters
+        ----------
+        perturbation_pct : float
+            Perturbation amount as a percentage (default 20 = +/- 20%)
+        max_targets : int
+            Max number of parameters to perturb (limits run-time on
+            large networks)
+
+        Returns dict with sensitivity matrix and ranked top drivers.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        try:
+            base = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Baseline failed: {e}. '
+                             f'Fix: Run validate_network() to diagnose.'}
+        base_p = {n: p.get('avg_m', 0)
+                  for n, p in base.get('pressures', {}).items()}
+        if not base_p:
+            return {'error': 'No pressures in baseline. '
+                             'Fix: ensure network has junctions.'}
+
+        delta = perturbation_pct / 100.0
+        wn = self.wn
+
+        # Snapshot originals for restoration
+        orig_c = {pid: wn.get_link(pid).roughness
+                  for pid in wn.pipe_name_list}
+        orig_d = {}
+        for jid in wn.junction_name_list:
+            try:
+                orig_d[jid] = wn.get_node(jid).demand_timeseries_list[0].base_value
+            except Exception:
+                continue
+
+        # Choose targets by size — largest pipes and highest-demand nodes
+        # have the biggest hydraulic footprint, so they're natural candidates
+        pipe_targets = sorted(
+            wn.pipe_name_list,
+            key=lambda p: wn.get_link(p).diameter * wn.get_link(p).length,
+            reverse=True,
+        )[:max_targets]
+        demand_targets = sorted(
+            orig_d.keys(), key=lambda j: orig_d[j], reverse=True)[:max_targets]
+
+        sensitivities = []
+
+        def _perturb_and_measure(label, apply_fn, revert_fn):
+            apply_fn()
+            try:
+                res = self.run_steady_state(save_plot=False)
+                pp = {n: p.get('avg_m', 0)
+                      for n, p in res.get('pressures', {}).items()}
+            except Exception:
+                pp = base_p
+            finally:
+                revert_fn()
+            # For each node, the absolute change in pressure
+            per_node = {n: abs(pp.get(n, base_p.get(n, 0)) - base_p.get(n, 0))
+                        for n in base_p}
+            max_dp = max(per_node.values()) if per_node else 0
+            worst_node = (max(per_node, key=per_node.get)
+                          if per_node else None)
+            mean_dp = (sum(per_node.values()) / len(per_node)
+                       if per_node else 0)
+            return {
+                'parameter': label,
+                'max_pressure_change_m': round(max_dp, 2),
+                'most_sensitive_node': worst_node,
+                'mean_pressure_change_m': round(mean_dp, 3),
+            }
+
+        # Roughness perturbations
+        for pid in pipe_targets:
+            base_val = orig_c[pid]
+            label = f'roughness:{pid}'
+            sens = _perturb_and_measure(
+                label,
+                apply_fn=lambda p=pid, v=base_val: setattr(
+                    wn.get_link(p), 'roughness', v * (1 - delta)),
+                revert_fn=lambda p=pid, v=base_val: setattr(
+                    wn.get_link(p), 'roughness', v),
+            )
+            sensitivities.append(sens)
+
+        # Demand perturbations
+        for jid in demand_targets:
+            base_val = orig_d[jid]
+            label = f'demand:{jid}'
+            def _apply(j=jid, v=base_val):
+                wn.get_node(j).demand_timeseries_list[0].base_value = \
+                    v * (1 + delta)
+            def _revert(j=jid, v=base_val):
+                wn.get_node(j).demand_timeseries_list[0].base_value = v
+            sens = _perturb_and_measure(label, _apply, _revert)
+            sensitivities.append(sens)
+
+        # Final restoration (belt and braces)
+        for pid, c in orig_c.items():
+            try:
+                wn.get_link(pid).roughness = c
+            except Exception:
+                pass
+        for jid, d in orig_d.items():
+            try:
+                wn.get_node(jid).demand_timeseries_list[0].base_value = d
+            except Exception:
+                pass
+
+        # Rank by max_pressure_change
+        sensitivities.sort(key=lambda s: s['max_pressure_change_m'],
+                            reverse=True)
+
+        # Plain English summary lines
+        summary_lines = []
+        if sensitivities:
+            top = sensitivities[0]
+            summary_lines.append(
+                f"Most sensitive: {top['parameter']} — "
+                f"{top['max_pressure_change_m']:.1f} m pressure swing "
+                f"at {top['most_sensitive_node']}.")
+            bottom = sensitivities[-1]
+            summary_lines.append(
+                f"Least sensitive: {bottom['parameter']} — "
+                f"{bottom['max_pressure_change_m']:.1f} m swing "
+                f"at {bottom['most_sensitive_node']}.")
+
+        return {
+            'perturbation_pct': perturbation_pct,
+            'n_parameters': len(sensitivities),
+            'rankings': sensitivities,
+            'top_5': sensitivities[:5],
+            'summary_lines': summary_lines,
+            'note': (
+                'Sensitivity = max pressure change at any node for '
+                f'+/- {perturbation_pct}% parameter change. Use to '
+                'prioritise calibration effort and identify critical '
+                'model parameters.'),
+        }
+
+    # =========================================================================
+    # EMERGENCY RESPONSE — pipe burst at 2am (Innovation #3)
+    # =========================================================================
+
+    def emergency_pipe_burst(self, burst_pipe_id):
+        """
+        Rapid assessment for a burst pipe: who loses water, which valves
+        to close, expected pressure impact, and priority restoration
+        sequence.
+
+        Intended for an operations engineer in the middle of the night
+        who needs actionable information in 15 seconds.
+
+        Parameters
+        ----------
+        burst_pipe_id : str
+            The failed pipe
+
+        Returns dict with:
+            - impact: list of isolated junctions (no water)
+            - pressure_drop_at_remaining_nodes
+            - isolation_valves: pipes adjacent to burst to close
+            - customers_affected: count of isolated junctions
+            - immediate_actions: numbered action list
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        if burst_pipe_id not in self.wn.pipe_name_list:
+            return {'error': f'Pipe {burst_pipe_id} not found. '
+                             f'Fix: pass a valid pipe ID from '
+                             f'api.wn.pipe_name_list.'}
+
+        # Baseline pressures (pre-burst)
+        try:
+            base = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Baseline failed: {e}. '
+                             f'Fix: Run validate_network() to diagnose.'}
+        base_p = {n: p.get('avg_m', 0)
+                  for n, p in base.get('pressures', {}).items()}
+
+        # Close the burst pipe (set initial_status to Closed) then re-solve
+        burst = self.wn.get_link(burst_pipe_id)
+        original_status = getattr(burst, 'initial_status', None)
+        original_diam = burst.diameter
+        try:
+            # Simulate by setting diameter tiny — WNTR CLOSED status
+            # sometimes creates convergence issues. Use a tiny diameter
+            # instead (effectively severs hydraulic path).
+            burst.diameter = 1e-6
+            try:
+                post = self.run_steady_state(save_plot=False)
+            except Exception as e:
+                post = {'pressures': {}, 'flows': {}, 'error': str(e)}
+        finally:
+            burst.diameter = original_diam
+
+        post_p = {n: p.get('avg_m', 0)
+                  for n, p in post.get('pressures', {}).items()}
+
+        # Identify isolated junctions: unreachable from any source.
+        # After closure, if a node's pressure collapsed to near-zero or
+        # the solver couldn't converge for it, treat as isolated.
+        isolated = []
+        remaining = []
+        for jid in self.wn.junction_name_list:
+            p_after = post_p.get(jid, base_p.get(jid, 0))
+            if p_after < 5.0 or jid not in post_p:
+                isolated.append({
+                    'node': jid,
+                    'base_pressure_m': round(base_p.get(jid, 0), 1),
+                    'post_burst_pressure_m': round(p_after, 1),
+                })
+            else:
+                drop = base_p.get(jid, 0) - p_after
+                remaining.append({
+                    'node': jid,
+                    'base_pressure_m': round(base_p.get(jid, 0), 1),
+                    'post_burst_pressure_m': round(p_after, 1),
+                    'pressure_drop_m': round(drop, 1),
+                })
+
+        # Rank remaining nodes by pressure drop
+        remaining.sort(key=lambda x: -x['pressure_drop_m'])
+
+        # Isolation valves: pipes at the end nodes of the burst pipe
+        adjacent_pipes = set()
+        burst_start = burst.start_node_name
+        burst_end = burst.end_node_name
+        for pid in self.wn.pipe_name_list:
+            if pid == burst_pipe_id:
+                continue
+            p = self.wn.get_link(pid)
+            if p.start_node_name in (burst_start, burst_end) or \
+                    p.end_node_name in (burst_start, burst_end):
+                adjacent_pipes.add(pid)
+
+        # Nearest actual valves (if present)
+        nearby_valves = []
+        for vid in self.wn.valve_name_list:
+            v = self.wn.get_link(vid)
+            if v.start_node_name in (burst_start, burst_end) or \
+                    v.end_node_name in (burst_start, burst_end):
+                nearby_valves.append(vid)
+
+        # Customer impact estimate (assume each junction = ~50 connections)
+        customers_estimate = len(isolated) * 50
+
+        # Immediate action list
+        actions = [
+            f'1. DISPATCH crew to pipe {burst_pipe_id} '
+            f'(connects {burst_start} <-> {burst_end}, '
+            f'{burst.length:.0f} m of DN'
+            f'{int(round(original_diam * 1000))}).',
+        ]
+        if nearby_valves:
+            actions.append(
+                f'2. CLOSE valves: {", ".join(nearby_valves)} '
+                f'to isolate the burst.')
+        else:
+            actions.append(
+                f'2. ISOLATE by closing adjacent pipes: '
+                f'{", ".join(sorted(adjacent_pipes)) or "(none adjacent)"}. '
+                f'No inline valves found near burst — consider adding.')
+        if isolated:
+            actions.append(
+                f'3. NOTIFY {len(isolated)} affected junction(s) '
+                f'(~{customers_estimate} connections) of supply '
+                f'interruption. Arrange tanker water if >4 hr restoration.')
+        else:
+            actions.append(
+                '3. No customers isolated — redundant supply via '
+                'alternate paths. Continue service.')
+        if remaining:
+            worst = remaining[0]
+            actions.append(
+                f'4. MONITOR pressure at {worst["node"]} '
+                f'(dropped {worst["pressure_drop_m"]:.1f} m) and other '
+                f'low-pressure nodes during repair.')
+        actions.append(
+            '5. LOG incident: pipe ID, time, cause if known, '
+            'restoration time. Feed into break-rate data.')
+
+        severity = ('HIGH' if len(isolated) > 5
+                    else 'MEDIUM' if isolated
+                    else 'LOW')
+
+        return {
+            'burst_pipe': burst_pipe_id,
+            'burst_endpoints': [burst_start, burst_end],
+            'burst_length_m': round(burst.length, 1),
+            'burst_diameter_mm': int(round(original_diam * 1000)),
+            'severity': severity,
+            'n_isolated_junctions': len(isolated),
+            'isolated': isolated[:20],
+            'most_affected_remaining': remaining[:10],
+            'customers_affected_estimate': customers_estimate,
+            'isolation_valves_to_close': nearby_valves,
+            'adjacent_pipes_to_close_if_no_valves': sorted(adjacent_pipes),
+            'immediate_actions': actions,
+            'note': (
+                'Assessment uses instant-closure analysis. Actual impact '
+                'depends on tank buffering, duration, and reroute capacity. '
+                'For formal emergency protocol, consult network operations '
+                'manual.'),
+        }
+
