@@ -323,7 +323,15 @@ class ColourBar(QWidget):
             frac = j / (self.N_TICKS - 1) if self.N_TICKS > 1 else 0
             v = self._cw.vmax - frac * (self._cw.vmax - self._cw.vmin)
             y_px = bar_top + int(frac * bar_h)
-            label = f"{v:.2g}"
+            # Format: for values in typical hydraulic range, avoid
+            # scientific notation (e.g. show "100", not "1e+02").
+            av = abs(v)
+            if av >= 1000 or (0 < av < 0.01):
+                label = f"{v:.2g}"
+            elif av >= 10:
+                label = f"{v:.0f}"
+            else:
+                label = f"{v:.1f}"
             text_y = max(y_px, bar_top + fm.ascent())
             text_y = min(text_y, bar_top + bar_h)
             painter.drawText(label_left, text_y, label)

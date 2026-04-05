@@ -340,7 +340,12 @@ class MainWindow(QMainWindow):
         """Network canvas with PyQtGraph 2D view."""
         self.canvas = NetworkCanvas()
         self.canvas.element_selected.connect(self._on_canvas_element_selected)
-        self.setCentralWidget(self.canvas)
+        # NOTE: setCentralWidget is called ONCE at the end of this method, after
+        # the wrapper is built. Previously we set canvas as central here, then
+        # replaced it with a wrapper below — Qt deletes the previous central
+        # widget via deleteLater(), which on Windows could destroy the PlotWidget's
+        # ViewBox before the reparent-via-addWidget completed, causing
+        # "wrapped C/C++ object of type ViewBox has been deleted" on next render.
 
         # Canvas editor (manages Edit Mode interactions)
         self.editor = CanvasEditor(self.canvas, self)
@@ -399,16 +404,16 @@ class MainWindow(QMainWindow):
         cmap_vlayout.addWidget(self._colour_bar)
         cmap_vlayout.addStretch()
 
-        # Place it in the canvas area using a horizontal wrapper
+        # Place it in the canvas area using a horizontal wrapper.
+        # Build the wrapper with canvas inside BEFORE calling setCentralWidget,
+        # so Qt never deletes a previous central widget holding self.canvas.
         canvas_wrapper = QWidget()
         canvas_h = QHBoxLayout(canvas_wrapper)
         canvas_h.setContentsMargins(0, 0, 0, 0)
         canvas_h.setSpacing(0)
-        # The real canvas is already set as central — rebuild with wrapper
-        # We replace the central widget with a wrapper containing both
-        self.setCentralWidget(canvas_wrapper)
         canvas_h.addWidget(self.canvas)
         canvas_h.addWidget(cmap_container)
+        self.setCentralWidget(canvas_wrapper)
 
     # =====================================================================
     # DOCK PANELS
@@ -718,8 +723,8 @@ class MainWindow(QMainWindow):
         # Scenarios
         QTreeWidgetItem(root, ["Scenarios (Base)"])
 
-        # Results
-        QTreeWidgetItem(root, ["Results (none)"])
+        # Results (tracked so _on_analysis_finished can update the label)
+        self._results_tree_item = QTreeWidgetItem(root, ["Results (none)"])
 
     def _on_tree_item_clicked(self, item, column):
         """Show properties for selected element."""
@@ -873,6 +878,18 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self._last_results = results
 
+        # Update Project Explorer Results label
+        if getattr(self, '_results_tree_item', None) is not None:
+            worker = getattr(self, '_worker', None)
+            atype = getattr(worker, 'analysis_type', 'steady') if worker else 'steady'
+            label_map = {
+                'steady': 'Steady State',
+                'transient': 'Transient',
+                'slurry': 'Slurry (Bingham)',
+            }
+            label = label_map.get(atype, str(atype).replace('_', ' ').title())
+            self._results_tree_item.setText(0, f"Results ({label})")
+
         # Update canvas colors
         self.canvas.set_results(results)
 
@@ -884,16 +901,21 @@ class MainWindow(QMainWindow):
         compliance = results.get('compliance', [])
         fails = sum(1 for c in compliance if c.get('type') in ('WARNING', 'CRITICAL'))
         infos = sum(1 for c in compliance if c.get('type') == 'INFO')
+        # Compact format to fit the status-bar slot:
+        #   "WSAA: PASS", "WSAA: PASS 2i", "WSAA: 8! 7i"
         if fails == 0 and infos == 0:
             self.wsaa_label.setText("WSAA: PASS")
             self.wsaa_label.setStyleSheet("color: #a6e3a1;")
         elif fails == 0:
-            self.wsaa_label.setText(f"WSAA: PASS ({infos} info)")
+            self.wsaa_label.setText(f"WSAA: PASS {infos}i")
             self.wsaa_label.setStyleSheet("color: #a6e3a1;")
         else:
-            info_str = f", {infos} info" if infos > 0 else ""
-            self.wsaa_label.setText(f"WSAA: {fails} issue(s){info_str}")
+            info_str = f" {infos}i" if infos > 0 else ""
+            self.wsaa_label.setText(f"WSAA: {fails}!{info_str}")
             self.wsaa_label.setStyleSheet("color: #f38ba8;")
+        self.wsaa_label.setToolTip(
+            f"WSAA: {fails} issue(s), {infos} info — {'PASS' if fails == 0 else 'FAIL'}"
+        )
 
         # Update resilience index
         ri = self.api.compute_resilience_index(results)
