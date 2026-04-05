@@ -9,7 +9,7 @@ import os
 import json
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QMenuBar, QMenu, QStatusBar, QDockWidget,
+    QApplication, QMainWindow, QMenuBar, QMenu, QStatusBar, QDockWidget,
     QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem,
     QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
     QMessageBox, QHeaderView, QSplitter, QProgressBar, QPushButton,
@@ -526,6 +526,13 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.results_dock)
         self.toggle_results_act.toggled.connect(self.results_dock.setVisible)
         self.results_dock.visibilityChanged.connect(self.toggle_results_act.setChecked)
+        # Force a repaint when the Results tab is selected -- without this,
+        # Qt sometimes draws the dock blank until the user Alt-Tabs away
+        # and back, because the tab-switch doesn't propagate a paint event
+        # to the child table widgets.
+        self.results_dock.visibilityChanged.connect(
+            lambda v: self.results_dock.widget().update() if v else None
+        )
 
         # --- Scenario Panel (tabbed with explorer on left) ---
         self.scenario_dock = QDockWidget("Scenarios", self)
@@ -1045,8 +1052,12 @@ class MainWindow(QMainWindow):
         # Raise the Results dock so the engineer sees the numeric results they
         # just computed. _populate_eps_animation() above raises the Animation
         # dock when multi-timestep EPS data is present — that hides Results
-        # unless we raise it again here.
+        # unless we raise it again here. Force a repaint too: without it, Qt
+        # sometimes leaves the dock's child tables blank until the user
+        # Alt-Tabs away and back.
         self.results_dock.raise_()
+        self.results_dock.widget().update()
+        QApplication.processEvents()
 
         self.status_bar.showMessage("Analysis complete.", 5000)
 
