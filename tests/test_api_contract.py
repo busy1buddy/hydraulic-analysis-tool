@@ -44,6 +44,11 @@ _NETWORK_FREE = {
     'get_steady_results',      # returns results or None (stored state)
     'get_transient_model',     # returns model or None (stored state)
     'list_networks',           # returns list of .inp files in models/
+    'formula_reference',       # static KB browse
+    'get_learning_path',       # user-progress getter (persistent)
+    'get_project_history',     # audit log getter
+    'get_report_branding',     # branding preferences getter
+    'set_report_branding',     # branding writer — no network needed
 }
 
 # Getters whose "no state" response is None rather than error dict.

@@ -3537,3 +3537,879 @@ class AdvancedMixin:
                 'manual.'),
         }
 
+    # =========================================================================
+    # I7 — OPTIMAL UPGRADE FINDER (2-hour junior task in 30 seconds)
+    # =========================================================================
+
+    def find_best_upgrade(self, max_pipes=None,
+                           target_metric='min_pressure_m'):
+        """
+        For every pipe, simulate upsizing to the next DN and rank by
+        pressure-improvement-per-dollar.
+
+        This collapses a typical 2-hour junior-engineer exercise
+        (manually trying upsizes one at a time in EPANET 2.2) into a
+        single call. The tool evaluates every pipe, restores state
+        cleanly, and returns a cost/benefit-ranked table.
+
+        Parameters
+        ----------
+        max_pipes : int or None
+            Cap how many pipes to test (default all). Use a small
+            value (e.g. 20) on very large networks for speed.
+        target_metric : str
+            Which metric to maximise: 'min_pressure_m' (default) or
+            'max_velocity_reduction_ms'.
+
+        Returns dict with ranked upgrade candidates and the top pick.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        # Pipe cost ladder (same as root_cause_analysis for consistency)
+        DN_LADDER = [50, 75, 100, 150, 200, 250, 300, 375, 450, 525, 600,
+                     675, 750, 900, 1050, 1200]
+        COST_PER_M_BY_DN = {
+            50: 85, 75: 110, 100: 140, 150: 180, 200: 230, 250: 290,
+            300: 360, 375: 440, 450: 530, 525: 620, 600: 720, 675: 820,
+            750: 920, 900: 1150, 1050: 1400, 1200: 1700,
+        }
+
+        def _next_dn(dn_mm):
+            for step in DN_LADDER:
+                if step > dn_mm:
+                    return step
+            return None  # already at max
+
+        def _cost(length_m, dn_mm):
+            unit = COST_PER_M_BY_DN.get(dn_mm, 200)
+            return int(round(length_m * unit))
+
+        # Baseline run
+        try:
+            base = self.run_steady_state(save_plot=False)
+        except Exception as e:
+            return {'error': f'Baseline failed: {e}. '
+                             f'Fix: Run validate_network() to diagnose.'}
+
+        base_p = {n: p.get('avg_m', 0)
+                  for n, p in base.get('pressures', {}).items()}
+        base_v = {pid: f.get('max_velocity_ms', 0)
+                  for pid, f in base.get('flows', {}).items()}
+        if not base_p:
+            return {'error': 'No pressures in baseline. '
+                             'Fix: ensure network has junctions.'}
+        base_p_min = min(base_p.values())
+        base_v_max = max(base_v.values()) if base_v else 0
+
+        candidates = []
+        pipes_to_test = list(self.wn.pipe_name_list)
+        if max_pipes is not None:
+            # Prefer pipes that are currently near the WSAA velocity limit
+            # or carry high flow — they're the most likely upgrade wins
+            pipes_to_test.sort(
+                key=lambda p: -base_v.get(p, 0))
+            pipes_to_test = pipes_to_test[:max_pipes]
+
+        for pid in pipes_to_test:
+            pipe = self.wn.get_link(pid)
+            dn_mm = int(round(pipe.diameter * 1000))
+            new_dn = _next_dn(dn_mm)
+            if new_dn is None:
+                continue  # already at max DN
+            original_diameter = pipe.diameter
+            length_m = pipe.length
+            upgrade_cost = _cost(length_m, new_dn)
+
+            # Simulate the upgrade
+            pipe.diameter = new_dn / 1000.0
+            try:
+                alt = self.run_steady_state(save_plot=False)
+                alt_p = {n: p.get('avg_m', 0)
+                         for n, p in alt.get('pressures', {}).items()}
+                alt_v = {p: f.get('max_velocity_ms', 0)
+                         for p, f in alt.get('flows', {}).items()}
+            except Exception:
+                alt_p = base_p
+                alt_v = base_v
+            finally:
+                pipe.diameter = original_diameter
+
+            new_p_min = min(alt_p.values()) if alt_p else base_p_min
+            new_v_max = max(alt_v.values()) if alt_v else base_v_max
+            dp_min = new_p_min - base_p_min
+            dv_max = base_v_max - new_v_max
+
+            # Value metric: pressure improvement per $1000 spent
+            cost_k = max(upgrade_cost / 1000.0, 0.001)
+            value_pressure = dp_min / cost_k
+            value_velocity = dv_max / cost_k
+
+            candidates.append({
+                'pipe_id': pid,
+                'current_dn': dn_mm,
+                'proposed_dn': new_dn,
+                'length_m': round(length_m, 1),
+                'upgrade_cost_aud': upgrade_cost,
+                'min_pressure_gain_m': round(dp_min, 2),
+                'max_velocity_reduction_ms': round(dv_max, 3),
+                'new_min_pressure_m': round(new_p_min, 1),
+                'new_max_velocity_ms': round(new_v_max, 2),
+                'value_m_per_1000aud': round(value_pressure, 4),
+                'velocity_value_per_1000aud': round(value_velocity, 5),
+            })
+
+        # Rank by requested metric
+        if target_metric == 'max_velocity_reduction_ms':
+            candidates.sort(key=lambda c: c['velocity_value_per_1000aud'],
+                            reverse=True)
+        else:
+            candidates.sort(key=lambda c: c['value_m_per_1000aud'],
+                            reverse=True)
+
+        top = candidates[0] if candidates else None
+        recommendation = ''
+        if top and top['min_pressure_gain_m'] > 0:
+            recommendation = (
+                f"Upgrade {top['pipe_id']} from DN{top['current_dn']} -> "
+                f"DN{top['proposed_dn']} for ${top['upgrade_cost_aud']:,} "
+                f"AUD. Improves min pressure by "
+                f"{top['min_pressure_gain_m']:.1f} m "
+                f"(best value: {top['value_m_per_1000aud']:.3f} m "
+                f"per $1,000).")
+        elif top:
+            recommendation = (
+                f"No single-pipe upgrade improves min pressure. "
+                f"Best velocity reduction: {top['pipe_id']} DN"
+                f"{top['current_dn']} -> DN{top['proposed_dn']} "
+                f"(-{top['max_velocity_reduction_ms']:.2f} m/s). "
+                f"Consider multi-pipe or source upgrades.")
+
+        return {
+            'n_pipes_tested': len(candidates),
+            'baseline_min_pressure_m': round(base_p_min, 2),
+            'baseline_max_velocity_ms': round(base_v_max, 2),
+            'ranked_upgrades': candidates,
+            'top_5': candidates[:5],
+            'recommendation': recommendation,
+            'cost_assumptions': {
+                'currency': 'AUD',
+                'year': 2026,
+                'source': 'Rawlinsons 2026 SEQ metro unit rates',
+                'uncertainty_pct': 15,
+            },
+            'note': (
+                'Each candidate tested independently (single-variable '
+                'upgrades). Combined multi-pipe upgrades may give '
+                'non-linear benefits and should be tested via '
+                'scenario comparison.'),
+        }
+
+    # =========================================================================
+    # V2 — BATCH COMPLIANCE CHECK
+    # =========================================================================
+
+    def batch_compliance_check(self, inp_paths, csv_output_path=None):
+        """
+        Run steady-state + WSAA compliance on every .inp file supplied
+        and produce a summary table.
+
+        Parameters
+        ----------
+        inp_paths : list of str
+            Paths to .inp files to evaluate
+        csv_output_path : str or None
+            If set, write results as CSV to this path
+
+        Returns dict with per-network summary rows and totals.
+        """
+        import csv as _csv
+        import os as _os
+
+        if not inp_paths:
+            return {'error': 'No networks provided. '
+                             'Fix: pass a non-empty list of .inp paths.'}
+
+        # Preserve current state
+        saved_wn = self.wn
+        saved_inp = getattr(self, '_inp_file', None)
+
+        rows = []
+        try:
+            for path in inp_paths:
+                row = {
+                    'filename': _os.path.basename(path),
+                    'path': path,
+                    'quality_score': None,
+                    'wsaa_pass': None,
+                    'min_pressure_m': None,
+                    'max_velocity_ms': None,
+                    'resilience_index': None,
+                    'issues_count': None,
+                    'error': None,
+                }
+
+                if not _os.path.exists(path):
+                    row['error'] = 'file not found'
+                    rows.append(row)
+                    continue
+
+                try:
+                    self.load_network(path)
+                    res = self.run_steady_state(save_plot=False)
+                except Exception as e:
+                    row['error'] = f'analysis failed: {e}'
+                    rows.append(row)
+                    continue
+
+                pressures = res.get('pressures', {})
+                flows = res.get('flows', {})
+                if pressures:
+                    row['min_pressure_m'] = round(
+                        min(p.get('min_m', 0) for p in pressures.values()),
+                        2)
+                if flows:
+                    row['max_velocity_ms'] = round(
+                        max(f.get('max_velocity_ms', 0)
+                            for f in flows.values()), 3)
+
+                qs = self.compute_quality_score(res)
+                if 'error' not in qs:
+                    row['quality_score'] = qs.get('total_score')
+
+                ri = self.compute_resilience_index(res)
+                if 'error' not in ri:
+                    row['resilience_index'] = round(
+                        ri.get('todini_index', 0), 3)
+
+                compliance = res.get('compliance', [])
+                issues = (len(compliance) if isinstance(compliance, list)
+                          else 0)
+                row['issues_count'] = issues
+                row['wsaa_pass'] = (issues == 0)
+                rows.append(row)
+        finally:
+            self.wn = saved_wn
+            self._inp_file = saved_inp
+
+        # Aggregate stats
+        valid = [r for r in rows if r['error'] is None]
+        summary = {
+            'total_networks': len(rows),
+            'successful': len(valid),
+            'failed': len(rows) - len(valid),
+            'n_pass_wsaa': sum(1 for r in valid if r['wsaa_pass']),
+            'n_fail_wsaa': sum(1 for r in valid
+                               if r['wsaa_pass'] is False),
+        }
+        if valid:
+            scores = [r['quality_score'] for r in valid
+                      if r['quality_score'] is not None]
+            if scores:
+                summary['mean_quality_score'] = round(
+                    sum(scores) / len(scores), 1)
+                summary['min_quality_score'] = round(min(scores), 1)
+                summary['max_quality_score'] = round(max(scores), 1)
+
+        csv_written = None
+        if csv_output_path:
+            try:
+                fieldnames = ['filename', 'quality_score', 'wsaa_pass',
+                              'min_pressure_m', 'max_velocity_ms',
+                              'resilience_index', 'issues_count', 'error']
+                with open(csv_output_path, 'w', newline='',
+                          encoding='utf-8') as f:
+                    w = _csv.DictWriter(f, fieldnames=fieldnames,
+                                        extrasaction='ignore')
+                    w.writeheader()
+                    for r in rows:
+                        w.writerow(r)
+                csv_written = csv_output_path
+            except Exception as e:
+                return {'error': f'CSV write failed: {e}. '
+                                 f'Fix: check path and permissions.',
+                        'rows': rows, 'summary': summary}
+
+        return {
+            'summary': summary,
+            'rows': rows,
+            'csv_output': csv_written,
+            'note': (
+                'Batch run uses current compliance thresholds. '
+                'WSAA pass means zero issues flagged by '
+                'run_steady_state() compliance checks.'),
+        }
+
+    # =========================================================================
+    # V4 — PROJECT HISTORY / AUDIT TRAIL
+    # =========================================================================
+
+    def log_analysis_run(self, analysis_type, results=None, history_path=None,
+                          duration_seconds=None):
+        """
+        Append an analysis event to the project history JSON log.
+
+        Each entry records timestamp, analysis type, key metrics,
+        duration, and git hash (if available). Use this for audit
+        trails, trend analysis, and reproducibility.
+
+        Parameters
+        ----------
+        analysis_type : str
+            'steady_state', 'transient', 'fire_flow', 'safety_case', etc.
+        results : dict or None
+            Results dict to extract metrics from
+        history_path : str or None
+            Path to JSON log (default: work_dir/project_history.json)
+        duration_seconds : float or None
+            How long the analysis took
+
+        Returns dict with the entry written and history size.
+        """
+        import json as _json
+        import subprocess as _sp
+        from datetime import datetime, timezone
+
+        if history_path is None:
+            history_path = os.path.join(
+                self.work_dir, 'project_history.json')
+
+        # Try to capture git hash of the tool itself
+        git_hash = None
+        try:
+            git_hash = _sp.check_output(
+                ['git', 'rev-parse', '--short', 'HEAD'],
+                cwd=self.work_dir, timeout=2,
+                stderr=_sp.DEVNULL).decode().strip()
+        except Exception:
+            git_hash = None
+
+        entry = {
+            'timestamp_utc': datetime.now(timezone.utc).isoformat(),
+            'analysis_type': analysis_type,
+            'network': (os.path.basename(self._inp_file)
+                        if self._inp_file else None),
+            'git_hash': git_hash,
+            'duration_seconds': duration_seconds,
+        }
+
+        # Extract metrics from results if supplied
+        if isinstance(results, dict):
+            pressures = results.get('pressures', {})
+            flows = results.get('flows', {})
+            if pressures:
+                p_vals = [p.get('min_m', 0) for p in pressures.values()]
+                entry['min_pressure_m'] = (
+                    round(min(p_vals), 2) if p_vals else None)
+            if flows:
+                v_vals = [f.get('max_velocity_ms', 0)
+                          for f in flows.values()]
+                entry['max_velocity_ms'] = (
+                    round(max(v_vals), 3) if v_vals else None)
+            compliance = results.get('compliance', [])
+            if isinstance(compliance, list):
+                entry['wsaa_pass'] = (len(compliance) == 0)
+                entry['issues_count'] = len(compliance)
+
+            # Compute quality + resilience if network still loaded
+            if self.wn is not None:
+                try:
+                    qs = self.compute_quality_score(results)
+                    if 'error' not in qs:
+                        entry['quality_score'] = qs.get('total_score')
+                except Exception:
+                    pass
+                try:
+                    ri = self.compute_resilience_index(results)
+                    if 'error' not in ri:
+                        entry['resilience_index'] = round(
+                            ri.get('todini_index', 0), 3)
+                except Exception:
+                    pass
+
+        # Load existing history and append
+        history = []
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, 'r', encoding='utf-8') as f:
+                    loaded = _json.load(f)
+                if isinstance(loaded, list):
+                    history = loaded
+            except Exception:
+                history = []
+
+        history.append(entry)
+
+        try:
+            with open(history_path, 'w', encoding='utf-8') as f:
+                _json.dump(history, f, indent=2)
+        except Exception as e:
+            return {'error': f'Could not write history: {e}. '
+                             f'Fix: check path and permissions.'}
+
+        return {
+            'entry': entry,
+            'history_path': history_path,
+            'total_entries': len(history),
+        }
+
+    def get_project_history(self, history_path=None):
+        """
+        Read the project history log and return all entries plus a
+        simple trend summary (quality score over time).
+
+        Returns dict with 'entries', 'n_entries', and
+        'quality_score_trend'.
+        """
+        import json as _json
+
+        if history_path is None:
+            history_path = os.path.join(
+                self.work_dir, 'project_history.json')
+
+        if not os.path.exists(history_path):
+            return {
+                'entries': [],
+                'n_entries': 0,
+                'quality_score_trend': [],
+                'history_path': history_path,
+                'note': 'No project history yet. Run log_analysis_run().',
+            }
+
+        try:
+            with open(history_path, 'r', encoding='utf-8') as f:
+                entries = _json.load(f)
+        except Exception as e:
+            return {'error': f'Could not read history: {e}. '
+                             f'Fix: check file is valid JSON.'}
+
+        if not isinstance(entries, list):
+            entries = []
+
+        trend = [
+            (e.get('timestamp_utc'), e.get('quality_score'))
+            for e in entries if e.get('quality_score') is not None
+        ]
+
+        return {
+            'entries': entries,
+            'n_entries': len(entries),
+            'quality_score_trend': trend,
+            'history_path': history_path,
+        }
+
+    # =========================================================================
+    # V1 — WEEKLY REPORT AUTOMATION (scheduler script generator)
+    # =========================================================================
+
+    def generate_weekly_report_script(self, inp_path, output_dir,
+                                        script_path, python_exe=None):
+        """
+        Generate a .bat script that runs the tool's analysis on a
+        scheduled basis and emits a timestamped report.
+
+        The generated script:
+          1. Loads `inp_path`
+          2. Runs steady-state + compliance
+          3. Writes a dated JSON summary to `output_dir`
+
+        Attach the emitted .bat to Windows Task Scheduler for recurring
+        runs. On Unix, a matching .sh is produced if script_path ends
+        in .sh.
+
+        Parameters
+        ----------
+        inp_path : str
+            Path to the network .inp file
+        output_dir : str
+            Folder where timestamped reports will be written
+        script_path : str
+            Where to write the .bat / .sh launcher
+        python_exe : str or None
+            Python interpreter path (defaults to sys.executable)
+
+        Returns dict with generated script path and the command it runs.
+        """
+        import sys as _sys
+
+        if python_exe is None:
+            python_exe = _sys.executable
+
+        # Choose shell based on extension
+        is_bat = script_path.lower().endswith('.bat')
+        is_sh = script_path.lower().endswith('.sh')
+        if not (is_bat or is_sh):
+            return {'error': f'script_path must end in .bat or .sh. '
+                             f'Fix: rename "{os.path.basename(script_path)}" '
+                             f'with the correct extension.'}
+
+        # The inline Python command the script will run
+        py_command = (
+            f'from epanet_api import HydraulicAPI; '
+            f'import json, datetime, os; '
+            f'api = HydraulicAPI(); '
+            f'api.load_network(r"{inp_path}"); '
+            f'res = api.run_steady_state(save_plot=False); '
+            f'qs = api.compute_quality_score(res); '
+            f'ri = api.compute_resilience_index(res); '
+            f'entry = api.log_analysis_run("weekly_scheduled", '
+            f'results=res); '
+            f'stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S"); '
+            f'out = os.path.join(r"{output_dir}", '
+            f'"weekly_report_" + stamp + ".json"); '
+            f'open(out, "w", encoding="utf-8").write('
+            f'json.dumps({{\\"entry\\": entry, \\"quality\\": qs, '
+            f'\\"resilience\\": ri}}, indent=2)); '
+            f'print("Report written to " + out)'
+        )
+
+        if is_bat:
+            lines = [
+                '@echo off',
+                'REM Auto-generated weekly report script',
+                f'REM Network: {inp_path}',
+                f'REM Output:  {output_dir}',
+                '',
+                f'if not exist "{output_dir}" mkdir "{output_dir}"',
+                f'"{python_exe}" -c "{py_command}"',
+                '',
+            ]
+        else:  # .sh
+            lines = [
+                '#!/bin/sh',
+                '# Auto-generated weekly report script',
+                f'# Network: {inp_path}',
+                f'# Output:  {output_dir}',
+                '',
+                f'mkdir -p "{output_dir}"',
+                f'"{python_exe}" -c \'{py_command}\'',
+                '',
+            ]
+
+        try:
+            with open(script_path, 'w', encoding='utf-8',
+                      newline='\n') as f:
+                f.write('\n'.join(lines))
+        except Exception as e:
+            return {'error': f'Could not write script: {e}. '
+                             f'Fix: check path and permissions.'}
+
+        scheduler_cmd = None
+        if is_bat:
+            scheduler_cmd = (
+                f'schtasks /create /sc WEEKLY /d MON /tn '
+                f'"HydraulicWeeklyReport" /tr "{script_path}" /st 06:00')
+        elif is_sh:
+            scheduler_cmd = (
+                f'# Add to crontab:  0 6 * * 1 {script_path}')
+
+        return {
+            'script_path': script_path,
+            'script_type': 'bat' if is_bat else 'sh',
+            'python_exe': python_exe,
+            'inp_path': inp_path,
+            'output_dir': output_dir,
+            'scheduler_command': scheduler_cmd,
+            'note': (
+                'Attach the generated script to Windows Task Scheduler '
+                '(bat) or cron (sh). The scheduler_command gives a '
+                'ready-to-paste example.'),
+        }
+
+    # =========================================================================
+    # V5 — CUSTOM REPORT BRANDING
+    # =========================================================================
+
+    def _branding_path(self):
+        return os.path.join(self.work_dir, 'report_branding.json')
+
+    def set_report_branding(self, company_name=None, logo_path=None,
+                              engineer_name=None, engineer_pe_number=None,
+                              footer_disclaimer=None):
+        """
+        Persist company/engineer branding for report generation.
+
+        Saved to work_dir/report_branding.json. Applied automatically
+        by DOCX and PDF report generators when they find the file.
+
+        Parameters
+        ----------
+        company_name : str or None
+            Organisation name for the cover page / header
+        logo_path : str or None
+            Path to a PNG/JPG logo (used by report_generator)
+        engineer_name : str or None
+            Name of the responsible engineer for the footer
+        engineer_pe_number : str or None
+            RPEQ/CPEng registration number
+        footer_disclaimer : str or None
+            Custom footer disclaimer text
+
+        Returns dict with saved path and the stored branding.
+        """
+        import json as _json
+
+        path = self._branding_path()
+
+        # Merge with existing to allow partial updates
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    existing = _json.load(f)
+            except Exception:
+                existing = {}
+
+        new_fields = {
+            'company_name': company_name,
+            'logo_path': logo_path,
+            'engineer_name': engineer_name,
+            'engineer_pe_number': engineer_pe_number,
+            'footer_disclaimer': footer_disclaimer,
+        }
+
+        # Only overwrite keys with supplied (non-None) values
+        for k, v in new_fields.items():
+            if v is not None:
+                existing[k] = v
+
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                _json.dump(existing, f, indent=2)
+        except Exception as e:
+            return {'error': f'Could not save branding: {e}. '
+                             f'Fix: check write permissions on '
+                             f'work_dir.'}
+
+        return {
+            'branding_path': path,
+            'branding': existing,
+            'note': ('Branding applied to all subsequent reports. '
+                     'Call api.get_report_branding() to verify.'),
+        }
+
+    def get_report_branding(self):
+        """Return the currently stored report branding (or empty dict
+        if none saved)."""
+        import json as _json
+
+        path = self._branding_path()
+        if not os.path.exists(path):
+            return {
+                'branding_path': path,
+                'branding': {},
+                'note': 'No branding configured. Call set_report_branding().',
+            }
+
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                branding = _json.load(f)
+        except Exception as e:
+            return {'error': f'Could not read branding: {e}. '
+                             f'Fix: check report_branding.json is '
+                             f'valid JSON.'}
+
+        return {
+            'branding_path': path,
+            'branding': branding,
+        }
+
+    # =========================================================================
+    # U3 — LEARNING PATH FOR NEW ENGINEERS
+    # =========================================================================
+
+    LEARNING_STEPS = [
+        {
+            'id': 1,
+            'title': 'Open your first network',
+            'description': ('Load the simple_loop tutorial to see a '
+                            'minimal working hydraulic model.'),
+            'action': 'File > Open (Ctrl+O) -> tutorials/simple_loop/network.inp',
+            'completion_hint': ('Step 1 complete when api.wn is not None '
+                                'and has at least 2 junctions.'),
+        },
+        {
+            'id': 2,
+            'title': 'Run steady state and read results',
+            'description': ('Run the hydraulic solver and interpret '
+                            'pressure and velocity results.'),
+            'action': 'Press F5 or Analysis > Run Steady State',
+            'completion_hint': ('Step 2 complete when steady_results '
+                                'exists and all pressures are positive.'),
+        },
+        {
+            'id': 3,
+            'title': 'Identify and fix a compliance issue',
+            'description': ('Use root_cause_analysis() to find a WSAA '
+                            'violation and evaluate upgrade options.'),
+            'action': ('Open demo_network -> Analysis menu -> '
+                       'Use Root Cause Analysis'),
+            'completion_hint': ('Step 3 complete when find_best_upgrade() '
+                                'has been run at least once.'),
+        },
+        {
+            'id': 4,
+            'title': 'Run extended period simulation',
+            'description': ('Simulate 24 hours with a demand pattern to '
+                            'see how pressures vary through the day.'),
+            'action': 'Analysis > Extended Period Simulation (F7)',
+            'completion_hint': ('Step 4 complete when an EPS run has '
+                                'completed with 24 time steps.'),
+        },
+        {
+            'id': 5,
+            'title': 'Generate your first report',
+            'description': ('Produce a formal Safety Case Report for '
+                            'a loaded network.'),
+            'action': 'Analysis > Safety Case Report...',
+            'completion_hint': ('Step 5 complete when safety_case_report() '
+                                'has been called.'),
+        },
+    ]
+
+    def _learning_progress_path(self):
+        return os.path.join(self.work_dir, 'learning_progress.json')
+
+    def get_learning_path(self):
+        """Return the 5-step onboarding path with current progress."""
+        import json as _json
+        path = self._learning_progress_path()
+        progress = {}
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    progress = _json.load(f)
+            except Exception:
+                progress = {}
+
+        steps_with_status = []
+        for step in self.LEARNING_STEPS:
+            completed = progress.get(str(step['id']), False)
+            steps_with_status.append({
+                **step,
+                'completed': completed,
+            })
+
+        n_done = sum(1 for s in steps_with_status if s['completed'])
+        next_step = next(
+            (s for s in steps_with_status if not s['completed']), None)
+
+        return {
+            'steps': steps_with_status,
+            'total_steps': len(self.LEARNING_STEPS),
+            'n_completed': n_done,
+            'next_step': next_step,
+            'progress_pct': round(
+                100 * n_done / len(self.LEARNING_STEPS), 0),
+            'progress_path': path,
+        }
+
+    def mark_learning_step_complete(self, step_id):
+        """Mark a learning-path step as complete. Persists to
+        learning_progress.json."""
+        import json as _json
+
+        valid_ids = [s['id'] for s in self.LEARNING_STEPS]
+        if step_id not in valid_ids:
+            return {'error': f'Unknown step id: {step_id}. '
+                             f'Fix: use one of {valid_ids}.'}
+
+        path = self._learning_progress_path()
+        progress = {}
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    progress = _json.load(f)
+            except Exception:
+                progress = {}
+
+        progress[str(step_id)] = True
+
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                _json.dump(progress, f, indent=2)
+        except Exception as e:
+            return {'error': f'Could not save progress: {e}. '
+                             f'Fix: check write permissions.'}
+
+        step_title = next((s['title'] for s in self.LEARNING_STEPS
+                           if s['id'] == step_id), '')
+        total = len(self.LEARNING_STEPS)
+        n_done = sum(1 for v in progress.values() if v)
+        next_step = next(
+            (s for s in self.LEARNING_STEPS
+             if not progress.get(str(s['id']), False)), None)
+        message = f'Step {step_id} ({step_title}) complete.'
+        if next_step:
+            message += f' Next: {next_step["title"]}.'
+        else:
+            message += ' All 5 steps complete — you are up to speed!'
+
+        return {
+            'step_id': step_id,
+            'n_completed': n_done,
+            'total_steps': total,
+            'message': message,
+        }
+
+    # =========================================================================
+    # U2 — FORMULA REFERENCE (category-grouped view of the knowledge base)
+    # =========================================================================
+
+    # Map each KNOWLEDGE_BASE topic to a display category
+    _KB_CATEGORIES = {
+        'hazen_williams': 'Headloss',
+        'darcy_weisbach': 'Headloss',
+        'joukowsky': 'Transient',
+        'lamont_break_rate': 'Asset Deterioration',
+        'wsaa_min_pressure': 'Compliance',
+        'wsaa_max_pressure': 'Compliance',
+        'wsaa_max_velocity': 'Compliance',
+        'fire_flow': 'Compliance',
+        'as2280_ductile_iron': 'Pipe Materials',
+        'as1477_pvc': 'Pipe Materials',
+        'as4130_pe': 'Pipe Materials',
+        'bingham_plastic': 'Slurry',
+    }
+
+    def formula_reference(self, category=None):
+        """
+        Return the knowledge base grouped by category for a formula
+        reference panel.
+
+        Parameters
+        ----------
+        category : str or None
+            Filter by category: 'Headloss', 'Transient', 'Slurry',
+            'Compliance', 'Pipe Materials', 'Asset Deterioration'.
+            If None, returns all entries grouped.
+
+        Returns dict with categories → list of entries.
+        """
+        grouped = {}
+        for key, entry in self.KNOWLEDGE_BASE.items():
+            cat = self._KB_CATEGORIES.get(key, 'Other')
+            grouped.setdefault(cat, []).append({
+                'topic_key': key,
+                **entry,
+            })
+
+        if category is not None:
+            if category not in grouped:
+                return {
+                    'error': f'Unknown category: {category}. '
+                             f'Fix: use one of '
+                             f'{sorted(grouped.keys())}.',
+                }
+            return {
+                'category': category,
+                'entries': grouped[category],
+                'n_entries': len(grouped[category]),
+            }
+
+        return {
+            'categories': sorted(grouped.keys()),
+            'entries_by_category': grouped,
+            'total_entries': sum(len(v) for v in grouped.values()),
+        }
+
