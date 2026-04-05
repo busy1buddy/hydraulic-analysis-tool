@@ -35,13 +35,14 @@ class ColourMapWidget(QWidget):
 
     colour_map_changed = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, horizontal=False):
         super().__init__(parent)
         self._vmin = 0.0
         self._vmax = 100.0
         self._data_vmin = 0.0
         self._data_vmax = 100.0
         self._unit = ""
+        self._horizontal = horizontal
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -49,6 +50,9 @@ class ColourMapWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _setup_ui(self):
+        if self._horizontal:
+            self._setup_ui_horizontal()
+            return
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
@@ -130,6 +134,67 @@ class ColourMapWidget(QWidget):
         row4.addWidget(self.clip_spin)
         row4.addStretch()
         layout.addLayout(row4)
+
+    def _setup_ui_horizontal(self):
+        """Single-row compact layout for toolbar placement."""
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(6)
+
+        font = QFont("Consolas", 9)
+
+        layout.addWidget(QLabel("Map:"))
+        self.cmap_combo = QComboBox()
+        self.cmap_combo.addItems(COLOURMAP_LABELS)
+        self.cmap_combo.setFont(font)
+        self.cmap_combo.currentIndexChanged.connect(self._emit_changed)
+        self.cmap_combo.setToolTip("Colour map palette for results overlay.")
+        layout.addWidget(self.cmap_combo)
+
+        layout.addWidget(QLabel("Min:"))
+        self.min_spin = QDoubleSpinBox()
+        self.min_spin.setRange(-1e9, 1e9)
+        self.min_spin.setDecimals(2)
+        self.min_spin.setValue(self._vmin)
+        self.min_spin.setFont(font)
+        self.min_spin.setMaximumWidth(90)
+        self.min_spin.valueChanged.connect(self._on_spin_changed)
+        layout.addWidget(self.min_spin)
+
+        layout.addWidget(QLabel("Max:"))
+        self.max_spin = QDoubleSpinBox()
+        self.max_spin.setRange(-1e9, 1e9)
+        self.max_spin.setDecimals(2)
+        self.max_spin.setValue(self._vmax)
+        self.max_spin.setFont(font)
+        self.max_spin.setMaximumWidth(90)
+        self.max_spin.valueChanged.connect(self._on_spin_changed)
+        layout.addWidget(self.max_spin)
+
+        self.log_check = QCheckBox("Log")
+        self.log_check.setFont(font)
+        self.log_check.stateChanged.connect(self._emit_changed)
+        self.log_check.setToolTip("Log10 colour scale")
+        layout.addWidget(self.log_check)
+
+        layout.addWidget(QLabel("Clip:"))
+        self.clip_spin = QDoubleSpinBox()
+        self.clip_spin.setRange(0, 10)
+        self.clip_spin.setDecimals(1)
+        self.clip_spin.setValue(0.0)
+        self.clip_spin.setSuffix("%")
+        self.clip_spin.setFont(font)
+        self.clip_spin.setMaximumWidth(70)
+        self.clip_spin.valueChanged.connect(self._on_clip_changed)
+        layout.addWidget(self.clip_spin)
+
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setFont(font)
+        self.reset_btn.setFixedWidth(55)
+        self.reset_btn.clicked.connect(self._on_reset)
+        layout.addWidget(self.reset_btn)
+
+        layout.addStretch()
 
     # ------------------------------------------------------------------
     # Public API

@@ -66,8 +66,14 @@ class MainWindow(QMainWindow):
         }
 
         self.setWindowTitle("Hydraulic Analysis Tool — v2.9.0")
-        self.setMinimumSize(QSize(1200, 800))
-        self.resize(1400, 900)
+        self.setMinimumSize(QSize(1400, 900))
+        # Default to 85% of the primary screen so the canvas gets real estate
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geo = screen.availableGeometry()
+            self.resize(int(geo.width() * 0.85), int(geo.height() * 0.85))
+        else:
+            self.resize(1600, 1000)
 
         self._setup_menus()
         self._setup_central_widget()
@@ -426,20 +432,17 @@ class MainWindow(QMainWindow):
         # Wire probe signal from canvas
         self.canvas.probe_requested.connect(self._on_probe_requested)
 
-        # ColourBar widget (fixed sidebar next to canvas)
-        self._colourmap_widget = ColourMapWidget()
+        # ColourMap controls: horizontal row, appended to canvas toolbar.
+        # The ColourBar (gradient legend) stays as a thin strip next to
+        # the canvas so users can read the scale.
+        self._colourmap_widget = ColourMapWidget(horizontal=True)
         self._colourmap_widget.colour_map_changed.connect(self._on_colourmap_changed)
         self._colour_bar = ColourBar(self._colourmap_widget)
 
-        # Embed ColourMap + ColourBar into a small vertical widget
-        cmap_container = QWidget()
-        cmap_vlayout = QVBoxLayout(cmap_container)
-        cmap_vlayout.setContentsMargins(2, 2, 2, 2)
-        cmap_vlayout.addWidget(self._colourmap_widget)
-        cmap_vlayout.addWidget(self._colour_bar)
-        cmap_vlayout.addStretch()
+        toolbar_layout.addSpacing(12)
+        toolbar_layout.addWidget(self._colourmap_widget, 1)
 
-        # Place it in the canvas area using a horizontal wrapper.
+        # Place ColourBar in the canvas area using a horizontal wrapper.
         # Build the wrapper with canvas inside BEFORE calling setCentralWidget,
         # so Qt never deletes a previous central widget holding self.canvas.
         canvas_wrapper = QWidget()
@@ -447,7 +450,7 @@ class MainWindow(QMainWindow):
         canvas_h.setContentsMargins(0, 0, 0, 0)
         canvas_h.setSpacing(0)
         canvas_h.addWidget(self.canvas)
-        canvas_h.addWidget(cmap_container)
+        canvas_h.addWidget(self._colour_bar)
         self.setCentralWidget(canvas_wrapper)
 
     # =====================================================================
@@ -463,7 +466,7 @@ class MainWindow(QMainWindow):
         self.explorer_dock = QDockWidget("Project Explorer", self)
         self.explorer_dock.setObjectName("explorer_dock")
         self.explorer_dock.setFeatures(_dock_features)
-        self.explorer_dock.setMinimumWidth(220)
+        self.explorer_dock.setMinimumWidth(200)
         self.explorer_tree = QTreeWidget()
         self.explorer_tree.setHeaderLabels(["Element"])
         self.explorer_tree.setFont(QFont("Consolas", 10))
@@ -472,15 +475,17 @@ class MainWindow(QMainWindow):
         self.toggle_explorer_act.toggled.connect(self.explorer_dock.setVisible)
         self.explorer_dock.visibilityChanged.connect(self.toggle_explorer_act.setChecked)
 
-        # --- Right: Properties ---
+        # --- Right: Properties (narrow collapsible sidebar) ---
+        # Kept in the Right dock area (collapsible via View > Properties)
+        # but narrow so the canvas owns the horizontal real estate.
         self.properties_dock = QDockWidget("Properties", self)
         self.properties_dock.setObjectName("properties_dock")
         self.properties_dock.setFeatures(_dock_features)
-        self.properties_dock.setMinimumWidth(220)
+        self.properties_dock.setMinimumWidth(180)
         self.properties_table = QTableWidget(0, 2)
         self.properties_table.setHorizontalHeaderLabels(["Property", "Value"])
         self.properties_table.horizontalHeader().setStretchLastSection(True)
-        self.properties_table.setMinimumWidth(220)
+        self.properties_table.setMinimumWidth(180)
         self.properties_table.setFont(QFont("Consolas", 10))
         self.properties_table.verticalHeader().setVisible(False)
         self.properties_dock.setWidget(self.properties_table)
@@ -493,7 +498,7 @@ class MainWindow(QMainWindow):
         self.results_dock = QDockWidget("Results", self)
         self.results_dock.setObjectName("results_dock")
         self.results_dock.setFeatures(_dock_features)
-        self.results_dock.setMinimumHeight(300)
+        self.results_dock.setMinimumHeight(180)
         results_widget = QWidget()
         results_layout = QVBoxLayout(results_widget)
         results_layout.setContentsMargins(4, 4, 4, 4)
@@ -599,26 +604,31 @@ class MainWindow(QMainWindow):
             lambda msg: self.status_bar.showMessage(f"What-If: {msg}", 5000)
         )
         self.what_if_dock.setWidget(self.what_if_panel)
+        # Floating-by-default: What-If is a power-user tool, not always-on.
+        # It still registers with the left dock area so Qt knows where it
+        # belongs if the user drags it back onto the main window.
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.what_if_dock)
-        # Qt's tabifyDockWidget is fragile during init — we have to remove
-        # the dock, re-add it, and tabify AFTER the initial show. A zero-ms
-        # QTimer does this on the next event-loop turn. Without this dance,
-        # what_if_dock is not merged into the explorer/scenario tab group
-        # and its geometry remains parked offscreen.
-        from PyQt6.QtCore import QTimer as _QTimer
-        def _tabify_what_if():
-            self.removeDockWidget(self.what_if_dock)
-            self.what_if_dock.setFloating(False)
-            self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea,
-                               self.what_if_dock)
-            self.tabifyDockWidget(self.scenario_dock, self.what_if_dock)
-            self.what_if_dock.setVisible(True)
-            self.explorer_dock.raise_()
-        _QTimer.singleShot(0, _tabify_what_if)
+        self.what_if_dock.setFloating(True)
+        self.what_if_dock.resize(360, 420)
+        self.what_if_dock.setVisible(False)
         self.toggle_what_if_act.toggled.connect(self.what_if_dock.setVisible)
         self.what_if_dock.visibilityChanged.connect(self.toggle_what_if_act.setChecked)
         # Show results as the initially visible bottom tab
         self.results_dock.raise_()
+
+        # Apply preferred dock proportions after the initial show so the
+        # canvas gets the majority of horizontal/vertical space.
+        from PyQt6.QtCore import QTimer as _QTimer
+        def _apply_dock_sizes():
+            # Left panel: 260 px, right: 180 px, bottom: ~25% window height
+            self.resizeDocks(
+                [self.explorer_dock, self.properties_dock],
+                [260, 180],
+                Qt.Orientation.Horizontal,
+            )
+            bh = max(200, int(self.height() * 0.25))
+            self.resizeDocks([self.results_dock], [bh], Qt.Orientation.Vertical)
+        _QTimer.singleShot(0, _apply_dock_sizes)
 
         # Wire tree selection
         self.explorer_tree.itemClicked.connect(self._on_tree_item_clicked)

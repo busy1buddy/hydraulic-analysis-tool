@@ -159,7 +159,7 @@ def act_1_project_setup(w):
 
     # S05 Click P1 -- properties should populate
     def s05():
-        w._on_canvas_element_selected("pipe", "P1")
+        w._on_canvas_element_selected("P1", "pipe")
         QTest.qWait(200)
         rows = w.properties_table.rowCount()
         ok = rows > 0
@@ -168,7 +168,7 @@ def act_1_project_setup(w):
 
     # S06 Click J1
     def s06():
-        w._on_canvas_element_selected("node", "J1")
+        w._on_canvas_element_selected("J1", "junction")
         QTest.qWait(200)
         rows = w.properties_table.rowCount()
         # Properties table should show at least Type, ID, Elevation
