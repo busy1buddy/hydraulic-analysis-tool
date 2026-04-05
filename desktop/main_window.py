@@ -200,6 +200,12 @@ class MainWindow(QMainWindow):
         design_check_act.triggered.connect(self._on_design_compliance_check)
         analysis_menu.addAction(design_check_act)
 
+        safety_case_act = QAction("&Safety Case Report...", self)
+        safety_case_act.setToolTip(
+            "Generate formal pipeline safety case for regulatory submission.")
+        safety_case_act.triggered.connect(self._on_safety_case)
+        analysis_menu.addAction(safety_case_act)
+
         # --- Tools ---
         tools_menu = menubar.addMenu("&Tools")
 
@@ -312,6 +318,14 @@ class MainWindow(QMainWindow):
         shortcuts_act.setShortcut("F1")
         shortcuts_act.triggered.connect(self._on_keyboard_shortcuts)
         help_menu.addAction(shortcuts_act)
+
+        help_menu.addSeparator()
+        demo_act = QAction("&Run Demo", self)
+        demo_act.setToolTip(
+            "Guided tour: loads demo network, runs analysis, shows "
+            "violations and recommended fixes.")
+        demo_act.triggered.connect(self._on_run_demo)
+        help_menu.addAction(demo_act)
 
     # =====================================================================
     # CENTRAL WIDGET
@@ -1261,6 +1275,17 @@ class MainWindow(QMainWindow):
         dialog = PipeProfileDialog(self.api, results=self._last_results, parent=self)
         dialog.exec()
 
+    def _on_safety_case(self):
+        """Open the Safety Case Report dialog."""
+        if self.api.wn is None:
+            QMessageBox.warning(
+                self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        from desktop.safety_case_dialog import SafetyCaseDialog
+        dialog = SafetyCaseDialog(self.api, parent=self)
+        dialog.exec()
+
     def _on_design_compliance_check(self):
         """Run all compliance checks and show certificate."""
         if self.api.wn is None:
@@ -1554,6 +1579,84 @@ class MainWindow(QMainWindow):
         self.properties_dock.setVisible(True)
         self.results_dock.setVisible(True)
         self.animation_dock.setVisible(True)
+
+    def _on_run_demo(self):
+        """One-click guided demo: load demo network → steady → show violations."""
+        import os
+        from PyQt6.QtCore import QTimer
+
+        demo_inp = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'tutorials', 'demo_network', 'network.inp')
+        if not os.path.exists(demo_inp):
+            QMessageBox.warning(
+                self, "Demo Network Missing",
+                "Demo network not found at tutorials/demo_network/network.inp.\n"
+                "Fix: reinstall or check the tutorials/ directory.")
+            return
+
+        steps = []
+        def _step1():
+            self.statusBar().showMessage(
+                "Demo step 1/4: Loading demo network...")
+            self.api.load_network(demo_inp)
+            if hasattr(self, '_refresh_after_load'):
+                self._refresh_after_load()
+            elif hasattr(self, 'load_network_file'):
+                try:
+                    self.load_network_file(demo_inp)
+                except Exception:
+                    pass
+
+        def _step2():
+            self.statusBar().showMessage(
+                "Demo step 2/4: Running steady-state analysis...")
+            try:
+                self._demo_results = self.api.run_steady_state(save_plot=False)
+            except Exception as e:
+                self.statusBar().showMessage(
+                    f"Demo analysis failed: {e}")
+                return
+
+        def _step3():
+            if not hasattr(self, '_demo_results'):
+                return
+            n_violations = len(self._demo_results.get('compliance', []))
+            self.statusBar().showMessage(
+                f"Demo step 3/4: Found {n_violations} WSAA violations. "
+                f"See Learning Mode for explanations.")
+
+        def _step4():
+            # Present summary and root-cause
+            summary = self.api.network_health_summary()
+            rc = self.api.root_cause_analysis(self._demo_results)
+            lines = [summary.get('summary_paragraph', '')]
+            lines.append('')
+            lines.append(f"Root cause analysis found {rc['n_issues']} issues:")
+            for exp in rc['explanations'][:3]:
+                lines.append(f"  - {exp['issue'].replace('_', ' ').title()} "
+                             f"at {exp['location']}")
+                if exp['fixes']:
+                    lines.append(f"    Fix 1: {exp['fixes'][0]['option']} "
+                                 f"(~${exp['fixes'][0]['est_cost_aud']:,})")
+            self.statusBar().showMessage(
+                "Demo step 4/4: Complete. See message for details.")
+            QMessageBox.information(
+                self, "Demo — Analysis Summary", '\n'.join(lines))
+
+        # Chain steps with 500ms delays
+        self._demo_step_num = 0
+        self._demo_steps = [_step1, _step2, _step3, _step4]
+
+        def _run_next():
+            if self._demo_step_num >= len(self._demo_steps):
+                return
+            self._demo_steps[self._demo_step_num]()
+            self._demo_step_num += 1
+            if self._demo_step_num < len(self._demo_steps):
+                QTimer.singleShot(500, _run_next)
+
+        _run_next()
 
     def _on_about(self):
         QMessageBox.about(

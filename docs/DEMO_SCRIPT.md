@@ -91,3 +91,37 @@ NOT APPROVED
 > "Every pipeline you design, we can hand the regulator a defensible
 > safety case in the time it takes to finish a coffee. That's our
 > commercial edge."
+
+---
+
+## Companion: 60-second water utility demo (live UI)
+
+Use `tutorials/demo_network/network.inp` — 10 nodes, 11 pipes, one
+ring main, two branches, deliberate pressure and velocity violations.
+
+**Steps:**
+
+1. `python main_app.py` → opens the desktop UI
+2. **Help > Run Demo** (one click)
+3. Watch: status bar walks through *Load → Analyse → Violations → Summary*
+4. Popup: network health grade + root-cause analysis + ranked fix options
+   with estimated AUD costs
+
+**Output the engineer sees:**
+
+```
+Network health: Grade C (65/100)
+3 WSAA violations detected.
+
+Root cause analysis found 3 issues:
+  - Low Pressure at J9
+    Fix 1: Upsize P10 DN80 → DN100 (~$56,000)
+  - Low Pressure at J10
+    Fix 1: Upsize P11 DN100 → DN150 (~$45,000)
+  - High Velocity at P10
+    Fix 1: Upsize P10 DN80 → DN100 (~$56,000)
+```
+
+**Key talking point:** *"One click. Ten seconds. The engineer now has a
+costed remediation plan they can put in front of a council committee."*
+

@@ -2343,3 +2343,673 @@ class AdvancedMixin:
         }
 
         return report
+
+    # =========================================================================
+    # R6 — NETWORK VALIDITY CHECKER
+    # =========================================================================
+
+    def validate_network(self):
+        """
+        Pre-analysis network validation. Catches common modelling errors
+        before running steady-state.
+
+        Checks:
+          - Isolated nodes (degree 0)
+          - Zero-length pipes
+          - Zero-diameter pipes
+          - Negative elevations (unusual — flag for review)
+          - Missing source (no reservoir or tank)
+          - Duplicate IDs (WNTR would already reject these on load)
+          - Disconnected subgraphs (more than one connected component)
+          - Pumps with no curve
+          - Pipes referencing non-existent nodes (WNTR would reject these)
+
+        Returns dict with per-check results and overall valid/invalid verdict.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        issues = []
+        warnings = []
+        wn = self.wn
+
+        # Source presence
+        if not wn.reservoir_name_list and not wn.tank_name_list:
+            issues.append({
+                'type': 'no_source',
+                'severity': 'ERROR',
+                'message': 'Network has no reservoir or tank. Fix: add at '
+                           'least one reservoir (fixed head) or tank.',
+            })
+
+        # Zero-length / zero-diameter pipes
+        zero_len, zero_dia = [], []
+        for pid in wn.pipe_name_list:
+            p = wn.get_link(pid)
+            if p.length <= 0:
+                zero_len.append(pid)
+            if p.diameter <= 0:
+                zero_dia.append(pid)
+        if zero_len:
+            issues.append({
+                'type': 'zero_length_pipe',
+                'severity': 'ERROR',
+                'pipes': zero_len,
+                'message': f'{len(zero_len)} pipes have zero length. Fix: '
+                           f'set length > 0 via api.update_pipe(pipe_id, '
+                           f'length=...).',
+            })
+        if zero_dia:
+            issues.append({
+                'type': 'zero_diameter_pipe',
+                'severity': 'ERROR',
+                'pipes': zero_dia,
+                'message': f'{len(zero_dia)} pipes have zero diameter. Fix: '
+                           f'set diameter (mm) via api.update_pipe(pipe_id, '
+                           f'diameter=...).',
+            })
+
+        # Node degree + connectivity (undirected)
+        degree = {nid: 0 for nid in wn.node_name_list}
+        adjacency = {nid: set() for nid in wn.node_name_list}
+        for pid in wn.pipe_name_list + wn.pump_name_list + wn.valve_name_list:
+            link = wn.get_link(pid)
+            s = link.start_node_name
+            e = link.end_node_name
+            if s in degree:
+                degree[s] += 1
+                adjacency[s].add(e)
+            if e in degree:
+                degree[e] += 1
+                adjacency[e].add(s)
+
+        isolated = [n for n, d in degree.items() if d == 0]
+        if isolated:
+            issues.append({
+                'type': 'isolated_node',
+                'severity': 'ERROR',
+                'nodes': isolated,
+                'message': f'{len(isolated)} nodes are not connected to any '
+                           f'link. Fix: add a pipe to connect them, or '
+                           f'remove via api.remove_node(node_id).',
+            })
+
+        # Connected component count via BFS
+        visited = set()
+        components = 0
+        for start in wn.node_name_list:
+            if start in visited or start in isolated:
+                continue
+            components += 1
+            stack = [start]
+            while stack:
+                n = stack.pop()
+                if n in visited:
+                    continue
+                visited.add(n)
+                for neighbour in adjacency.get(n, ()):
+                    if neighbour not in visited:
+                        stack.append(neighbour)
+
+        if components > 1:
+            issues.append({
+                'type': 'disconnected_subgraphs',
+                'severity': 'ERROR',
+                'count': components,
+                'message': f'Network has {components} disconnected '
+                           f'subgraphs. Fix: add pipes to link them, or '
+                           f'analyse each separately.',
+            })
+
+        # Negative elevations — warn only
+        neg_elev = []
+        for jid in wn.junction_name_list:
+            try:
+                e = wn.get_node(jid).elevation
+                if e < 0:
+                    neg_elev.append({'node': jid, 'elevation_m': e})
+            except Exception:
+                pass
+        if neg_elev:
+            warnings.append({
+                'type': 'negative_elevation',
+                'severity': 'WARN',
+                'nodes': neg_elev[:10],
+                'count': len(neg_elev),
+                'message': f'{len(neg_elev)} junctions have negative '
+                           f'elevation. This is unusual — confirm datum '
+                           f'(m AHD vs m below datum).',
+            })
+
+        # Pumps with no curve (POWER pumps are fine)
+        bad_pumps = []
+        for pmp_id in wn.pump_name_list:
+            try:
+                p = wn.get_link(pmp_id)
+                if getattr(p, 'pump_type', '') == 'HEAD':
+                    if getattr(p, 'pump_curve_name', None) is None:
+                        bad_pumps.append(pmp_id)
+            except Exception:
+                pass
+        if bad_pumps:
+            issues.append({
+                'type': 'pump_no_curve',
+                'severity': 'ERROR',
+                'pumps': bad_pumps,
+                'message': f'{len(bad_pumps)} HEAD-type pumps missing curve. '
+                           f'Fix: assign a pump curve, or switch to '
+                           f'POWER pump type.',
+            })
+
+        # Duplicate IDs — WNTR rejects on load, but guard anyway
+        all_ids = (wn.node_name_list + wn.pipe_name_list +
+                   wn.pump_name_list + wn.valve_name_list)
+        seen = set()
+        dupes = set()
+        for i in all_ids:
+            if i in seen:
+                dupes.add(i)
+            seen.add(i)
+        if dupes:
+            issues.append({
+                'type': 'duplicate_id',
+                'severity': 'ERROR',
+                'ids': sorted(dupes),
+                'message': f'{len(dupes)} IDs are reused across nodes/links. '
+                           f'Fix: rename duplicates — EPANET requires '
+                           f'globally unique IDs.',
+            })
+
+        n_errors = sum(1 for i in issues if i['severity'] == 'ERROR')
+        n_warnings = len(warnings)
+
+        return {
+            'is_valid': n_errors == 0,
+            'n_errors': n_errors,
+            'n_warnings': n_warnings,
+            'errors': issues,
+            'warnings': warnings,
+            'inventory': {
+                'nodes': len(wn.node_name_list),
+                'pipes': len(wn.pipe_name_list),
+                'pumps': len(wn.pump_name_list),
+                'valves': len(wn.valve_name_list),
+                'connected_components': components,
+            },
+            'note': (
+                'Run validate_network() before run_steady_state() to catch '
+                'common modelling errors early.'),
+        }
+
+    # =========================================================================
+    # R5 — GIS EXPORT (GeoJSON)
+    # =========================================================================
+
+    def export_geojson(self, output_path, include_results=True, results=None):
+        """
+        Export the network to GeoJSON for GIS integration.
+
+        Nodes become Point features, pipes become LineString features.
+        If steady-state results are available and include_results=True,
+        feature properties include pressure (nodes) and velocity/flow
+        (pipes) plus WSAA compliance status.
+
+        Parameters
+        ----------
+        output_path : str
+            Destination .geojson path
+        include_results : bool
+            If True and steady-state results exist, attach them to features
+
+        Returns dict with feature counts and output path. Shapely is NOT
+        required — this uses pure JSON.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        import json as _json
+
+        # If caller didn't pass a results dict, run steady-state now
+        # to get a fresh results dict (self.steady_results holds the
+        # raw WNTR object, not the API dict form).
+        if include_results and results is None:
+            try:
+                results = self.run_steady_state(save_plot=False)
+            except Exception:
+                results = {}
+        results = results if (include_results and isinstance(results, dict)) else {}
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+
+        wn = self.wn
+        features = []
+
+        wsaa_p_min = self.DEFAULTS['min_pressure_m']
+        wsaa_p_max = self.DEFAULTS['max_pressure_m']
+        wsaa_v_max = self.DEFAULTS['max_velocity_ms']
+
+        # Node features
+        for nid in wn.node_name_list:
+            node = wn.get_node(nid)
+            coords = getattr(node, 'coordinates', None)
+            if coords is None:
+                continue
+            # Determine node kind
+            if nid in wn.junction_name_list:
+                kind = 'junction'
+                elev = float(getattr(node, 'elevation', 0) or 0)
+            elif nid in wn.reservoir_name_list:
+                kind = 'reservoir'
+                elev = float(getattr(node, 'base_head', 0) or 0)
+            elif nid in wn.tank_name_list:
+                kind = 'tank'
+                elev = float(getattr(node, 'elevation', 0) or 0)
+            else:
+                kind = 'node'
+                elev = 0.0
+
+            props = {
+                'id': nid,
+                'type': kind,
+                'elevation_m': round(elev, 2),
+            }
+
+            if nid in pressures:
+                p_info = pressures[nid]
+                p_avg = p_info.get('avg_m', 0)
+                props['pressure_m'] = round(p_avg, 2)
+                if kind == 'junction':
+                    if p_avg < wsaa_p_min:
+                        props['wsaa_status'] = 'FAIL_LOW'
+                    elif p_avg > wsaa_p_max:
+                        props['wsaa_status'] = 'FAIL_HIGH'
+                    else:
+                        props['wsaa_status'] = 'PASS'
+
+            features.append({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [float(coords[0]), float(coords[1])],
+                },
+                'properties': props,
+            })
+
+        # Pipe features
+        for pid in wn.pipe_name_list:
+            pipe = wn.get_link(pid)
+            try:
+                start_xy = wn.get_node(pipe.start_node_name).coordinates
+                end_xy = wn.get_node(pipe.end_node_name).coordinates
+            except Exception:
+                continue
+            if start_xy is None or end_xy is None:
+                continue
+
+            props = {
+                'id': pid,
+                'start': pipe.start_node_name,
+                'end': pipe.end_node_name,
+                'length_m': round(pipe.length, 1),
+                'diameter_mm': int(round(pipe.diameter * 1000)),
+                'roughness': round(pipe.roughness, 1),
+            }
+
+            if pid in flows:
+                f_info = flows[pid]
+                v_max = f_info.get('max_velocity_ms', 0)
+                q_avg = f_info.get('avg_lps', 0)
+                props['velocity_ms'] = round(v_max, 3)
+                props['flow_lps'] = round(q_avg, 2)
+                props['wsaa_status'] = ('FAIL' if v_max > wsaa_v_max
+                                         else 'PASS')
+
+            features.append({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [
+                        [float(start_xy[0]), float(start_xy[1])],
+                        [float(end_xy[0]), float(end_xy[1])],
+                    ],
+                },
+                'properties': props,
+            })
+
+        collection = {
+            'type': 'FeatureCollection',
+            'name': os.path.basename(self._inp_file or 'network'),
+            'crs': {
+                'type': 'name',
+                'properties': {'name': 'urn:ogc:def:crs:EPSG::0'},
+            },
+            'features': features,
+        }
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            _json.dump(collection, f, indent=2)
+
+        n_nodes = sum(1 for feat in features
+                      if feat['geometry']['type'] == 'Point')
+        n_pipes = sum(1 for feat in features
+                      if feat['geometry']['type'] == 'LineString')
+
+        return {
+            'output_path': output_path,
+            'n_features': len(features),
+            'n_node_features': n_nodes,
+            'n_pipe_features': n_pipes,
+            'note': ('GeoJSON uses the .inp coordinate system (no reprojection). '
+                     'Set the CRS explicitly in your GIS tool if needed.'),
+        }
+
+    # =========================================================================
+    # I5 — ROOT CAUSE ANALYSIS
+    # =========================================================================
+
+    def root_cause_analysis(self, results=None, max_issues=10):
+        """
+        For each WSAA violation, trace the hydraulic root cause and
+        suggest prioritised fixes with estimated costs.
+
+        Parameters
+        ----------
+        results : dict or None
+            Steady-state results. If None, runs analysis.
+        max_issues : int
+            Maximum number of violations to explain in detail.
+
+        Returns dict with per-violation explanations and ranked fixes.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        if results is None:
+            try:
+                results = self.run_steady_state(save_plot=False)
+            except Exception as e:
+                return {'error': f'Analysis failed: {e}. '
+                                 f'Fix: Run validate_network() to diagnose.'}
+
+        pressures = results.get('pressures', {})
+        flows = results.get('flows', {})
+
+        wsaa_p_min = self.DEFAULTS['min_pressure_m']
+        wsaa_p_max = self.DEFAULTS['max_pressure_m']
+        wsaa_v_max = self.DEFAULTS['max_velocity_ms']
+
+        wn = self.wn
+
+        # Build adjacency so we can trace paths from source
+        pipe_at_node = {nid: [] for nid in wn.node_name_list}
+        for pid in wn.pipe_name_list:
+            p = wn.get_link(pid)
+            pipe_at_node[p.start_node_name].append(pid)
+            pipe_at_node[p.end_node_name].append(pid)
+
+        # Standard DN upsize ladder (mm)
+        DN_LADDER = [50, 75, 100, 150, 200, 250, 300, 375, 450, 525, 600,
+                     675, 750, 900, 1050, 1200]
+        COST_PER_M_BY_DN = {
+            50: 85, 75: 110, 100: 140, 150: 180, 200: 230, 250: 290,
+            300: 360, 375: 440, 450: 530, 525: 620, 600: 720, 675: 820,
+            750: 920, 900: 1150, 1050: 1400, 1200: 1700,
+        }
+
+        def _next_dn(dn_mm):
+            for step in DN_LADDER:
+                if step > dn_mm:
+                    return step
+            return dn_mm
+
+        def _cost(length_m, dn_mm):
+            unit = COST_PER_M_BY_DN.get(dn_mm, 200)
+            return int(round(length_m * unit))
+
+        explanations = []
+
+        # Collect and sort low-pressure junctions
+        low_p = sorted(
+            [(n, p.get('avg_m', 0)) for n, p in pressures.items()
+             if p.get('avg_m', 1e9) < wsaa_p_min],
+            key=lambda x: x[1])
+
+        for node_id, p_m in low_p[:max_issues]:
+            # Find highest-headloss pipe connected to this node
+            worst_pipe = None
+            worst_v = 0
+            for pid in pipe_at_node.get(node_id, []):
+                v = flows.get(pid, {}).get('max_velocity_ms', 0)
+                if v > worst_v:
+                    worst_v = v
+                    worst_pipe = pid
+
+            fixes = []
+            if worst_pipe:
+                pipe_obj = wn.get_link(worst_pipe)
+                dn = int(round(pipe_obj.diameter * 1000))
+                length = pipe_obj.length
+                q_lps = flows.get(worst_pipe, {}).get('avg_lps', 0)
+
+                new_dn = _next_dn(dn)
+                cost_upsize = _cost(length, new_dn)
+                fixes.append({
+                    'option': f'Upsize {worst_pipe} DN{dn} → DN{new_dn}',
+                    'est_cost_aud': cost_upsize,
+                    'effect': ('Lowers velocity and headloss on the '
+                               'critical path, raising downstream pressure.'),
+                })
+                # Parallel main option (DN one smaller than upsize)
+                parallel_dn = dn
+                cost_parallel = _cost(length, parallel_dn)
+                fixes.append({
+                    'option': f'Parallel main alongside {worst_pipe} '
+                              f'(DN{parallel_dn})',
+                    'est_cost_aud': cost_parallel,
+                    'effect': ('Halves carrying burden on existing pipe, '
+                               'reduces headloss ~75% (Q^1.85 law).'),
+                })
+
+            explanations.append({
+                'issue': 'low_pressure',
+                'location': node_id,
+                'measured_m': round(p_m, 1),
+                'wsaa_limit_m': wsaa_p_min,
+                'deficit_m': round(wsaa_p_min - p_m, 1),
+                'root_cause': (
+                    f'Pressure at {node_id} is {p_m:.1f} m (WSAA min '
+                    f'{wsaa_p_min} m). '
+                    + (f'Pipe {worst_pipe} carries '
+                       f'{flows.get(worst_pipe, {}).get("avg_lps", 0):.1f} LPS '
+                       f'at {worst_v:.2f} m/s through DN'
+                       f'{int(round(wn.get_link(worst_pipe).diameter * 1000))}'
+                       f' — this is the limiting segment.'
+                       if worst_pipe else
+                       'No single pipe dominates — review source head.')),
+                'fixes': fixes,
+            })
+
+        # High-velocity pipes
+        hi_v = sorted(
+            [(pid, f.get('max_velocity_ms', 0)) for pid, f in flows.items()
+             if f.get('max_velocity_ms', 0) > wsaa_v_max],
+            key=lambda x: -x[1])
+
+        for pid, v in hi_v[:max_issues]:
+            pipe_obj = wn.get_link(pid)
+            dn = int(round(pipe_obj.diameter * 1000))
+            length = pipe_obj.length
+            new_dn = _next_dn(dn)
+
+            fixes = [{
+                'option': f'Upsize {pid} DN{dn} → DN{new_dn}',
+                'est_cost_aud': _cost(length, new_dn),
+                'effect': (f'Velocity scales with 1/D^2 — DN{dn}→DN{new_dn} '
+                           f'reduces v by '
+                           f'~{(1 - (dn/new_dn)**2)*100:.0f}%.'),
+            }]
+
+            explanations.append({
+                'issue': 'high_velocity',
+                'location': pid,
+                'measured_ms': round(v, 2),
+                'wsaa_limit_ms': wsaa_v_max,
+                'excess_ms': round(v - wsaa_v_max, 2),
+                'root_cause': (
+                    f'Pipe {pid} (DN{dn}, {length:.0f} m) carries '
+                    f'{flows.get(pid, {}).get("avg_lps", 0):.1f} LPS at '
+                    f'{v:.2f} m/s (WSAA max {wsaa_v_max} m/s). '
+                    f'Undersized for the demand it serves.'),
+                'fixes': fixes,
+            })
+
+        return {
+            'n_issues': len(explanations),
+            'explanations': explanations,
+            'cost_assumptions': {
+                'currency': 'AUD',
+                'year': 2026,
+                'source': 'Rawlinsons Construction Cost Guide typical unit '
+                          'rates for installed buried main, ductile iron',
+            },
+            'note': (
+                'Root cause identified from steady-state headloss. '
+                'Costs are indicative unit rates — get quotes for '
+                'project-specific ground conditions and reinstatement.'),
+        }
+
+    # =========================================================================
+    # I3 — DEMAND PATTERN WIZARD
+    # =========================================================================
+
+    # 24-hour diurnal multipliers by network type (WSAA typical profiles)
+    _DIURNAL_PATTERNS = {
+        'residential': [0.35, 0.30, 0.28, 0.28, 0.35, 0.55, 0.95, 1.45,
+                        1.55, 1.35, 1.20, 1.10, 1.05, 1.00, 0.95, 1.00,
+                        1.20, 1.55, 1.75, 1.60, 1.35, 1.05, 0.75, 0.50],
+        'commercial':  [0.30, 0.25, 0.25, 0.25, 0.30, 0.45, 0.80, 1.10,
+                        1.40, 1.55, 1.60, 1.55, 1.50, 1.55, 1.50, 1.40,
+                        1.30, 1.10, 0.85, 0.65, 0.55, 0.45, 0.40, 0.35],
+        'industrial':  [0.70, 0.70, 0.70, 0.70, 0.75, 0.85, 1.05, 1.30,
+                        1.35, 1.30, 1.25, 1.20, 1.05, 1.20, 1.25, 1.30,
+                        1.30, 1.20, 1.00, 0.90, 0.85, 0.80, 0.75, 0.70],
+    }
+
+    def generate_demand_pattern(self, network_type='residential',
+                                 daily_total_kL=None, peak_hour_lps=None):
+        """
+        Generate a 24-hour WSAA diurnal demand pattern.
+
+        Parameters
+        ----------
+        network_type : str
+            'residential', 'commercial', or 'industrial'
+        daily_total_kL : float or None
+            Total daily demand in kilolitres. If None, uses peak_hour_lps
+            to reverse-compute daily total.
+        peak_hour_lps : float or None
+            Peak-hour demand in L/s. If None, uses daily_total_kL to
+            compute it.
+
+        Returns dict with 24-value pattern multipliers, base demand,
+        and peak-hour indicator. The pattern sums to 24.0 (mean = 1.0)
+        when unscaled — apply to base_demand to get hourly demand.
+        """
+        if network_type not in self._DIURNAL_PATTERNS:
+            return {'error': f'Unknown network_type: {network_type}. '
+                             f'Fix: use "residential", "commercial", '
+                             f'or "industrial".'}
+        if daily_total_kL is None and peak_hour_lps is None:
+            return {'error': 'Must provide either daily_total_kL or '
+                             'peak_hour_lps. Fix: pass at least one.'}
+
+        multipliers = list(self._DIURNAL_PATTERNS[network_type])
+        # Normalise so mean = 1.0 (sums to 24)
+        mean_m = sum(multipliers) / 24.0
+        multipliers = [m / mean_m for m in multipliers]
+
+        peak_multiplier = max(multipliers)
+        peak_hour = multipliers.index(peak_multiplier)
+
+        if daily_total_kL is not None:
+            # Average daily demand in L/s
+            avg_demand_lps = daily_total_kL * 1000 / 86400
+            peak_lps = avg_demand_lps * peak_multiplier
+        else:
+            # Reverse: derive average from peak
+            avg_demand_lps = peak_hour_lps / peak_multiplier
+            daily_total_kL = avg_demand_lps * 86400 / 1000
+            peak_lps = peak_hour_lps
+
+        # Per-hour demand in L/s for quick preview
+        hourly_lps = [round(avg_demand_lps * m, 3) for m in multipliers]
+
+        return {
+            'network_type': network_type,
+            'multipliers': [round(m, 3) for m in multipliers],
+            'hourly_demand_lps': hourly_lps,
+            'base_demand_lps': round(avg_demand_lps, 3),
+            'peak_hour': peak_hour,
+            'peak_multiplier': round(peak_multiplier, 3),
+            'peak_demand_lps': round(peak_lps, 3),
+            'daily_total_kL': round(daily_total_kL, 2),
+            'reference': ('WSAA Water Supply Code WSA 03-2011 Table 2.2 '
+                          'typical diurnal demand patterns'),
+            'note': ('Multipliers are mean-normalised (sum=24). Apply '
+                     'to junction base_demand to scale. Peak hour '
+                     'identified for fire-flow overlay.'),
+        }
+
+    def apply_demand_pattern(self, pattern_multipliers, node_ids=None,
+                              pattern_name='WIZARD_PATTERN'):
+        """
+        Apply a 24-hour demand pattern to selected junctions.
+
+        Parameters
+        ----------
+        pattern_multipliers : list of float
+            24 hourly multipliers (typically mean=1.0)
+        node_ids : list of str or None
+            Junctions to update. If None, applies to all junctions.
+        pattern_name : str
+            Name for the pattern in the WNTR model
+
+        Returns dict with applied-node count.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+        if len(pattern_multipliers) != 24:
+            return {'error': f'Pattern must have 24 values, got '
+                             f'{len(pattern_multipliers)}. Fix: call '
+                             f'generate_demand_pattern() first.'}
+
+        # Register pattern on the WN
+        try:
+            self.wn.add_pattern(pattern_name, list(pattern_multipliers))
+        except Exception:
+            # May already exist — silently overwrite attempt
+            try:
+                self.wn.remove_pattern(pattern_name)
+                self.wn.add_pattern(pattern_name, list(pattern_multipliers))
+            except Exception as e:
+                return {'error': f'Could not add pattern: {e}. '
+                                 f'Fix: rename pattern or restart API.'}
+
+        targets = node_ids or list(self.wn.junction_name_list)
+        applied = 0
+        for nid in targets:
+            try:
+                junc = self.wn.get_node(nid)
+                if junc.demand_timeseries_list:
+                    junc.demand_timeseries_list[0].pattern_name = pattern_name
+                    applied += 1
+            except Exception:
+                continue
+
+        return {
+            'pattern_name': pattern_name,
+            'n_junctions_updated': applied,
+            'pattern_length': len(pattern_multipliers),
+            'note': ('Pattern applied. Run api.run_steady_state() for peak '
+                     'or use EPS simulation to see hourly variation.'),
+        }
