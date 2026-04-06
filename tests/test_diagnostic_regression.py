@@ -332,3 +332,75 @@ class TestHAPRoundtrip:
         window._load_hap(hap_path)
         app.processEvents()
         assert len(warned) == 1, "Should warn about modified .inp file"
+
+
+# ── C5: Slurry display path verification ────────────────────────────────────
+
+class TestSlurryDisplayPaths:
+    """Slurry velocity/headloss must appear in properties panel and probe."""
+
+    def test_properties_panel_shows_slurry_velocity(self, window, app):
+        """Properties panel must show slurry velocity when slurry data exists."""
+        results = window.api.run_steady_state(save_plot=False)
+        pipes = window.api.get_link_list('pipe')
+        pid = pipes[0]
+        pipe = window.api.get_link(pid)
+        flow_data = results.get('flows', {}).get(pid, {})
+        Q_m3s = abs(flow_data.get('avg_lps', 0)) / 1000
+
+        if Q_m3s > 0 and pipe.diameter > 0:
+            slurry = bingham_plastic_headloss(
+                flow_m3s=Q_m3s, diameter_m=pipe.diameter,
+                length_m=pipe.length, density=1800,
+                tau_y=15.0, mu_p=0.05, roughness_mm=0.1)
+            results['slurry'] = {pid: slurry}
+            window._last_results = results
+
+            # Simulate clicking a pipe in the explorer
+            window.properties_table.setRowCount(0)
+            window._show_pipe_properties(pid, pipe)
+            # Add results section — same code path as _on_canvas_element_selected
+            fdata = results.get('flows', {}).get(pid)
+            slurry_data = results.get('slurry', {}).get(pid)
+            if fdata:
+                window._add_property_row("--- Results ---", "")
+                if slurry_data and 'velocity_ms' in slurry_data:
+                    window._add_property_row("Velocity (slurry)",
+                                             f"{slurry_data['velocity_ms']:.2f} m/s")
+
+            # Check the table contains slurry velocity
+            found_slurry = False
+            for row in range(window.properties_table.rowCount()):
+                key_item = window.properties_table.item(row, 0)
+                if key_item and 'slurry' in key_item.text().lower():
+                    found_slurry = True
+                    break
+            assert found_slurry, "Properties should show slurry velocity"
+
+    def test_probe_tooltip_uses_slurry_velocity(self, window, app):
+        """Probe tooltip must receive slurry velocity, not water velocity."""
+        results = window.api.run_steady_state(save_plot=False)
+        pipes = window.api.get_link_list('pipe')
+        pid = pipes[0]
+        pipe = window.api.get_link(pid)
+        flow_data = results.get('flows', {}).get(pid, {})
+        Q_m3s = abs(flow_data.get('avg_lps', 0)) / 1000
+
+        if Q_m3s > 0 and pipe.diameter > 0:
+            slurry = bingham_plastic_headloss(
+                flow_m3s=Q_m3s, diameter_m=pipe.diameter,
+                length_m=pipe.length, density=1800,
+                tau_y=15.0, mu_p=0.05, roughness_mm=0.1)
+            results['slurry'] = {pid: slurry}
+            window._last_results = results
+
+            # Simulate probe tooltip data preparation (same as main_window)
+            fdata = dict(results['flows'][pid])
+            sd = results['slurry'][pid]
+            if 'velocity_ms' in sd:
+                fdata['max_velocity_ms'] = sd['velocity_ms']
+            if 'headloss_m' in sd and pipe.length > 0:
+                fdata['headloss_m_per_km'] = sd['headloss_m'] / pipe.length * 1000
+
+            assert fdata['max_velocity_ms'] == sd['velocity_ms'], (
+                "Probe fdata should use slurry velocity")

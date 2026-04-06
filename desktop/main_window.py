@@ -1024,10 +1024,15 @@ class MainWindow(QMainWindow):
                 # Show analysis results if available
                 if self._last_results:
                     fdata = self._last_results.get('flows', {}).get(element_id)
+                    slurry = self._last_results.get('slurry', {}).get(element_id)
                     if fdata:
                         self._add_property_row("--- Results ---", "")
                         self._add_property_row("Avg Flow", f"{fdata['avg_lps']:.2f} LPS")
-                        self._add_property_row("Max Velocity", f"{fdata['max_velocity_ms']:.2f} m/s")
+                        # Use slurry velocity if available
+                        if slurry and 'velocity_ms' in slurry:
+                            self._add_property_row("Velocity (slurry)", f"{slurry['velocity_ms']:.2f} m/s")
+                        else:
+                            self._add_property_row("Max Velocity", f"{fdata['max_velocity_ms']:.2f} m/s")
         except (KeyError, AttributeError) as e:
             logger.debug("Canvas element properties error: %s", e)
 
@@ -2063,6 +2068,14 @@ class MainWindow(QMainWindow):
             elif element_type == 'pipe':
                 pipe = self.api.get_link(element_id)
                 fdata = (self._last_results or {}).get('flows', {}).get(element_id)
+                slurry = (self._last_results or {}).get('slurry', {}).get(element_id)
+                # Override velocity/headloss with slurry values if available
+                if slurry and fdata:
+                    fdata = dict(fdata)  # copy to avoid mutating results
+                    if 'velocity_ms' in slurry:
+                        fdata['max_velocity_ms'] = slurry['velocity_ms']
+                    if 'headloss_m' in slurry and pipe.length > 0:
+                        fdata['headloss_m_per_km'] = slurry['headloss_m'] / pipe.length * 1000
                 self._probe_tooltip.show_pipe(element_id, pipe, fdata)
             else:
                 return
