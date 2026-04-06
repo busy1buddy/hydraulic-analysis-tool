@@ -726,6 +726,10 @@ class MainWindow(QMainWindow):
         try:
             self.api.load_network_from_path(path)
             self._current_file = path
+            # Clear stale results from previous network
+            self._last_results = None
+            self.node_results_table.setRowCount(0)
+            self.pipe_results_table.setRowCount(0)
             self._populate_explorer()
             self._update_status_bar()
             self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
@@ -964,6 +968,11 @@ class MainWindow(QMainWindow):
 
     def _run_analysis(self, analysis_type, params=None):
         """Launch analysis in background thread."""
+        # Guard against concurrent analysis runs
+        if hasattr(self, '_worker') and self._worker is not None and self._worker.isRunning():
+            self.status_bar.showMessage(
+                "Analysis already running. Please wait for it to finish.", 5000)
+            return
         self._worker = AnalysisWorker(self.api, analysis_type, params)
         self._worker.started_signal.connect(self._on_analysis_started)
         self._worker.progress.connect(self._on_analysis_progress)
@@ -2072,7 +2081,11 @@ class MainWindow(QMainWindow):
         self.canvas.ensure_scene_connected()
 
     def closeEvent(self, event):
-        """Save preferences on window close."""
+        """Save preferences and clean up running workers on close."""
+        # Stop any running analysis worker to avoid dangling threads
+        if hasattr(self, '_worker') and self._worker is not None and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(1000)
         prefs = {
             'last_file': self._current_file or '',
             'window_width': self.width(),

@@ -114,6 +114,17 @@ def bingham_plastic_headloss(flow_m3s, diameter_m, length_m, density, tau_y, mu_
     dict with headloss_m, velocity_ms, regime, friction_factor, reynolds.
     """
     g = 9.81
+
+    # Guard against zero/negative plastic viscosity or density — division by zero
+    if mu_p <= 0:
+        return {'headloss_m': 0, 'velocity_ms': 0, 'regime': 'error',
+                'friction_factor': 0, 'reynolds': 0,
+                'error': 'mu_p must be > 0'}
+    if density <= 0:
+        return {'headloss_m': 0, 'velocity_ms': 0, 'regime': 'error',
+                'friction_factor': 0, 'reynolds': 0,
+                'error': 'density must be > 0'}
+
     A = math.pi * (diameter_m / 2) ** 2
     V = abs(flow_m3s) / A if A > 0 else 0
 
@@ -175,6 +186,13 @@ def power_law_headloss(flow_m3s, diameter_m, length_m, density, K, n,
     dict with headloss_m, velocity_ms, regime, etc.
     """
     g = 9.81
+
+    # Guard against zero/negative K or n — would cause division by zero
+    if K <= 0 or n <= 0:
+        return {'headloss_m': 0, 'velocity_ms': 0, 'regime': 'error',
+                'friction_factor': 0, 'reynolds': 0,
+                'error': 'K and n must be > 0'}
+
     A = math.pi * (diameter_m / 2) ** 2
     V = abs(flow_m3s) / A if A > 0 else 0
 
@@ -492,6 +510,11 @@ def settling_velocity(d_particle_mm, rho_solid, rho_fluid=1000, mu_fluid=0.001):
 
     if d <= 0 or delta_rho <= 0:
         return {'velocity_ms': 0, 'regime': 'neutral', 'reynolds': 0}
+
+    # Guard against zero/negative fluid viscosity — would cause division by zero
+    if mu_fluid <= 0:
+        return {'velocity_ms': 0, 'regime': 'error', 'reynolds': 0,
+                'error': 'mu_fluid must be > 0'}
 
     # Stokes settling velocity (laminar)
     # V_s = (d² × (ρ_s - ρ_f) × g) / (18 × μ)
