@@ -222,18 +222,21 @@ def generate_docx_report(results, network_summary, output_path,
                 ])
             _add_styled_table(doc, ['Junction', 'Min (m)', 'Max (m)', 'Avg (m)'], p_rows)
 
-        # Flow table
+        # Flow table (use slurry velocity if available)
         flows = steady.get('flows', {})
+        slurry_data = steady.get('slurry', {})
         if flows:
             doc.add_heading('2.2 Pipe Flows', level=2)
             f_rows = []
             for pipe, data in flows.items():
+                sd = slurry_data.get(pipe)
+                vel = sd.get('velocity_ms', data.get('avg_velocity_ms', '-')) if sd else data.get('avg_velocity_ms', '-')
                 f_rows.append([
                     pipe,
                     str(data.get('min_lps', '-')),
                     str(data.get('max_lps', '-')),
                     str(data.get('avg_lps', '-')),
-                    str(data.get('avg_velocity_ms', '-')),
+                    str(vel),
                 ])
             _add_styled_table(
                 doc,

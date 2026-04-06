@@ -504,7 +504,9 @@ class NetworkCanvas(QWidget):
             color = QColor(108, 112, 134)  # default grey
             if mode in ("WSAA Compliance", "Velocity"):
                 f = flows.get(pid, {})
-                v = f.get('max_velocity_ms')
+                # Use slurry velocity if available
+                slurry = (self.results or {}).get('slurry', {}).get(pid)
+                v = slurry.get('velocity_ms', f.get('max_velocity_ms')) if slurry else f.get('max_velocity_ms')
                 if mode == "WSAA Compliance":
                     color = _wsaa_pipe_color(v)
                 else:

@@ -145,9 +145,14 @@ class DashboardWidget(QWidget):
                 "Max Pressure", f"{max_p:.1f}", "m head", max_status,
                 f"WSAA WSA 03-2011: maximum 50 m\nCurrent: {max_p:.1f} m"), 1, 1)
 
-        # Row 1: Velocity KPIs
+        # Row 1: Velocity KPIs (use slurry velocity if available)
+        slurry_data = results.get('slurry', {})
         if flows:
-            all_vel = [f.get('max_velocity_ms', 0) for f in flows.values()]
+            all_vel = []
+            for pid, f in flows.items():
+                sd = slurry_data.get(pid)
+                v = sd.get('velocity_ms', f.get('max_velocity_ms', 0)) if sd else f.get('max_velocity_ms', 0)
+                all_vel.append(v)
             max_v = max(all_vel) if all_vel else 0
             vel_status = 'ok' if max_v <= 2.0 else ('warning' if max_v <= 2.5 else 'fail')
             self.grid.addWidget(_kpi_widget(

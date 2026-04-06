@@ -108,7 +108,13 @@ class ScenarioComparisonTable(QWidget):
                 # Use actual min/max across all timesteps, not averages
                 all_p_min = [p.get('min_m', 0) for p in pressures.values()]
                 all_p_max = [p.get('max_m', 0) for p in pressures.values()]
-                all_v = [f.get('max_velocity_ms', 0) for f in flows.values()]
+                # Use slurry velocity if available
+                slurry_data = sc.results.get('slurry', {})
+                all_v = []
+                for pid, f in flows.items():
+                    sd = slurry_data.get(pid)
+                    v = sd.get('velocity_ms', f.get('max_velocity_ms', 0)) if sd else f.get('max_velocity_ms', 0)
+                    all_v.append(v)
 
                 min_p = min(all_p_min) if all_p_min else 0
                 max_p = max(all_p_max) if all_p_max else 0
