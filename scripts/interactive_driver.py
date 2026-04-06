@@ -722,6 +722,44 @@ def act_7_edit_mode(w):
            "J1 coordinates restored", s48)
 
 
+def act_8_3d_view(w):
+    # S49 Load demo and run analysis, then open 3D view
+    demo = str(ROOT / "tutorials" / "demo_network" / "network.inp")
+    def s49():
+        w.api.load_network_from_path(demo)
+        w._current_file = demo
+        w._populate_explorer()
+        w.canvas.set_api(w.api)
+        w.what_if_panel.set_api(w.api)
+        w._on_run_steady()
+        wait_for_worker(w)
+        # Open 3D view
+        from desktop.view_3d import View3D
+        view = View3D(w.api, results=w._last_results, parent=w)
+        view.show()
+        QApplication.processEvents()
+        QTest.qWait(200)
+        QApplication.processEvents()
+        # Check the info panel shows correct node/pipe counts
+        info = view.info_label.text()
+        ok = "11 nodes" in info and "11 pipes" in info
+        STATE['view_3d'] = view
+        return ("PASS" if ok else "FAIL",
+                f"info: {info[:120]}")
+    yield ("S49", "Open 3D view with results",
+           "Info panel shows 11 nodes, 11 pipes", s49)
+
+    # S50 close 3D view
+    def s50():
+        view = STATE.get('view_3d')
+        if view:
+            view.close()
+        QApplication.processEvents()
+        return ("PASS", "3D view closed")
+    yield ("S50", "Close 3D view",
+           "3D view closes cleanly", s50)
+
+
 # ------------------------------------------------------------------
 # HTML report
 # ------------------------------------------------------------------
@@ -790,7 +828,8 @@ def main():
     QTest.qWait(400)  # let deferred QTimer.singleShot tabify fire
 
     acts = [act_1_project_setup, act_2_first_analysis, act_3_whatif,
-            act_4_slurry, act_5_reports, act_6_error_paths, act_7_edit_mode]
+            act_4_slurry, act_5_reports, act_6_error_paths, act_7_edit_mode,
+            act_8_3d_view]
     step_num = 0
     for act in acts:
         for (sid, action, check, fn) in act(w):
