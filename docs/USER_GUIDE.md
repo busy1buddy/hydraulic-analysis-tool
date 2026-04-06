@@ -70,7 +70,7 @@ python main_app.py
 
 ### Headloss (m/km)
 
-- Read directly from EPANET solver
+- Calculated from pipe properties using the Hazen-Williams formula. Matches EPANET solver output for H-W networks.
 - High headloss = undersized pipe or high roughness
 
 ## Colour Modes

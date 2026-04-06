@@ -35,7 +35,7 @@ implemented in the EPANET 2.2 solver via WNTR.
 - **Convergence criterion:** 0.001 accuracy on heads
 - **Maximum iterations:** 200 trials
 - **Solver:** WNTR EpanetSimulator (demand-driven)
-- **Code location:** `epanet_api_monolith.py:309-388` (`run_steady_state`)
+- **Code location:** `epanet_api/analysis.py:24` (`run_steady_state`)
 
 ### 1.2 Hazen-Williams Headloss
 
@@ -53,7 +53,7 @@ implemented in the EPANET 2.2 solver via WNTR.
 of Roughness". Journal AWWA 73(5):274-280.
 
 **Implementation:** EPANET solver via WNTR. Default headloss formula is H-W
-(`epanet_api_monolith.py:37`).
+(`epanet_api/__init__.py:49`).
 
 **Verification:** D7 hand calculations confirmed against Net1 benchmark.
 
@@ -375,7 +375,7 @@ recommended closure time is >= 2 x t_c (i.e. >= 4L/a), with a minimum of
 
 **Source:** Thorley (2004)
 
-**Code location:** `epanet_api_monolith.py:2544-2557`
+**Code location:** `epanet_api/surge.py:263` (`calculate_safe_closure_time`)
 
 ### 3.3 Surge Vessel Sizing
 
@@ -394,7 +394,7 @@ Pressure rating: 1.5 x max surge pressure (50% safety factor).
 
 **Source:** Wylie & Streeter (1993) "Fluid Transients in Systems", Ch. 12.
 
-**Code location:** `epanet_api_monolith.py:2467-2509`
+**Code location:** `epanet_api/surge.py:12` (`design_surge_protection`)
 
 ### 3.4 Bladder Accumulator Sizing
 
@@ -423,7 +423,7 @@ lines (C+ and C-) with slope dx/dt = +/-a.
 
 **Implementation:** TSNet `MOCSimulator` with demand-driven initialisation.
 
-**Code location:** `epanet_api_monolith.py:913-1027` (`run_transient`)
+**Code location:** `epanet_api/analysis.py:635` (`run_transient`)
 
 ### 3.7 Transient Compliance
 
@@ -435,7 +435,7 @@ pressure rating. Elevation is subtracted from total head before comparison
 - gauge_max_kPa > 80% of PN rating: WARNING
 - gauge_min_pressure < 0: CRITICAL (column separation risk)
 
-**Code location:** `epanet_api_monolith.py:983-1026`
+**Code location:** `epanet_api/analysis.py:695-747` (transient compliance checks)
 
 ---
 
@@ -542,7 +542,7 @@ network from a source node. The quality parameter is set to 'AGE'.
 
 Junctions where max water age exceeds 24 hours are flagged as stagnation risks.
 
-**Code location:** `epanet_api_monolith.py:587-675` (`run_water_quality`)
+**Code location:** `epanet_api/analysis.py:309` (`run_water_quality`)
 
 **Verification:** D7 hand calculations confirmed age conversion and threshold
 comparison on Net1 benchmark.
@@ -576,7 +576,7 @@ comparison on Net1 benchmark.
 **WSAA minimum chlorine residual:** 0.2 mg/L (ADWG — Australian Drinking
 Water Guidelines).
 
-**Code location:** `epanet_api_monolith.py:713-811` (`run_water_quality_chlorine`)
+**Code location:** `epanet_api/analysis.py:435` (`run_water_quality_chlorine`)
 
 **Verification:** D7 hand calculations confirmed exponential decay matches
 WNTR output for k_b = -0.5/hr over 72-hour simulation.
@@ -614,7 +614,7 @@ above minimum. The index is capped at 1.0.
 **Source:** Todini (2000) "Looped water distribution networks design using a
 resilience index based heuristic approach". Urban Water 2(2):115-122.
 
-**Code location:** `epanet_api_monolith.py:3017-3108` (`compute_resilience_index`)
+**Code location:** `epanet_api/resilience.py:13` (`compute_resilience_index`)
 
 **Verification:** D7 hand calculations on 3-node test network confirmed.
 
@@ -651,7 +651,7 @@ Higher values indicate more loops and greater hydraulic redundancy.
 
 **Source:** Graph theory; Todini & Pilati (1988)
 
-**Code location:** `epanet_api_monolith.py:2862-2965` (`analyse_topology`)
+**Code location:** `epanet_api/topology.py:109` (`analyse_topology`)
 
 ---
 
@@ -687,9 +687,9 @@ must not reduce the apparent maximum velocity.
 **Zero-diameter guard:** Always checks pipe cross-sectional area > 0 before
 computing velocity to avoid division by zero.
 
-**Code location:** `epanet_api_monolith.py:35-44` (defaults),
-`epanet_api_monolith.py:359-388` (steady-state compliance checks),
-`epanet_api_monolith.py:455` (fire flow analysis).
+**Code location:** `epanet_api/__init__.py:47-56` (DEFAULTS dict),
+`epanet_api/analysis.py:81-123` (steady-state compliance checks),
+`epanet_api/analysis.py:177` (fire flow analysis).
 
 ---
 
