@@ -19,6 +19,7 @@ networkx>=3.0
 # Reports
 python-docx>=0.8.11
 reportlab>=4.0.0
+fpdf2>=2.7.0
 
 # Review bridge
 anthropic>=0.40.0
