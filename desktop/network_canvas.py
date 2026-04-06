@@ -152,6 +152,7 @@ class NetworkCanvas(QWidget):
         self._node_positions = {}  # {id: (x, y)}
         self._node_ids = []
         self._pipe_ids = []
+        self._pipe_segments = {}  # {pid: (x0, y0, x1, y1)} — populated by render()
         self._selected_id = None
         self._editor = None  # Set by CanvasEditor for edit mode routing
 
