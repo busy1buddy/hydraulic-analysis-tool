@@ -17,7 +17,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent
 from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence
 
+import logging
+
 from epanet_api import HydraulicAPI
+
+logger = logging.getLogger(__name__)
 from desktop.network_canvas import NetworkCanvas
 from desktop.analysis_worker import AnalysisWorker
 from desktop.scenario_panel import ScenarioPanel, ScenarioData
@@ -993,8 +997,8 @@ class MainWindow(QMainWindow):
             elif parent_text.startswith("Valves"):
                 link = self.api.get_link(element_id)
                 self._show_valve_properties(element_id, link)
-        except Exception:
-            pass
+        except (KeyError, AttributeError) as e:
+            logger.debug("Could not show properties for %s: %s", element_id, e)
 
     def _on_canvas_element_selected(self, element_id, element_type):
         """Handle element selection from the canvas."""
@@ -1024,8 +1028,8 @@ class MainWindow(QMainWindow):
                         self._add_property_row("--- Results ---", "")
                         self._add_property_row("Avg Flow", f"{fdata['avg_lps']:.2f} LPS")
                         self._add_property_row("Max Velocity", f"{fdata['max_velocity_ms']:.2f} m/s")
-        except Exception:
-            pass
+        except (KeyError, AttributeError) as e:
+            logger.debug("Canvas element properties error: %s", e)
 
     def _add_property_row(self, key, value):
         row = self.properties_table.rowCount()
@@ -1216,8 +1220,8 @@ class MainWindow(QMainWindow):
                 results,
                 analysis_type=analysis_type.lower(),
             )
-        except Exception:
-            pass  # Audit trail failure is non-critical
+        except (OSError, ValueError) as e:
+            logger.warning("Audit trail write failed: %s", e)
 
         # Update dashboard
         self.dashboard_widget.update_dashboard(self.api, results)
@@ -1294,7 +1298,7 @@ class MainWindow(QMainWindow):
         for nid in pressures.columns:
             try:
                 elev = self.api.get_node(nid).elevation
-            except Exception:
+            except (KeyError, AttributeError):
                 elev = 0
             head_arr = np.array(pressures[nid].values, dtype=float) + elev
             node_data[nid] = {'head': head_arr}
@@ -1330,7 +1334,7 @@ class MainWindow(QMainWindow):
                 try:
                     node = self.api.get_node(nid)
                     elev = node.elevation
-                except Exception:
+                except (KeyError, AttributeError):
                     elev = 0.0
                 p = float(head_arr[frame]) - elev
                 pressures[nid] = {'avg_m': p, 'min_m': p, 'max_m': p}
@@ -1474,7 +1478,7 @@ class MainWindow(QMainWindow):
             try:
                 node = self.api.get_node(jid)
                 elev = f"{node.elevation:.1f}"
-            except Exception:
+            except (KeyError, AttributeError):
                 elev = "--"
 
             min_p = pdata.get('min_m', 0)
@@ -1542,7 +1546,7 @@ class MainWindow(QMainWindow):
                 pipe_length = pipe.length
                 pipe_diameter = pipe.diameter
                 pipe_roughness = pipe.roughness
-            except Exception:
+            except (KeyError, AttributeError):
                 dn = "--"
                 length = "--"
                 pipe_length = 0
@@ -1962,8 +1966,8 @@ class MainWindow(QMainWindow):
             elif hasattr(self, 'load_network_file'):
                 try:
                     self.load_network_file(demo_inp)
-                except Exception:
-                    pass
+                except (OSError, ValueError) as e:
+                    logger.warning("Demo load fallback failed: %s", e)
 
         def _step2():
             self.statusBar().showMessage(
@@ -2062,7 +2066,7 @@ class MainWindow(QMainWindow):
                 self._probe_tooltip.show_pipe(element_id, pipe, fdata)
             else:
                 return
-        except Exception:
+        except (KeyError, AttributeError):
             return
 
         self._probe_tooltip.move_near(gx, gy)
@@ -2232,8 +2236,8 @@ class MainWindow(QMainWindow):
                 self.what_if_panel.set_api(self.api)
                 self.setWindowTitle(
                     f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(last_file)}")
-            except Exception:
-                pass
+            except (OSError, ValueError) as e:
+                logger.info("Could not restore last session: %s", e)
         w = prefs.get('window_width')
         h = prefs.get('window_height')
         if w and h:
