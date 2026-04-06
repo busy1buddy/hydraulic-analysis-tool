@@ -109,6 +109,8 @@ def test_main_window_closes_cleanly(app):
     for _ in range(3):
         w = MainWindow()
         w.show()
+        app.processEvents()
         w.close()
-    # If we got here without crashing, pass
-    assert True
+        app.processEvents()
+    # Verify the last window was properly closed
+    assert not w.isVisible(), "Window should be closed after close()"

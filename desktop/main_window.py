@@ -718,9 +718,14 @@ class MainWindow(QMainWindow):
     def _on_open_inp(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open EPANET Network", "",
-            "EPANET Files (*.inp);;All Files (*)"
+            "EPANET Files (*.inp);;Project Files (*.hap);;All Files (*)"
         )
         if not path:
+            return
+
+        # Delegate .hap files to the project loader
+        if path.lower().endswith('.hap'):
+            self._load_hap(path)
             return
 
         try:
@@ -762,13 +767,33 @@ class MainWindow(QMainWindow):
             self._save_hap(path)
 
     def _save_hap(self, path):
-        """Save project state as .hap JSON file."""
+        """Save full project state as .hap JSON file."""
+        # Serialize scenarios
+        scenarios = []
+        if hasattr(self, 'scenario_panel'):
+            scenarios = [s.to_dict() for s in self.scenario_panel.scenarios]
+
+        # Serialize last analysis results (pressures, flows, compliance)
+        last_run = {}
+        if self._last_results is not None:
+            last_run = {
+                'pressures': self._last_results.get('pressures', {}),
+                'flows': self._last_results.get('flows', {}),
+                'compliance': self._last_results.get('compliance', []),
+            }
+
+        # Serialize slurry parameters
+        slurry_params = dict(self._slurry_params) if hasattr(self, '_slurry_params') else {}
+
         project = {
+            'version': '3.1.0',
             'inp_path': self._current_file or '',
-            'scenarios': [],
-            'last_run': {},
+            'scenarios': scenarios,
+            'last_run': last_run,
+            'slurry_params': slurry_params,
             'settings': {
                 'slurry_mode': self.slurry_act.isChecked(),
+                'colour_mode': self.canvas.color_mode_combo.currentText(),
             },
         }
         try:
@@ -778,6 +803,71 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
         except Exception as e:
             QMessageBox.critical(self, "Save Error", str(e))
+
+    def _load_hap(self, path):
+        """Load full project state from .hap JSON file."""
+        try:
+            with open(path) as f:
+                project = json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error",
+                                 f"Could not read project file.\n\n{e}")
+            return
+
+        # Load the referenced .inp network
+        inp_path = project.get('inp_path', '')
+        if not inp_path or not os.path.exists(inp_path):
+            # Try relative to .hap location
+            hap_dir = os.path.dirname(os.path.abspath(path))
+            inp_path = os.path.join(hap_dir, os.path.basename(inp_path))
+            if not os.path.exists(inp_path):
+                QMessageBox.warning(self, "Missing Network",
+                    f"Network file not found: {project.get('inp_path', '')}")
+                return
+
+        try:
+            self.api.load_network_from_path(inp_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error",
+                                 f"Could not load network.\n\n{e}")
+            return
+
+        self._current_file = inp_path
+        self._hap_file = path
+        self._populate_explorer()
+        self.canvas.set_api(self.api)
+        self.dashboard_widget.update_dashboard(self.api)
+        self.what_if_panel.set_api(self.api)
+
+        # Restore analysis results
+        last_run = project.get('last_run', {})
+        if last_run and last_run.get('pressures'):
+            self._last_results = last_run
+            self._on_analysis_finished(last_run)
+
+        # Restore scenarios
+        from desktop.scenario_panel import ScenarioData
+        scenarios_data = project.get('scenarios', [])
+        if scenarios_data and hasattr(self, 'scenario_panel'):
+            self.scenario_panel.scenarios = [
+                ScenarioData(s['name'], s.get('demand_multiplier', 1.0),
+                             s.get('modifications', []))
+                for s in scenarios_data
+            ]
+
+        # Restore slurry parameters
+        slurry_params = project.get('slurry_params', {})
+        if slurry_params:
+            self._slurry_params = slurry_params
+
+        # Restore settings
+        settings = project.get('settings', {})
+        if settings.get('slurry_mode', False):
+            self.slurry_act.setChecked(True)
+
+        self._update_status_bar()
+        self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
+        self.status_bar.showMessage(f"Loaded project {os.path.basename(path)}", 3000)
 
     # =====================================================================
     # PROJECT EXPLORER
@@ -1436,17 +1526,8 @@ class MainWindow(QMainWindow):
                 items = [pid, dn, length, f"{v_display:.2f}",
                          f"{hl_per_km:.1f}", regime, f"{re_b:.0f}"]
             else:
-                # Hazen-Williams water headloss per km
-                try:
-                    if pipe_length > 0 and pipe_diameter > 0:
-                        Q_m3s = avg_lps / 1000
-                        hl_per_m = (10.67 * Q_m3s ** 1.852) / (
-                            pipe_roughness ** 1.852 * pipe_diameter ** 4.87)
-                        hl_per_km = hl_per_m * 1000
-                    else:
-                        hl_per_km = 0
-                except Exception:
-                    hl_per_km = 0
+                # Read headloss from solver results (not recalculated)
+                hl_per_km = fdata.get('headloss_per_km', 0)
                 if is_slurry:
                     # Zero-flow pipe in slurry mode — fill extra columns
                     items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}",

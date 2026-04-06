@@ -215,3 +215,50 @@ class TestD8003CtrlFShortcut:
                 ctrl_f_found = True
                 break
         assert ctrl_f_found, "Ctrl+F shortcut not registered"
+
+
+# ── D2-003: Headloss from solver, not recalculated ─────────────────────────
+
+class TestHeadlossFromSolver:
+    """The flows dict must include headloss_per_km from the EPANET solver."""
+
+    def test_headloss_per_km_in_flows(self, window, app):
+        results = window.api.run_steady_state(save_plot=False)
+        pipes = window.api.get_link_list('pipe')
+        assert len(pipes) > 0
+        pid = pipes[0]
+        fdata = results['flows'][pid]
+        assert 'headloss_per_km' in fdata, (
+            "flows dict must include headloss_per_km from solver")
+        assert fdata['headloss_per_km'] >= 0
+
+
+# ── HAP roundtrip: save and load project ────────────────────────────────────
+
+class TestHAPRoundtrip:
+    """Project .hap files must save and restore full state."""
+
+    def test_save_and_load_hap(self, window, app, tmp_path, monkeypatch):
+        import json
+
+        # Run analysis first
+        results = window.api.run_steady_state(save_plot=False)
+        window._on_analysis_finished(results)
+        app.processEvents()
+
+        # Save .hap
+        hap_path = str(tmp_path / "test_project.hap")
+        window._save_hap(hap_path)
+        assert os.path.exists(hap_path)
+
+        # Read and verify contents
+        with open(hap_path) as f:
+            project = json.load(f)
+
+        assert project['version'] == '3.1.0'
+        assert len(project['last_run']['pressures']) > 0, (
+            ".hap must save pressure results")
+        assert len(project['last_run']['flows']) > 0, (
+            ".hap must save flow results")
+        assert len(project['scenarios']) >= 1, (
+            ".hap must save scenario definitions")

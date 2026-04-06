@@ -35,6 +35,7 @@ class AnalysisMixin:
 
         pressures = self.steady_results.node['pressure']
         flows = self.steady_results.link['flowrate']
+        headloss = self.steady_results.link['headloss']
 
         # Build results dict
         results = {
@@ -63,12 +64,18 @@ class AnalysisMixin:
             # abs() required — flow can be negative on reversing pipes
             v_max = float(f.abs().max()) / area
 
+            # Headloss from solver (m per km of pipe)
+            hl = headloss[pipe_name]
+            hl_abs = float(hl.abs().max())
+            hl_per_km = (hl_abs / pipe.length * 1000) if pipe.length > 0 else 0
+
             results['flows'][pipe_name] = {
                 'min_lps': round(float(f.min()) * 1000, 2),
                 'max_lps': round(float(f.max()) * 1000, 2),
                 'avg_lps': round(float(f.mean()) * 1000, 2),
                 'avg_velocity_ms': round(v_avg, 2),
                 'max_velocity_ms': round(v_max, 2),
+                'headloss_per_km': round(hl_per_km, 2),
             }
 
         # Australian compliance check

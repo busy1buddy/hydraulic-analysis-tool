@@ -195,13 +195,18 @@ class TestEPSExecution:
 
         results = api.run_steady_state(save_plot=False)
 
-        # Check that compliance warnings use min pressure
-        for c in results.get('compliance', []):
-            if 'Min pressure' in c.get('message', ''):
-                # Verify the value matches the min, not avg
-                assert True
-                return
-        # Even if no warnings, the check ran (network may have adequate pressure)
+        # Check that compliance warnings reference min pressure, not avg
+        compliance = results.get('compliance', [])
+        min_pressure_warnings = [c for c in compliance
+                                 if 'Min pressure' in c.get('message', '')
+                                 and c.get('type') == 'WARNING']
+        for w in min_pressure_warnings:
+            msg = w['message']
+            # Verify message references "Min pressure", not "Avg pressure"
+            assert 'Min pressure' in msg, (
+                f"Compliance warning should reference min pressure: {msg}")
+        # Even if no min-pressure warnings, compliance check must have run
+        assert isinstance(compliance, list), "Compliance should be a list"
 
     def test_wsaa_uses_minimum_not_average_in_ui(self, window, app):
         """The node results table must show min pressure and check WSAA against it."""

@@ -22,7 +22,7 @@
 <body>
   <h1>Hydraulic Analysis Tool -- Interactive Driver Report</h1>
   <div class="summary">
-    <p>Generated: 2026-04-06 14:47:06</p>
+    <p>Generated: 2026-04-06 16:09:33</p>
     <p>Total: 50 steps | PASS: 50 | FAIL: 0 |
        CRITICAL: 0</p>
   </div>
@@ -132,31 +132,31 @@
   <div class="step pass">
     <div class="action">S18: Set demand slider to 150%</div>
     <div class="check">Check: Status label mentions 150%</div>
-    <div class="result">PASS: status: Updated: min pressure -24.8 m, max velocity 3.58 m/s (150% demand, 100% C, +0 m source)</div>
+    <div class="result">PASS: status: Updated: min pressure -10.6 m, max velocity 3.44 m/s (150% demand, 100% C, +0 m source)</div>
     <img src="driver_screenshots/S18.png" loading="lazy" />
   </div>
   <div class="step pass">
     <div class="action">S19: Check canvas refreshed after What-If</div>
     <div class="check">Check: _last_results populated</div>
-    <div class="result">PASS: min pressure at 150%: -24.8</div>
+    <div class="result">PASS: min pressure at 150%: -10.6</div>
     <img src="driver_screenshots/S19.png" loading="lazy" />
   </div>
   <div class="step pass">
     <div class="action">S20: Verify What-If status label</div>
     <div class="check">Check: Status shows min pressure + max velocity</div>
-    <div class="result">PASS: status text: Updated: min pressure -24.8 m, max velocity 3.58 m/s (150% demand, 100% C, +0 m source)</div>
+    <div class="result">PASS: status text: Updated: min pressure -10.6 m, max velocity 3.44 m/s (150% demand, 100% C, +0 m source)</div>
     <img src="driver_screenshots/S20.png" loading="lazy" />
   </div>
   <div class="step pass">
     <div class="action">S21: Reset demand to 100%</div>
     <div class="check">Check: Status mentions 100%</div>
-    <div class="result">PASS: status: Updated: min pressure 12.1 m, max velocity 2.39 m/s (100% demand, 100% C, +0 m source)</div>
+    <div class="result">PASS: status: Updated: min pressure 11.2 m, max velocity 2.29 m/s (100% demand, 100% C, +0 m source)</div>
     <img src="driver_screenshots/S21.png" loading="lazy" />
   </div>
   <div class="step pass">
     <div class="action">S22: Verify pressures at 100%</div>
     <div class="check">Check: Min pressure in normal range 10-20 m</div>
-    <div class="result">PASS: min pressure at 100%: 12.1 (expected 10-20 m)</div>
+    <div class="result">PASS: min pressure at 100%: 11.2 (expected 10-20 m)</div>
     <img src="driver_screenshots/S22.png" loading="lazy" />
   </div>
   <div class="step pass">
@@ -228,7 +228,7 @@
   <div class="step pass">
     <div class="action">S34: Verify DOCX file size &gt; 10KB</div>
     <div class="check">Check: output/*.docx exists and &gt;10KB</div>
-    <div class="result">PASS: driver_test.docx: 38147 bytes (threshold 10KB)</div>
+    <div class="result">PASS: driver_test.docx: 38145 bytes (threshold 10KB)</div>
     <img src="driver_screenshots/S34.png" loading="lazy" />
   </div>
   <div class="step pass">
@@ -288,7 +288,7 @@
   <div class="step pass">
     <div class="action">S44: F5 baseline analysis</div>
     <div class="check">Check: Analysis completed</div>
-    <div class="result">PASS: baseline min p=12.1</div>
+    <div class="result">PASS: baseline min p=11.2</div>
     <img src="driver_screenshots/S44.png" loading="lazy" />
   </div>
   <div class="step pass">
@@ -318,7 +318,7 @@
   <div class="step pass">
     <div class="action">S49: Open 3D view with results</div>
     <div class="check">Check: Info panel shows 11 nodes, 11 pipes</div>
-    <div class="result">PASS: info: Network: 11 nodes, 11 pipes  |  Pressure: 12.1–64.5 m  |  Max velocity: 2.39 m/s  |  WSAA: 3 PASS, 7 FAIL</div>
+    <div class="result">PASS: info: Network: 11 nodes, 11 pipes  |  Pressure: 11.2–44.6 m  |  Max velocity: 2.29 m/s  |  WSAA: 8 PASS, 2 FAIL</div>
     <img src="driver_screenshots/S49.png" loading="lazy" />
   </div>
   <div class="step pass">
