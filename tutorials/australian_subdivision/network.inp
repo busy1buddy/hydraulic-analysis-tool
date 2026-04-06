@@ -1,0 +1,131 @@
+[TITLE]
+Australian Residential Subdivision — 50-lot Brisbane Design
+Per WSAA WSA 03-2011, PVC PN12 AS/NZS 1477, C=150
+
+[JUNCTIONS]
+;ID              Elev            Demand
+;                (m AHD)         (LPS - avg day)
+;--- Ring main intersections ---
+ J1              65.0            0.036     ;NW corner, highest point
+ J2              63.0            0.072     ;North, 8 lots
+ J3              61.0            0.054     ;NE corner
+ J4              64.0            0.036     ;West mid
+ J5              62.0            0.072     ;Central intersection, 8 lots
+ J6              60.0            0.054     ;East mid
+ J7              63.0            0.036     ;SW corner
+ J8              61.0            0.054     ;South mid
+ J9              59.0            0.036     ;SE corner
+;--- Internal cul-de-sacs ---
+ J10             62.5            0.018     ;Cul-de-sac off J2
+ J11             60.5            0.018     ;Cul-de-sac off J5
+ J12             58.0            0.018     ;Cul-de-sac off J8
+ J13             55.0            0.036     ;Low point, 4 lots
+
+[RESERVOIRS]
+;ID              Head
+;                (m AHD)
+ R1              100.0           ;Connection to existing 300mm DI main at 60m head (RL 100)
+
+[TANKS]
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness
+;                                                (m)             (mm)            (C-factor)
+;--- Ring main (DN150 PVC PN12) ---
+ P1              R1              J1              200             160             150       ;Supply from main
+ P2              J1              J2              150             160             150       ;North ring
+ P3              J2              J3              180             160             150       ;NE ring
+ P4              J1              J4              120             160             150       ;West ring
+ P5              J4              J7              120             160             150       ;SW ring
+ P6              J3              J6              120             160             150       ;East ring
+ P7              J6              J9              120             160             150       ;SE ring
+ P8              J7              J8              150             160             150       ;South ring
+ P9              J8              J9              180             160             150       ;SE ring
+;--- Cross connections (DN100 PVC PN12) ---
+ P10             J2              J5              120             110             150       ;N-central
+ P11             J4              J5              120             110             150       ;W-central
+ P12             J5              J6              120             110             150       ;E-central
+ P13             J5              J8              120             110             150       ;S-central
+;--- Cul-de-sacs (DN100 PVC PN12) ---
+ P14             J2              J10             80              110             150       ;NW cul-de-sac
+ P15             J5              J11             80              110             150       ;Central cul-de-sac
+ P16             J8              J12             80              110             150       ;South cul-de-sac
+ P17             J9              J13             100             110             150       ;SE low point
+
+[PUMPS]
+
+[VALVES]
+
+[PATTERNS]
+
+[CURVES]
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+
+[EMITTERS]
+
+[QUALITY]
+
+[SOURCES]
+
+[REACTIONS]
+
+[MIXING]
+
+[TIMES]
+ Duration        0:00
+ Hydraulic Timestep 1:00
+ Quality Timestep 0:05
+ Pattern Timestep 1:00
+
+[REPORT]
+ Status          No
+ Summary         No
+ Page            0
+
+[OPTIONS]
+ Units           LPS
+ Headloss        H-W
+ Specific Gravity 1.0
+ Viscosity       1.0
+ Trials          40
+ Accuracy        0.001
+ CHECKFREQ       2
+ MAXCHECK        10
+ DAMPLIMIT       0
+ Unbalanced      Continue 10
+ Pattern         1
+ Demand Multiplier 1.0
+ Emitter Exponent 0.5
+ Quality         None mg/L
+ Diffusivity     1.0
+ Tolerance       0.01
+
+[COORDINATES]
+;Node            X-Coord         Y-Coord
+ R1              0               300
+ J1              100             250
+ J2              250             250
+ J3              400             250
+ J4              100             150
+ J5              250             150
+ J6              400             150
+ J7              100             50
+ J8              250             50
+ J9              400             50
+ J10             300             300
+ J11             300             100
+ J12             300             0
+ J13             450             0
+
+[VERTICES]
+
+[LABELS]
+
+[BACKDROP]
+
+[END]
