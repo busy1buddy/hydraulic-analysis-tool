@@ -254,6 +254,12 @@ class MainWindow(QMainWindow):
         safety_case_act.triggered.connect(self._on_safety_case)
         analysis_menu.addAction(safety_case_act)
 
+        pump_energy_act = QAction("&Pump Energy Analysis...", self)
+        pump_energy_act.setToolTip(
+            "Calculate pump energy consumption with time-of-use tariff breakdown.")
+        pump_energy_act.triggered.connect(self._on_pump_energy)
+        analysis_menu.addAction(pump_energy_act)
+
         # --- Tools ---
         tools_menu = menubar.addMenu("&Tools")
 
@@ -1732,6 +1738,17 @@ class MainWindow(QMainWindow):
             return
         from desktop.safety_case_dialog import SafetyCaseDialog
         dialog = SafetyCaseDialog(self.api, parent=self)
+        dialog.exec()
+
+    def _on_pump_energy(self):
+        """Open the Pump Energy Analysis dialog."""
+        if self.api.wn is None:
+            QMessageBox.warning(
+                self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+        from desktop.pump_energy_dialog import PumpEnergyDialog
+        dialog = PumpEnergyDialog(self.api, parent=self)
         dialog.exec()
 
     def _on_design_compliance_check(self):

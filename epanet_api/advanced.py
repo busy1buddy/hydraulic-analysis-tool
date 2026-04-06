@@ -3214,6 +3214,98 @@ class AdvancedMixin:
             'reference': 'Karassik et al. Pump Handbook 4th ed.; API 610',
         }
 
+    def pump_energy_tou(self, operating_hours_per_day=18):
+        """
+        Pump energy analysis with Australian time-of-use (TOU) tariff.
+
+        Applies a three-tier tariff structure typical of Australian
+        commercial/industrial electricity:
+          Peak      (7am-9pm weekdays):  $0.35/kWh
+          Shoulder  (7am-10pm weekends): $0.25/kWh
+          Off-peak  (all other hours):   $0.15/kWh
+
+        Assumes uniform pump operation across the duty window.
+
+        Returns
+        -------
+        dict with per-pump TOU cost breakdown and annual totals.
+        Ref: AER Default Market Offer; typical C&I tariff structure.
+        """
+        # TOU tariff rates (AUD/kWh)
+        PEAK_RATE = 0.35
+        SHOULDER_RATE = 0.25
+        OFFPEAK_RATE = 0.15
+
+        # Hours per year in each band (approximate, 365-day year)
+        # Weekdays (260 days): peak 7am-9pm = 14h, off-peak 9pm-7am = 10h
+        # Weekends (105 days): shoulder 7am-10pm = 15h, off-peak 10pm-7am = 9h
+        PEAK_HOURS_YR = 260 * 14        # 3640
+        SHOULDER_HOURS_YR = 105 * 15    # 1575
+        OFFPEAK_HOURS_YR = 260 * 10 + 105 * 9  # 3545
+        TOTAL_HOURS_YR = PEAK_HOURS_YR + SHOULDER_HOURS_YR + OFFPEAK_HOURS_YR
+
+        # Fraction of each band in a day (for duty-cycle scaling)
+        peak_frac = PEAK_HOURS_YR / TOTAL_HOURS_YR
+        shoulder_frac = SHOULDER_HOURS_YR / TOTAL_HOURS_YR
+        offpeak_frac = OFFPEAK_HOURS_YR / TOTAL_HOURS_YR
+
+        # Blended rate for the existing single-rate method
+        blended_rate = (PEAK_RATE * peak_frac + SHOULDER_RATE * shoulder_frac
+                        + OFFPEAK_RATE * offpeak_frac)
+
+        # Get base pump analysis at blended rate
+        base = self.pump_efficiency_analysis(
+            electricity_price_aud_per_kwh=blended_rate,
+            operating_hours_per_day=operating_hours_per_day)
+
+        if 'error' in base:
+            return base
+
+        # Add TOU breakdown per pump
+        annual_hours = operating_hours_per_day * 365
+        for pump in base.get('pumps', []):
+            if 'error' in pump:
+                continue
+            ekw = pump.get('electrical_power_kw', 0)
+            # Distribute annual hours across bands proportionally
+            peak_kwh = ekw * annual_hours * peak_frac
+            shoulder_kwh = ekw * annual_hours * shoulder_frac
+            offpeak_kwh = ekw * annual_hours * offpeak_frac
+
+            pump['tou_breakdown'] = {
+                'peak_kwh': round(peak_kwh, 0),
+                'peak_cost_aud': round(peak_kwh * PEAK_RATE, 2),
+                'shoulder_kwh': round(shoulder_kwh, 0),
+                'shoulder_cost_aud': round(shoulder_kwh * SHOULDER_RATE, 2),
+                'offpeak_kwh': round(offpeak_kwh, 0),
+                'offpeak_cost_aud': round(offpeak_kwh * OFFPEAK_RATE, 2),
+            }
+            pump['tou_total_aud'] = round(
+                peak_kwh * PEAK_RATE + shoulder_kwh * SHOULDER_RATE
+                + offpeak_kwh * OFFPEAK_RATE, 2)
+            # Optimisation: shift all shiftable load to off-peak
+            pump['optimised_annual_aud'] = round(
+                ekw * annual_hours * OFFPEAK_RATE, 2)
+            pump['optimised_saving_aud'] = round(
+                pump['tou_total_aud'] - pump['optimised_annual_aud'], 2)
+
+        # Aggregate TOU
+        total_tou = sum(p.get('tou_total_aud', 0) for p in base['pumps']
+                        if 'error' not in p)
+        total_optimised = sum(p.get('optimised_annual_aud', 0)
+                              for p in base['pumps'] if 'error' not in p)
+        base['tou_summary'] = {
+            'tariff': {
+                'peak_aud_kwh': PEAK_RATE,
+                'shoulder_aud_kwh': SHOULDER_RATE,
+                'offpeak_aud_kwh': OFFPEAK_RATE,
+            },
+            'total_annual_cost_tou_aud': round(total_tou, 2),
+            'optimised_annual_cost_aud': round(total_optimised, 2),
+            'potential_saving_aud': round(total_tou - total_optimised, 2),
+        }
+        return base
+
     # =========================================================================
     # T4 — AUTOMATED SENSITIVITY REPORT
     # =========================================================================
