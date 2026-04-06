@@ -2,7 +2,7 @@
 
 [JUNCTIONS]
 ;ID                      Elevation       Demand Pattern                 
- J1                                 0               0                            ;
+ J1                                 0    79.251615707                            ;
 
 [RESERVOIRS]
 ;ID                                   Head                  Pattern
