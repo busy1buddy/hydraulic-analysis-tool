@@ -5,6 +5,10 @@ Allows engineers to define pressure zones, assign nodes, view zone balance
 statistics, and identify PRV requirements per WSAA WSA 03-2011.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QPushButton,
     QLineEdit, QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
@@ -263,7 +267,7 @@ class PressureZoneDialog(QDialog):
 
         try:
             report = self.api.analyze_pressure_zones()
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(self, "Analysis Error", str(e))
             return
 

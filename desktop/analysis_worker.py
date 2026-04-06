@@ -6,6 +6,10 @@ so the UI never freezes during a solve.
 """
 
 import traceback
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtCore import QThread, pyqtSignal
 
 
@@ -97,7 +101,7 @@ class AnalysisWorker(QThread):
             self.progress.emit(100)
             self.finished.emit(results)
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             # Map exceptions to engineer-friendly messages
             msg = str(e)
             lower = msg.lower()

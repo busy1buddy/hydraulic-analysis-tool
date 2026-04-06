@@ -8,6 +8,10 @@ Can also sweep all junctions to build a fire flow availability map.
 
 import os
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QComboBox, QDoubleSpinBox, QPushButton, QLabel,
@@ -45,7 +49,7 @@ class _FireFlowSweepWorker(QThread):
                     results[jid] = None
                 else:
                     results[jid] = res.get('fire_node_pressure_m', 0)
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 results[jid] = None
         self.result.emit(results)
 
@@ -157,7 +161,7 @@ class FireFlowDialog(QDialog):
                 raise RuntimeError(results['error'])
             self._results = results
             self._show_single_results(results, pressure)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.summary_label.setText(f"Error: {e}")
             self.summary_label.setStyleSheet("color: #f38ba8;")
         finally:

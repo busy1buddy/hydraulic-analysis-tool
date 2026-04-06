@@ -10,6 +10,10 @@ All analyses run through HydraulicAPI — UI code never imports WNTR directly.
 Results are reported in SI units: hours for age, mg/L for chlorine, % for trace.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QTabWidget, QWidget, QLabel, QPushButton, QComboBox,
@@ -284,7 +288,7 @@ class WaterQualityDialog(QDialog):
                 self._run_chlorine()
             elif mode == 'trace':
                 self._run_trace()
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             QMessageBox.critical(self, "Analysis Error",
                                  f"Analysis failed.\n\n{type(exc).__name__}: {exc}")
             self.summary_label.setText("Analysis failed — see error dialog.")

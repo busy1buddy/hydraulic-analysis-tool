@@ -8,6 +8,10 @@ bar chart preview, and apply-to controls.
 import numpy as np
 import pyqtgraph as pg
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QTableWidget, QTableWidgetItem, QPushButton,
@@ -179,7 +183,7 @@ class PatternEditorDialog(QDialog):
                 junc = wn.get_node(self.junction_id)
                 if junc.demand_timeseries_list:
                     junc.demand_timeseries_list[0].pattern_name = pat_name
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
 
         self.accept()

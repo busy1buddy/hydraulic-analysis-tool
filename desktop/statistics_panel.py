@@ -7,6 +7,10 @@ the most recent analysis results.
 Shown as a tab in the Results dock after analysis completes.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QFormLayout, QGroupBox, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea,
@@ -162,7 +166,7 @@ class StatisticsPanel(QWidget):
             try:
                 pipe = api.get_link(pid)
                 total_length_m += pipe.length
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
         total_length_km = total_length_m / 1000.0
 
@@ -173,7 +177,7 @@ class StatisticsPanel(QWidget):
                 node = api.get_node(jid)
                 if node.demand_timeseries_list:
                     total_demand_lps += node.demand_timeseries_list[0].base_value * 1000
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
 
         self.lbl_pipe_length.setText(f"{total_length_km:.1f} km")
@@ -221,7 +225,7 @@ class StatisticsPanel(QWidget):
                         break
                 if not matched:
                     group_lengths["Other"] += length
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
 
         total_m = sum(group_lengths.values())

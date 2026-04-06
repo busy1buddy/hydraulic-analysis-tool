@@ -6,6 +6,10 @@ triggers a re-analysis and emits the result so the canvas and results
 view can refresh.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QPushButton,
@@ -131,7 +135,7 @@ class WhatIfPanel(QWidget):
             try:
                 d = wn.get_node(jid).demand_timeseries_list[0].base_value
                 self._original_demands[jid] = d
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 continue
         self._original_roughness = {
             pid: wn.get_link(pid).roughness for pid in wn.pipe_name_list
@@ -141,7 +145,7 @@ class WhatIfPanel(QWidget):
             try:
                 self._original_source_heads[rid] = \
                     wn.get_node(rid).base_head
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 continue
 
     def _on_reset(self):
@@ -160,19 +164,19 @@ class WhatIfPanel(QWidget):
             for jid, base in self._original_demands.items():
                 try:
                     wn.get_node(jid).demand_timeseries_list[0].base_value = base
-                except Exception:
+                except (KeyError, AttributeError, ValueError):
                     pass
         if self._original_roughness:
             for pid, base_c in self._original_roughness.items():
                 try:
                     wn.get_link(pid).roughness = base_c
-                except Exception:
+                except (KeyError, AttributeError, ValueError):
                     pass
         if self._original_source_heads:
             for rid, base_h in self._original_source_heads.items():
                 try:
                     wn.get_node(rid).base_head = base_h
-                except Exception:
+                except (KeyError, AttributeError, ValueError):
                     pass
 
     def closeEvent(self, event):
@@ -202,22 +206,22 @@ class WhatIfPanel(QWidget):
             try:
                 wn.get_node(jid).demand_timeseries_list[0].base_value = \
                     base * dm
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
         for pid, base_c in self._original_roughness.items():
             try:
                 wn.get_link(pid).roughness = base_c * rm
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
         for rid, base_h in self._original_source_heads.items():
             try:
                 wn.get_node(rid).base_head = base_h + sh
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
 
         try:
             results = self.api.run_steady_state(save_plot=False)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.status_label.setText(f"Analysis failed: {e}")
             self.analysis_failed.emit(str(e))
             return

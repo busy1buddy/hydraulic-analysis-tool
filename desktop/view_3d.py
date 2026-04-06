@@ -25,6 +25,10 @@ try:
 except ImportError:
     HAS_GL_TEXT = False
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QToolTip, QFrame,
@@ -318,7 +322,7 @@ class View3D(QWidget):
                                      color=QColor(180, 180, 200, 180),
                                      font=QFont("Consolas", 7))
                     self.gl_widget.addItem(txt)
-                except Exception:
+                except (KeyError, AttributeError, ValueError):
                     pass  # some pyqtgraph versions have different API
 
         # --- Pipes ---
@@ -421,7 +425,7 @@ class View3D(QWidget):
         # pyqtgraph's itemsAt returns items near the given screen coord.
         try:
             items = self.gl_widget.itemsAt((gl_pos.x(), gl_pos.y(), 4, 4))
-        except Exception:
+        except (KeyError, AttributeError, ValueError):
             return
 
         tip = self._tooltip_for_items(items)

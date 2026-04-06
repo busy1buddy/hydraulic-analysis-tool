@@ -8,6 +8,10 @@ verdict preview, and PDF export.
 import os
 import json
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QDoubleSpinBox, QCheckBox, QTextEdit, QFileDialog,
@@ -244,7 +248,7 @@ class SafetyCaseDialog(QDialog):
                 self, "Exported",
                 f"Safety case saved to:\n{path}\n\n"
                 f"Next step: attach to your regulatory submission package.")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.warning(
                 self, "Export Failed",
                 f"Could not write file: {e}\n"

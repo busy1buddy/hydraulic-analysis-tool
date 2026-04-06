@@ -5,6 +5,10 @@ Shows hoop stress, von Mises stress, and safety factor per pipe.
 Highlights pipes where safety factor < 1.5 in red.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel,
 )
@@ -118,7 +122,7 @@ class PipeStressPanel(QWidget):
                     wall_thickness_mm=wall_mm,
                     material=material_key,
                 )
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 continue
 
             row = self.table.rowCount()
@@ -176,7 +180,7 @@ def _estimate_wall_thickness(dn_mm, material_key):
 
         if props:
             return props['wall_thickness_mm']
-    except Exception:
+    except (KeyError, AttributeError, ValueError):
         pass
 
     # Fallback: approximate wall thickness

@@ -5,6 +5,10 @@ Checklist of sections to include, one-click generate to DOCX or PDF.
 """
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton,
     QLabel, QLineEdit, QFormLayout, QDialogButtonBox, QFileDialog,
@@ -142,7 +146,7 @@ class ReportDialog(QDialog):
             QMessageBox.information(self, "Report Generated",
                                     f"DOCX report saved to:\n{path}")
             self.accept()
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(self, "Report Error", str(e))
 
     def _on_pdf(self):
@@ -164,5 +168,5 @@ class ReportDialog(QDialog):
             QMessageBox.information(self, "Report Generated",
                                     f"PDF report saved to:\n{path}")
             self.accept()
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(self, "Report Error", str(e))

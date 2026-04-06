@@ -13,6 +13,10 @@ import json
 import subprocess
 from datetime import datetime
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QPushButton, QLabel, QLineEdit, QComboBox, QSpinBox,
@@ -176,5 +180,5 @@ class ReportSchedulerDialog(QDialog):
                     f"Could not create scheduled task.\n\n"
                     f"Try running as Administrator.\n\n"
                     f"Error: {result.stderr}")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(self, "Error", str(e))

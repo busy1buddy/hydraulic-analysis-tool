@@ -6,6 +6,10 @@ breaks/hydraulics, rank for capital works replacement.
 Ref: WSAA Asset Management Guidelines, IPWEA Practice Note 7
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox,
@@ -107,7 +111,7 @@ class RehabDialog(QDialog):
         try:
             count = self.api.import_pipe_conditions_csv(path)
             self.status_label.setText(f"Loaded condition data for {count} pipes")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(self, "Import Error",
                                  f"Could not import CSV.\n\n{type(e).__name__}: {e}")
 
@@ -118,7 +122,7 @@ class RehabDialog(QDialog):
 
         try:
             results = self.api.prioritize_rehabilitation()
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(self, "Analysis Error", str(e))
             return
 

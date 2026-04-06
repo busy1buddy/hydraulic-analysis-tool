@@ -13,6 +13,10 @@ Usage
     # Disappears on Escape or next show_ call
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QKeyEvent
@@ -74,7 +78,7 @@ class ProbeTooltip(QWidget):
         try:
             if node.demand_timeseries_list:
                 demand_lps = node.demand_timeseries_list[0].base_value * 1000
-        except Exception:
+        except (KeyError, AttributeError, ValueError):
             pass
         lines.append(("Demand", f"{demand_lps:.2f} LPS", _TEXT_COLOR))
 
@@ -142,7 +146,7 @@ class ProbeTooltip(QWidget):
                         hl_per_m = (10.67 * Q_m3s ** 1.852) / (
                             pipe.roughness ** 1.852 * pipe.diameter ** 4.87)
                         hl = hl_per_m * 1000
-                except Exception:
+                except (KeyError, AttributeError, ValueError):
                     hl = None
             if hl is not None:
                 lines.append(("Headloss", f"{hl:.1f} m/km", _TEXT_COLOR))
@@ -174,7 +178,7 @@ class ProbeTooltip(QWidget):
             lines.append(("Min Level", f"{node.min_level:.1f} m", _TEXT_COLOR))
             lines.append(("Max Level", f"{node.max_level:.1f} m", _TEXT_COLOR))
             lines.append(("Diameter", f"{node.diameter:.1f} m", _TEXT_COLOR))
-        except Exception:
+        except (KeyError, AttributeError, ValueError):
             pass
         self._render(lines)
 

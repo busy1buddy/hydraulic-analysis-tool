@@ -8,6 +8,10 @@ and slow-closing valve specifications.
 Ref: AS/NZS 2566, Wylie & Streeter (1993), Thorley (2004)
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
     QTableWidget, QTableWidgetItem, QPushButton, QTextBrowser,
@@ -77,7 +81,7 @@ class SurgeWizard(QDialog):
         """Run the surge protection design and populate the dialog."""
         try:
             recs = self.api.design_surge_protection(self.transient_results)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.text_browser.setHtml(
                 f'<p style="color: #f38ba8;">Design calculation failed: {e}</p>')
             return

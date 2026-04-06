@@ -5,8 +5,11 @@ Provides Edit Mode for adding junctions/pipes, moving nodes,
 deleting elements, and undo/redo. Overlays on top of NetworkCanvas.
 """
 
+import logging
 import math
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 from typing import Optional, List
 
 from PyQt6.QtWidgets import (
@@ -251,7 +254,7 @@ class AddPipeDialog(QDialog):
                 f"Rounded up to: DN{suggested_dn}")
             return suggested_dn
 
-        except Exception:
+        except (KeyError, ValueError, ZeroDivisionError):
             self.suggest_label.setText("Could not calculate suggestion")
             return None
 
@@ -460,7 +463,7 @@ class CanvasEditor:
             dy = n1.coordinates[1] - n2.coordinates[1]
             auto_length = round(math.sqrt(dx*dx + dy*dy) * 10, 1)  # scale factor ~10
             auto_length = max(auto_length, 10)
-        except Exception:
+        except (KeyError, AttributeError, TypeError):
             auto_length = 100
 
         dialog = AddPipeDialog(pid, start_id, end_id, auto_length, self.mw, api=self.api)
@@ -508,8 +511,8 @@ class CanvasEditor:
             ))
             self._mark_modified()
             self.canvas.render()
-        except Exception:
-            pass
+        except (KeyError, AttributeError, ValueError) as e:
+            logger.debug("Add pipe failed: %s", e)
 
     # ----- Delete -----
 
@@ -543,7 +546,7 @@ class CanvasEditor:
             self.undo_stack.push(EditAction('delete_pipe', f'Delete pipe {pipe_id}', data))
             self._mark_modified()
             self.canvas.render()
-        except Exception as e:
+        except (KeyError, AttributeError, RuntimeError) as e:
             self.mw.status_bar.showMessage(f"Delete failed: {e}", 5000)
 
     def _delete_junction(self, jid):
@@ -558,7 +561,7 @@ class CanvasEditor:
             self.undo_stack.push(EditAction('delete_junction', f'Delete junction {jid}', data))
             self._mark_modified()
             self.canvas.render()
-        except Exception as e:
+        except (KeyError, AttributeError, RuntimeError) as e:
             self.mw.status_bar.showMessage(f"Delete failed: {e}", 5000)
 
     def _connected_links(self, node_id):
@@ -658,7 +661,7 @@ class CanvasEditor:
                     if d < best_dist:
                         best_dist = d
                         best_pid = pid
-            except Exception:
+            except (KeyError, TypeError, ValueError):
                 pass
         if best_pid and best_dist < threshold:
             return best_pid
@@ -730,7 +733,7 @@ class CanvasEditor:
             # Update canvas position dict and re-render for live preview
             self.canvas._node_positions[self._dragging_node] = (mx, my)
             self.canvas.render()
-        except Exception:
+        except (KeyError, AttributeError, RuntimeError):
             pass
         return True
 
@@ -755,7 +758,7 @@ class CanvasEditor:
             try:
                 node = self.api.get_node(nid)
                 node.coordinates = new_pos
-            except Exception:
+            except (KeyError, AttributeError):
                 pass
 
             self.undo_stack.push(EditAction(

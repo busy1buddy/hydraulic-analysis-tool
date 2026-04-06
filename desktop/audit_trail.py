@@ -104,7 +104,7 @@ class AuditTrail:
                             'timestamp': meta.get('timestamp', ''),
                             'analysis_type': meta.get('analysis_type', ''),
                         })
-                    except Exception:
+                    except (KeyError, AttributeError, ValueError):
                         pass
         return runs
 

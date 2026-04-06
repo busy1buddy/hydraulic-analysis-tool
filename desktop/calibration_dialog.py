@@ -10,6 +10,10 @@ CSV format: node_id, pressure_m
 import math
 import csv
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem,
@@ -221,7 +225,7 @@ class CalibrationDialog(QDialog):
 
         try:
             measured_raw = self._parse_csv(path)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(
                 self, "Import Error",
                 f"Could not read CSV file.\n\n{type(e).__name__}: {e}"
@@ -249,14 +253,14 @@ class CalibrationDialog(QDialog):
                 pressure_df = raw.node['pressure']
                 results = {nid: float(pressure_df[nid].mean())
                            for nid in pressure_df.columns}
-        except Exception:
+        except (KeyError, AttributeError, ValueError):
             pass
 
         for node_id, meas_val in measured_raw.items():
             # Check node exists in model
             try:
                 self.api.get_node(node_id)
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 missing.append(node_id)
                 continue
 
@@ -522,7 +526,7 @@ class CalibrationDialog(QDialog):
 
         try:
             result = self.api.auto_calibrate_roughness(measured)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             progress.close()
             QMessageBox.critical(self, "Calibration Error",
                 f"Optimisation failed: {e}")
@@ -569,5 +573,5 @@ class CalibrationDialog(QDialog):
                 mod = p.get('avg_m', float('nan'))
                 self._data[nid] = (meas, mod)
             self._refresh()
-        except Exception:
+        except (KeyError, AttributeError, ValueError):
             pass  # Non-critical — dialog will refresh on next import

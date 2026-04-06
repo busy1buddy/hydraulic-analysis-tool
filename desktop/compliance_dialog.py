@@ -4,6 +4,10 @@ Design Compliance Certificate Dialog (L1)
 Runs all WSAA compliance checks and displays a formal certificate.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
@@ -191,5 +195,5 @@ class ComplianceDialog(QDialog):
             QMessageBox.information(self, "Exported",
                                     f"Certificate exported to:\n{path}")
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.warning(self, "Export Error", f"Failed to export PDF: {e}")

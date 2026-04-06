@@ -15,6 +15,10 @@ Transient data format (matches TSNet output wrangled by HydraulicAPI):
 
 import numpy as np
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QComboBox, QCheckBox, QSizePolicy,
@@ -401,7 +405,7 @@ class AnimationPanel(QWidget):
                 f"Animation saved to:\n{path}\n\n"
                 f"{self.n_frames} frames exported.")
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             QMessageBox.critical(self, "Export Error",
                 f"Could not save animation.\n\n{e}")
 

@@ -8,6 +8,10 @@ Ships with 3 default templates: Standard, Executive, Technical.
 import os
 import json
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QListWidget, QListWidgetItem, QLineEdit, QCheckBox,
@@ -76,7 +80,7 @@ def list_templates():
                     data = json.load(fh)
                 name = data.get('name', f.replace('.json', ''))
                 templates[name] = data
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
     return templates
 

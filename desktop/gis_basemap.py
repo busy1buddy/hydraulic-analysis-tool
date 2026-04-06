@@ -25,6 +25,10 @@ from typing import Optional, Tuple, List
 
 import numpy as np
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 try:
     from PyQt6.QtGui import QImage, QPixmap
     from PyQt6.QtCore import Qt
@@ -189,7 +193,7 @@ def fetch_tile(z: int, x: int, y: int) -> Optional[bytes]:
         with open(cache_path, 'wb') as f:
             f.write(data)
         return data
-    except Exception:
+    except (KeyError, AttributeError, ValueError):
         return None
 
 

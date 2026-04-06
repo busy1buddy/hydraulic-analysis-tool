@@ -6,8 +6,12 @@ Nodes as circles, pipes as lines, tanks as squares, pumps as triangles.
 Color overlays for pressure, velocity, headloss, and WSAA compliance.
 """
 
+import logging
+
 import numpy as np
 import pyqtgraph as pg
+
+logger = logging.getLogger(__name__)
 from pyqtgraph import PlotWidget, ScatterPlotItem, PlotDataItem
 
 from PyQt6.QtWidgets import (
@@ -513,7 +517,7 @@ class NetworkCanvas(QWidget):
                         p2 = pressures.get(pipe.end_node_name, {}).get('avg_m')
                         if p1 is not None and p2 is not None:
                             color = self._color_from_cmap((p1 + p2) / 2, PRESSURE_COLORS)
-                    except Exception:
+                    except (KeyError, AttributeError):
                         pass
             elif mode == "Pressure Min (EPS)":
                 if self.api and self.api.wn:
@@ -523,7 +527,7 @@ class NetworkCanvas(QWidget):
                         p2 = pressures.get(pipe.end_node_name, {}).get('min_m')
                         if p1 is not None and p2 is not None:
                             color = self._color_from_cmap((p1 + p2) / 2, PRESSURE_COLORS)
-                    except Exception:
+                    except (KeyError, AttributeError):
                         pass
             elif mode == "Pressure Max (EPS)":
                 if self.api and self.api.wn:
@@ -533,7 +537,7 @@ class NetworkCanvas(QWidget):
                         p2 = pressures.get(pipe.end_node_name, {}).get('max_m')
                         if p1 is not None and p2 is not None:
                             color = self._color_from_cmap((p1 + p2) / 2, PRESSURE_COLORS)
-                    except Exception:
+                    except (KeyError, AttributeError):
                         pass
 
             key = (color.red(), color.green(), color.blue())
@@ -826,7 +830,7 @@ class NetworkCanvas(QWidget):
                     text.setFont(font)
                     self.plot_widget.addItem(text)
                     self._value_items.append(text)
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
                 pass
 
     def _clear_value_overlay(self):
@@ -834,7 +838,7 @@ class NetworkCanvas(QWidget):
         for item in self._value_items:
             try:
                 self.plot_widget.removeItem(item)
-            except Exception:
+            except (RuntimeError, ValueError):
                 pass
         self._value_items.clear()
 
@@ -851,7 +855,7 @@ class NetworkCanvas(QWidget):
             # DN in mm, scale to pen width: 100mm → width 1, 300mm → width 3
             dn_mm = pipe.diameter * 1000
             return max(1, int(dn_mm / 100))
-        except Exception:
+        except (KeyError, AttributeError):
             return 2
 
     # ------------------------------------------------------------------
@@ -869,7 +873,7 @@ class NetworkCanvas(QWidget):
                 demand = abs(node.demand_timeseries_list[0].base_value) * 1000  # LPS
             # Demand 0 → size 8, demand 10 LPS → size ~18
             return max(6, min(24, base_size + int(demand * 0.8)))
-        except Exception:
+        except (KeyError, AttributeError):
             return base_size
 
     # ------------------------------------------------------------------
@@ -1019,7 +1023,8 @@ class NetworkCanvas(QWidget):
 
         try:
             tiles = fetch_basemap_tiles(bounds)
-        except Exception:
+        except (OSError, ValueError, ConnectionError) as e:
+            logger.debug("Basemap fetch failed: %s", e)
             return
 
         if not tiles:
@@ -1066,7 +1071,7 @@ class NetworkCanvas(QWidget):
                 self.plot_widget.addItem(img_item)
                 self._basemap_items.append(img_item)
 
-            except Exception:
+            except (ValueError, RuntimeError, OSError):
                 continue
 
     def _remove_basemap(self):
@@ -1075,13 +1080,13 @@ class NetworkCanvas(QWidget):
             for item in self._basemap_items:
                 try:
                     self.plot_widget.removeItem(item)
-                except Exception:
+                except (RuntimeError, ValueError):
                     pass
             self._basemap_items = []
         if hasattr(self, '_basemap_note'):
             try:
                 self.plot_widget.removeItem(self._basemap_note)
-            except Exception:
+            except (RuntimeError, ValueError):
                 pass
             self._basemap_note = None
 
