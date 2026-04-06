@@ -17,7 +17,20 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent
 from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence
 
+import csv
 import logging
+
+
+class _NumericItem(QTableWidgetItem):
+    """Table item that sorts numerically instead of alphabetically."""
+
+    def __lt__(self, other):
+        try:
+            a = float(self.text().split()[0]) if self.text().strip() else 0
+            b = float(other.text().split()[0]) if other.text().strip() else 0
+            return a < b
+        except (ValueError, IndexError):
+            return super().__lt__(other)
 
 from epanet_api import HydraulicAPI
 
@@ -532,6 +545,11 @@ class MainWindow(QMainWindow):
         self.node_results_table.setFont(QFont("Consolas", 9))
         self.node_results_table.setMinimumHeight(120)
         self.node_results_table.verticalHeader().setVisible(False)
+        self.node_results_table.setSortingEnabled(True)
+        self.node_results_table.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.node_results_table.customContextMenuRequested.connect(
+            lambda pos: self._on_results_table_context(self.node_results_table, pos))
 
         self.pipe_results_table = QTableWidget(0, 5)
         self.pipe_results_table.setHorizontalHeaderLabels(
@@ -544,6 +562,11 @@ class MainWindow(QMainWindow):
         self.pipe_results_table.setFont(QFont("Consolas", 9))
         self.pipe_results_table.setMinimumHeight(120)
         self.pipe_results_table.verticalHeader().setVisible(False)
+        self.pipe_results_table.setSortingEnabled(True)
+        self.pipe_results_table.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.pipe_results_table.customContextMenuRequested.connect(
+            lambda pos: self._on_results_table_context(self.pipe_results_table, pos))
 
         self.pipe_stress_panel = PipeStressPanel()
         self.statistics_panel = StatisticsPanel()
@@ -1474,6 +1497,7 @@ class MainWindow(QMainWindow):
     def _populate_node_results(self, results):
         """Fill the node results table."""
         pressures = results.get('pressures', {})
+        self.node_results_table.setSortingEnabled(False)
         self.node_results_table.setRowCount(0)
 
         for jid, pdata in pressures.items():
@@ -1503,13 +1527,16 @@ class MainWindow(QMainWindow):
                 status = "PASS"
 
             items = [jid, elev, f"{min_p:.1f} m", f"{head:.1f} m", status]
+            # Columns 2,3 are numeric (pressure, head)
+            numeric_cols = {2, 3}
             for col, val in enumerate(items):
-                item = QTableWidgetItem(str(val))
+                item = _NumericItem(str(val)) if col in numeric_cols else QTableWidgetItem(str(val))
                 if "FAIL" in str(val):
                     item.setForeground(QColor(243, 139, 168))  # red
                 elif val == "PASS":
                     item.setForeground(QColor(166, 227, 161))  # green
                 self.node_results_table.setItem(row, col, item)
+        self.node_results_table.setSortingEnabled(True)
 
     def _populate_pipe_results(self, results):
         """Fill the pipe results table.
@@ -1538,6 +1565,7 @@ class MainWindow(QMainWindow):
                     c, QHeaderView.ResizeMode.ResizeToContents)
             self.pipe_results_table.horizontalHeader().setStretchLastSection(True)
         self.pipe_results_table.setHorizontalHeaderLabels(hdr)
+        self.pipe_results_table.setSortingEnabled(False)
         self.pipe_results_table.setRowCount(0)
 
         for pid, fdata in flows.items():
@@ -1586,12 +1614,76 @@ class MainWindow(QMainWindow):
 
             # Determine actual displayed velocity for WSAA flagging
             v_check = v_display if (is_slurry and pid in slurry_data) else v
+            # Columns 3,4 are numeric (velocity, headloss); 6=Re_B in slurry mode
+            numeric_cols = {3, 4, 6} if is_slurry else {3, 4}
             for col, val in enumerate(items):
-                item = QTableWidgetItem(str(val))
+                item = _NumericItem(str(val)) if col in numeric_cols else QTableWidgetItem(str(val))
                 # Flag velocity > 2.0 m/s — WSAA WSA 03-2011
                 if col == 3 and v_check > 2.0:
                     item.setForeground(QColor(243, 139, 168))
                 self.pipe_results_table.setItem(row, col, item)
+        self.pipe_results_table.setSortingEnabled(True)
+
+    def _on_results_table_context(self, table, pos):
+        """Right-click context menu for results tables: filter + CSV export."""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+
+        # --- Filter actions ---
+        show_violations = menu.addAction("Show only violations")
+        show_all = menu.addAction("Show all")
+        menu.addSeparator()
+        export_csv = menu.addAction("Export to CSV...")
+
+        action = menu.exec(table.viewport().mapToGlobal(pos))
+        if action is None:
+            return
+
+        if action == show_violations:
+            for row in range(table.rowCount()):
+                hide = True
+                for col in range(table.columnCount()):
+                    item = table.item(row, col)
+                    if item and item.foreground().color().red() > 200:
+                        # Red-flagged cell (WSAA violation)
+                        hide = False
+                        break
+                table.setRowHidden(row, hide)
+        elif action == show_all:
+            for row in range(table.rowCount()):
+                table.setRowHidden(row, False)
+        elif action == export_csv:
+            self._export_table_csv(table)
+
+    def _export_table_csv(self, table):
+        """Export visible rows of a QTableWidget to CSV."""
+        from PyQt6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export CSV", "", "CSV Files (*.csv);;All Files (*)")
+        if not path:
+            return
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                # Header row
+                headers = []
+                for col in range(table.columnCount()):
+                    h = table.horizontalHeaderItem(col)
+                    headers.append(h.text() if h else f"Col{col}")
+                writer.writerow(headers)
+                # Data rows (skip hidden)
+                for row in range(table.rowCount()):
+                    if table.isRowHidden(row):
+                        continue
+                    row_data = []
+                    for col in range(table.columnCount()):
+                        item = table.item(row, col)
+                        row_data.append(item.text() if item else "")
+                    writer.writerow(row_data)
+            self.status_bar.showMessage(f"Exported to {path}", 5000)
+        except OSError as e:
+            logger.error("CSV export failed: %s", e)
+            self.status_bar.showMessage(f"Export failed: {e}", 5000)
 
     def _on_slurry_toggle(self, checked):
         # Toggle only flips the mode -- parameters are edited through

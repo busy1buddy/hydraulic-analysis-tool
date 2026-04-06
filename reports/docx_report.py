@@ -253,6 +253,77 @@ def generate_docx_report(results, network_summary, output_path,
         )
 
     # =====================================================================
+    # SECTION 2A: SLURRY ANALYSIS (if applicable)
+    # =====================================================================
+    slurry_params = results.get('slurry_params')
+    slurry_results = steady.get('slurry', {}) if steady else {}
+    if slurry_results:
+        doc.add_page_break()
+        doc.add_heading('2A. Non-Newtonian Slurry Analysis', level=1)
+
+        # Parameters table
+        if slurry_params:
+            doc.add_heading('2A.1 Slurry Parameters', level=2)
+            param_rows = [
+                ['Yield Stress (tau_y)', f"{slurry_params.get('yield_stress', '-')} Pa"],
+                ['Plastic Viscosity (mu_p)', f"{slurry_params.get('plastic_viscosity', '-')} Pa.s"],
+                ['Slurry Density', f"{slurry_params.get('density', '-')} kg/m\u00b3"],
+            ]
+            _add_styled_table(doc, ['Parameter', 'Value'], param_rows)
+            doc.add_paragraph(
+                'Headloss calculated using the Bingham Plastic model with '
+                'Buckingham-Reiner equation and Wilson-Thomas turbulent correction. '
+                'Darcy friction convention (f = 64/Re_B for laminar flow).'
+            )
+
+        # Per-pipe results
+        doc.add_heading('2A.2 Pipe Slurry Results', level=2)
+        slurry_rows = []
+        for pid, sd in slurry_results.items():
+            fdata = flows.get(pid, {}) if steady else {}
+            water_vel = fdata.get('max_velocity_ms', 0)
+            slurry_vel = sd.get('velocity_ms', water_vel)
+            water_hl = fdata.get('headloss_per_km', 0)
+            slurry_hl_m = sd.get('headloss_m', 0)
+            # Get pipe length for per-km conversion
+            pipe_len = 1.0
+            try:
+                pipe_obj = None
+                for lk in network_summary.get('links', []):
+                    if lk['id'] == pid:
+                        pipe_len = float(lk.get('length', 1)) or 1.0
+                        break
+            except (KeyError, ValueError):
+                pass
+            slurry_hl_km = slurry_hl_m / pipe_len * 1000 if pipe_len > 0 else 0
+
+            slurry_rows.append([
+                pid,
+                f"{slurry_vel:.2f}",
+                f"{slurry_hl_km:.1f}",
+                f"{water_hl:.1f}",
+                sd.get('regime', '--'),
+                f"{sd.get('reynolds', 0):.0f}",
+            ])
+        _add_styled_table(
+            doc,
+            ['Pipe', 'Velocity (m/s)', 'Slurry HL (m/km)',
+             'Water HL (m/km)', 'Regime', 'Re_B'],
+            slurry_rows,
+        )
+
+        # Summary
+        slurry_vels = [sd.get('velocity_ms', 0) for sd in slurry_results.values()]
+        laminar_count = sum(1 for sd in slurry_results.values()
+                           if sd.get('regime', '').lower() == 'laminar')
+        turb_count = len(slurry_results) - laminar_count
+        doc.add_paragraph(
+            f'Slurry analysis completed for {len(slurry_results)} pipes. '
+            f'{laminar_count} in laminar regime, {turb_count} in turbulent regime. '
+            f'Maximum slurry velocity: {max(slurry_vels):.2f} m/s.'
+        )
+
+    # =====================================================================
     # SECTION 3: COMPLIANCE
     # =====================================================================
     all_compliance = _collect_compliance(results)

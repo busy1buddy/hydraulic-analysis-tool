@@ -127,6 +127,41 @@ class ReportDialog(QDialog):
     def _get_sections(self):
         return [k for k, cb in self.checkboxes.items() if cb.isChecked()]
 
+    def _build_report_results(self):
+        """Wrap raw analysis results into the structure expected by report generators.
+
+        The analysis returns {pressures, flows, compliance, slurry, ...} at the
+        top level, but the report generator expects {steady_state: {...}, transient: {...}}.
+        """
+        r = self.results or {}
+        report = {}
+
+        # If already wrapped (e.g. from a test), pass through
+        if 'steady_state' in r:
+            return r
+
+        # Wrap steady-state keys
+        if 'pressures' in r or 'flows' in r:
+            report['steady_state'] = {
+                'pressures': r.get('pressures', {}),
+                'flows': r.get('flows', {}),
+                'compliance': r.get('compliance', []),
+                'slurry': r.get('slurry', {}),
+            }
+
+        # Pass through other analysis types
+        for key in ('transient', 'fire_flow', 'water_quality'):
+            if key in r:
+                report[key] = r[key]
+
+        # Include slurry parameters for report section
+        if r.get('slurry_params'):
+            report['slurry_params'] = r['slurry_params']
+        elif hasattr(self.parent(), '_slurry_params') and r.get('slurry'):
+            report['slurry_params'] = self.parent()._slurry_params
+
+        return report
+
     def _on_docx(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Save DOCX Report", "report.docx",
@@ -137,8 +172,9 @@ class ReportDialog(QDialog):
         try:
             from reports.docx_report import generate_docx_report
             summary = self.api.get_network_summary()
+            report_results = self._build_report_results()
             generate_docx_report(
-                self.results, summary, path,
+                report_results, summary, path,
                 title=self.project_input.text(),
                 engineer_name=self.engineer_input.text(),
                 project_name=self.project_input.text(),
@@ -159,8 +195,9 @@ class ReportDialog(QDialog):
         try:
             from reports.pdf_report import generate_pdf_report
             summary = self.api.get_network_summary()
+            report_results = self._build_report_results()
             generate_pdf_report(
-                self.results, summary, path,
+                report_results, summary, path,
                 title=self.project_input.text(),
                 engineer_name=self.engineer_input.text(),
                 project_name=self.project_input.text(),

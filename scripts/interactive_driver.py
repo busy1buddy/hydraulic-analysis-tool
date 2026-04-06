@@ -506,8 +506,11 @@ def act_5_reports(w):
         if out.exists():
             out.unlink()
         try:
+            # Wrap raw results into report structure
+            raw = w._last_results or {}
+            report_results = {'steady_state': raw} if 'pressures' in raw else raw
             generate_docx_report(
-                results=w._last_results,
+                results=report_results,
                 network_summary=w.api.get_network_summary(),
                 output_path=str(out),
                 engineer_name="Interactive Driver",
