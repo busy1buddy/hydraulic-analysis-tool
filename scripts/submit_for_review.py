@@ -1,176 +1,211 @@
 """
-Submit for Automated Review
-=============================
+Submit work for automated review.
+
 Usage:
-  python scripts/submit_for_review.py --context "task name" --question "what to assess"
-  python scripts/submit_for_review.py --context "..." --question "..." --thorough
-  python scripts/submit_for_review.py --context "..." --question "..." --output "override"
+  python scripts/submit_for_review.py --context "task name" --question "what to check"
+  python scripts/submit_for_review.py --context "task" --question "check" --thorough
+  python scripts/submit_for_review.py --context "task" --question "check" --output-file result.json
 
-Default mode is --fast (uses Haiku for quick JSON reviews).
-Use --thorough for full Sonnet/Opus review on critical changes.
-
-Auto-collects context: recent progress, test count, modified files.
+Exit codes:
+  0 = GOOD or ACCEPTABLE (continue working)
+  1 = NEEDS_WORK (fix issues, then continue)
+  2 = BLOCKER (stop, fix immediately)
+  3 = bridge not running or error (continue, don't block)
 """
 
-import os
-import sys
-import json
 import argparse
+import json
+import os
 import subprocess
+import sys
+import urllib.request
+import urllib.error
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-NEXT_INSTRUCTIONS_FILE = os.path.join(ROOT, 'docs', 'review_loop', 'next_instructions.md')
 
+def _collect_auto_context():
+    """Gather recent project state for richer reviews."""
+    context_parts = []
 
-def _auto_collect_context():
-    """Gather recent project state for the reviewer."""
-    parts = []
-
-    # Last 20 lines of progress.md
-    progress_file = os.path.join(ROOT, 'docs', 'progress.md')
-    if os.path.exists(progress_file):
-        with open(progress_file) as f:
-            lines = f.readlines()
-        tail = lines[-20:] if len(lines) > 20 else lines
-        parts.append("RECENT PROGRESS:\n" + "".join(tail))
-
-    # Test count
+    # Recent git changes
     try:
-        result = subprocess.run(
-            [sys.executable, '-m', 'pytest', 'tests/', '-q', '--co', '-q'],
-            capture_output=True, text=True, timeout=30, cwd=ROOT,
-            env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen'},
-        )
-        count_line = [l for l in result.stdout.strip().split('\n') if 'test' in l.lower()]
-        if count_line:
-            parts.append(f"TEST COUNT: {count_line[-1].strip()}")
-    except Exception:
-        pass
-
-    # Recently modified files
-    try:
-        result = subprocess.run(
+        diff = subprocess.run(
             ['git', 'diff', '--name-only', 'HEAD~1'],
-            capture_output=True, text=True, timeout=10, cwd=ROOT,
+            capture_output=True, text=True, timeout=10
         )
-        if result.stdout.strip():
-            parts.append("RECENTLY MODIFIED FILES:\n" + result.stdout.strip())
+        if diff.returncode == 0 and diff.stdout.strip():
+            context_parts.append(f"Changed files:\n{diff.stdout.strip()}")
     except Exception:
         pass
 
-    return "\n\n".join(parts)
+    # Current test count
+    try:
+        result = subprocess.run(
+            [sys.executable, '-m', 'pytest', 'tests/', '-k', 'not transient',
+             '-q', '--tb=no', '--co', '-q'],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            # Last line usually shows "X tests collected"
+            for line in reversed(lines):
+                if 'test' in line.lower():
+                    context_parts.append(f"Tests: {line.strip()}")
+                    break
+    except Exception:
+        pass
+
+    # Last 10 lines of progress
+    progress_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'docs', 'progress.md'
+    )
+    if os.path.exists(progress_file):
+        try:
+            with open(progress_file, encoding='utf-8') as f:
+                lines = f.readlines()
+            recent = ''.join(lines[-10:]).strip()
+            if recent:
+                context_parts.append(f"Recent progress:\n{recent}")
+        except Exception:
+            pass
+
+    return '\n\n'.join(context_parts)
+
+
+def _check_bridge():
+    """Check if review bridge is running."""
+    try:
+        req = urllib.request.Request('http://localhost:7771/health')
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(resp.read())
+        return data.get('status') == 'ok'
+    except Exception:
+        return False
+
+
+def _submit(context, output, question, thorough=False):
+    """Submit review to bridge and return parsed response."""
+    payload = json.dumps({
+        'context': context,
+        'output': output,
+        'question': question,
+        'thorough': thorough,
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        'http://localhost:7771/review',
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    resp = urllib.request.urlopen(req, timeout=300)
+    return json.loads(resp.read())
 
 
 def main():
     parser = argparse.ArgumentParser(description='Submit work for automated review')
-    parser.add_argument('--output', default=None, help='What was built (auto-collected if omitted)')
-    parser.add_argument('--context', required=True, help='Task name')
-    parser.add_argument('--question', required=True, help='What to assess')
-    parser.add_argument('--fast', action='store_true', default=True,
-                        help='Use Haiku for fast review (default)')
-    parser.add_argument('--thorough', action='store_true', default=False,
-                        help='Use full model for thorough review')
+    parser.add_argument('--context', required=True, help='What task was completed')
+    parser.add_argument('--question', required=True, help='Specific question to assess')
+    parser.add_argument('--output', default='', help='Detailed output text')
+    parser.add_argument('--thorough', action='store_true',
+                        help='Use Opus instead of Sonnet (slower, deeper)')
+    parser.add_argument('--output-file', default=None,
+                        help='Save full JSON response to this file')
     args = parser.parse_args()
 
-    bridge_url = 'http://localhost:7771'
-    mode = 'thorough' if args.thorough else 'fast'
+    # Check bridge
+    if not _check_bridge():
+        print("WARNING: Review bridge not running on localhost:7771")
+        print("Start it: scripts\\start_review_loop.bat")
+        print("Continuing without review.")
+        sys.exit(3)
 
-    # Auto-collect context
-    auto_context = _auto_collect_context()
-    if args.output:
-        output = args.output + "\n\n" + auto_context
-    else:
-        output = auto_context
+    # Collect auto-context if no explicit output provided
+    output = args.output
+    if not output:
+        output = _collect_auto_context()
 
-    # Check health
-    try:
-        import urllib.request
-        req = urllib.request.Request(f'{bridge_url}/health', method='GET')
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            health = json.loads(resp.read())
-            if health.get('status') != 'ok':
-                print("Bridge health check failed — skipping review")
-                sys.exit(0)
-    except Exception:
-        print("Bridge not running on localhost:7771 — skipping review")
-        sys.exit(0)
-
-    # Check timeout rate from history
-    try:
-        req = urllib.request.Request(f'{bridge_url}/history', method='GET')
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            hist = json.loads(resp.read())
-            stats = hist.get('stats', {})
-            timeout_rate_str = stats.get('timeout_rate', '0%')
-            timeout_rate = int(timeout_rate_str.replace('%', '')) if timeout_rate_str else 0
-            if timeout_rate > 30:
-                print(f"Warning: review timeout rate is {timeout_rate_str} — "
-                      f"consider increasing REVIEW_TIMEOUT (currently "
-                      f"{stats.get('avg_response_time_s', '?')}s avg)")
-    except Exception:
-        pass
-
-    print(f"Submitting review ({mode} mode)...")
-
-    # Submit review
-    payload = json.dumps({
-        'output': output,
-        'context': args.context,
-        'question': args.question,
-        'mode': mode,
-    }).encode('utf-8')
-
-    timeout = 200 if mode == 'fast' else 360
+    model_label = "Opus (thorough)" if args.thorough else "Sonnet (fast)"
+    print(f"Submitting review [{model_label}]...")
 
     try:
-        req = urllib.request.Request(
-            f'{bridge_url}/review',
-            data=payload,
-            headers={'Content-Type': 'application/json'},
-            method='POST',
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            result = json.loads(resp.read())
+        response = _submit(args.context, output, args.question, args.thorough)
     except Exception as e:
-        print(f"Review submission failed: {e}")
-        sys.exit(0)
+        print(f"Review failed: {e}")
+        sys.exit(3)
 
-    # Format output
-    sep = '=' * 50
-    print(sep)
-    print(f"AUTOMATED REVIEW — {args.context}")
-    quality = result.get('quality', 'UNKNOWN')
-    print(f"Quality: {quality}")
-    print(sep)
-    print(result.get('assessment', ''))
+    # Display formatted response
+    quality = response.get('quality', 'UNKNOWN')
+    assessment = response.get('assessment', '')
+    issues = response.get('issues', [])
+    instructions = response.get('next_instructions', '')
+    needs_live = response.get('needs_live_testing', False)
+    elapsed = response.get('elapsed_s', 0)
+    model = response.get('model_used', 'unknown')
+
+    # Colour-code quality for terminal
+    quality_markers = {
+        'GOOD': '✓',
+        'ACCEPTABLE': '~',
+        'NEEDS_WORK': '!',
+        'BLOCKER': 'X',
+    }
+    marker = quality_markers.get(quality, '?')
+
     print()
+    print("=" * 56)
+    print(f"  REVIEW [{marker}] {quality}  ({model}, {elapsed}s)")
+    print("=" * 56)
+    print()
+    print(assessment)
 
-    issues = result.get('issues', [])
+    if needs_live:
+        print()
+        print("  >> NEEDS LIVE TESTING — human must run the app <<")
+
     if issues:
+        print()
         print("Issues:")
         for issue in issues:
             print(f"  - {issue}")
+
+    if instructions:
         print()
-
-    next_inst = result.get('next_instructions', '')
-    if next_inst:
         print("Next instructions:")
-        print(f"  {next_inst}")
-    print(sep)
+        print(f"  {instructions}")
 
-    # Write next_instructions
-    os.makedirs(os.path.dirname(NEXT_INSTRUCTIONS_FILE), exist_ok=True)
-    with open(NEXT_INSTRUCTIONS_FILE, 'w') as f:
-        f.write(f"# Next Instructions — {args.context}\n\n")
-        f.write(f"Quality: {quality}\n\n")
-        if next_inst:
-            f.write(f"{next_inst}\n")
-        else:
-            f.write("No further instructions — work can continue.\n")
+    print()
+    print("=" * 56)
 
-    # Exit code
-    can_continue = result.get('can_continue', True)
-    sys.exit(0 if can_continue else 1)
+    # Save to file if requested
+    if args.output_file:
+        next_instructions_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'docs', 'review_loop'
+        )
+        os.makedirs(next_instructions_dir, exist_ok=True)
+
+        with open(args.output_file, 'w', encoding='utf-8') as f:
+            json.dump(response, f, indent=2, ensure_ascii=False)
+        print(f"Saved to {args.output_file}")
+
+    # Also always write next_instructions for Claude Code to read
+    ni_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'docs', 'review_loop', 'next_instructions.md'
+    )
+    with open(ni_path, 'w', encoding='utf-8') as f:
+        f.write(f"# Review Result — {args.context}\n")
+        f.write(f"Quality: {quality}\n")
+        f.write(f"{instructions}\n")
+
+    # Exit code based on quality
+    if quality == 'BLOCKER':
+        sys.exit(2)
+    elif quality == 'NEEDS_WORK':
+        sys.exit(1)
+    else:
+        sys.exit(0)
 
 
 if __name__ == '__main__':

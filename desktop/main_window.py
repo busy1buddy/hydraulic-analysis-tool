@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QHeaderView, QSplitter, QProgressBar, QPushButton,
 )
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent
-from PyQt6.QtGui import QAction, QFont, QColor
+from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence
 
 from epanet_api import HydraulicAPI
 from desktop.network_canvas import NetworkCanvas
@@ -398,6 +398,7 @@ class MainWindow(QMainWindow):
 
         # Add tooltips to the existing canvas toolbar buttons
         self.canvas.fit_btn.setToolTip("Fit — zoom to show all network elements (Ctrl+F)")
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self.canvas._fit_view)
         self.canvas.labels_btn.setToolTip("Labels — toggle node/pipe ID labels on the canvas")
 
         # NOTE: NetworkCanvas adds combo + Fit + Labels (3 items) -- we append
@@ -1413,15 +1414,17 @@ class MainWindow(QMainWindow):
             avg_lps = abs(fdata.get('avg_lps', 0))
 
             if is_slurry and pid in slurry_data:
-                # Use slurry-solver headloss
+                # Use slurry-solver headloss and velocity
                 sd = slurry_data[pid]
+                # Use slurry velocity, not water velocity
+                v_display = sd.get('velocity_ms', v)
                 if pipe_length > 0:
                     hl_per_km = sd.get('headloss_m', 0) / pipe_length * 1000
                 else:
                     hl_per_km = 0
                 regime = sd.get('regime', '--')
                 re_b = sd.get('reynolds', 0)
-                items = [pid, dn, length, f"{v:.2f}",
+                items = [pid, dn, length, f"{v_display:.2f}",
                          f"{hl_per_km:.1f}", regime, f"{re_b:.0f}"]
             else:
                 # Hazen-Williams water headloss per km
@@ -1435,12 +1438,19 @@ class MainWindow(QMainWindow):
                         hl_per_km = 0
                 except Exception:
                     hl_per_km = 0
-                items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}"]
+                if is_slurry:
+                    # Zero-flow pipe in slurry mode — fill extra columns
+                    items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}",
+                             "--", "0"]
+                else:
+                    items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}"]
 
+            # Determine actual displayed velocity for WSAA flagging
+            v_check = v_display if (is_slurry and pid in slurry_data) else v
             for col, val in enumerate(items):
                 item = QTableWidgetItem(str(val))
                 # Flag velocity > 2.0 m/s — WSAA WSA 03-2011
-                if col == 3 and v > 2.0:
+                if col == 3 and v_check > 2.0:
                     item.setForeground(QColor(243, 139, 168))
                 self.pipe_results_table.setItem(row, col, item)
 
@@ -1597,6 +1607,10 @@ class MainWindow(QMainWindow):
 
     def _on_calibration(self):
         """Open the Calibration Tools dialog."""
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
         dialog = CalibrationDialog(self.api, canvas=self.canvas, parent=self)
         dialog.exec()
 
@@ -1760,6 +1774,10 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _on_schedule_reports(self):
+        if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
         dialog = ReportSchedulerDialog(self.api, parent=self)
         dialog.exec()
 

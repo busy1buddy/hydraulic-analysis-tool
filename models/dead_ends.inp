@@ -1,0 +1,131 @@
+[TITLE]
+
+[JUNCTIONS]
+;ID                      Elevation       Demand Pattern                 
+ J1                                 0    15.850323141                            ;
+ J2                                 0    15.850323141                            ;
+ J3                                 0    15.850323141                            ;
+ J4                                 0    15.850323141                            ;
+ J5                                 0    15.850323141                            ;
+ J6                                 0    15.850323141                            ;
+ J7                                 0    15.850323141                            ;
+ J8                                 0    15.850323141                            ;
+
+[RESERVOIRS]
+;ID                                   Head                  Pattern
+ R1                      164.04199475                            ;
+
+[TANKS]
+;ID                              Elevation           Init Level            Min Level            Max Level             Diameter           Min Volume Volume Curve         Overflow            
+
+[PIPES]
+;ID                   Node1                Node2                              Length             Diameter            Roughness           Minor Loss               Status
+ P0                   R1                   J1                       328.0839895     7.874015748             130               0                 Open   ;
+ P2                   J1                   J2                       328.0839895     7.874015748             130               0                 Open   ;
+ P3                   J1                   J3                       328.0839895     7.874015748             130               0                 Open   ;
+ P4                   J1                   J4                       328.0839895     7.874015748             130               0                 Open   ;
+ P5                   J1                   J5                       328.0839895     7.874015748             130               0                 Open   ;
+ P6                   J1                   J6                       328.0839895     7.874015748             130               0                 Open   ;
+ P7                   J1                   J7                       328.0839895     7.874015748             130               0                 Open   ;
+ P8                   J1                   J8                       328.0839895     7.874015748             130               0                 Open   ;
+
+[PUMPS]
+;ID                   Node1                Node2                Properties          
+
+[VALVES]
+;ID                   Node1                Node2                            Diameter Type              Setting           Minor Loss
+
+[TAGS]
+;type      name       tag       
+
+[DEMANDS]
+;ID        Demand     Pattern   
+
+[STATUS]
+;ID        Setting   
+
+[PATTERNS]
+;ID        Multipliers
+
+[CURVES]
+;ID         X-Value      Y-Value     
+
+[CONTROLS]
+
+[RULES]
+
+[ENERGY]
+GLOBAL PRICE           0.0000
+
+[EMITTERS]
+;ID        Flow coefficient
+
+[QUALITY]
+
+[SOURCES]
+;Node      Type       Quality    Pattern   
+
+[REACTIONS]
+;Type           Pipe/Tank               Coefficient
+
+ ORDER BULK 1
+ ORDER TANK 1
+ ORDER WALL 1
+ GLOBAL BULK 0.0000    
+ GLOBAL WALL 0.0000    
+
+[MIXING]
+;Tank ID             Model Fraction
+
+[TIMES]
+DURATION             24:00:00
+HYDRAULIC TIMESTEP   01:00:00
+QUALITY TIMESTEP     00:06:00
+PATTERN TIMESTEP     01:00:00
+PATTERN START        00:00:00
+REPORT TIMESTEP      01:00:00
+REPORT START         00:00:00
+START CLOCKTIME      00:00:00 AM
+RULE TIMESTEP        00:06:00
+STATISTIC            NONE      
+
+[REPORT]
+
+[OPTIONS]
+UNITS                GPM                 
+HEADLOSS             H-W                 
+SPECIFIC GRAVITY     1
+VISCOSITY            1
+TRIALS               200
+ACCURACY             0.001
+CHECKFREQ            2
+MAXCHECK             10
+UNBALANCED           STOP                
+PATTERN              1                   
+DEMAND MULTIPLIER    1
+EMITTER EXPONENT     0.5
+QUALITY              NONE                
+DIFFUSIVITY          1
+TOLERANCE            0.01
+
+[COORDINATES]
+;Node      X-Coord    Y-Coord   
+R1                -50.000000000          0.000000000
+J1                 50.000000000          0.000000000
+J2                100.000000000          0.000000000
+J3                150.000000000          0.000000000
+J4                200.000000000          0.000000000
+J5                250.000000000          0.000000000
+J6                300.000000000          0.000000000
+J7                350.000000000          0.000000000
+J8                400.000000000          0.000000000
+
+[VERTICES]
+;Link      X-Coord    Y-Coord   
+
+[LABELS]
+
+[BACKDROP]
+UNITS    NONE
+
+[END]

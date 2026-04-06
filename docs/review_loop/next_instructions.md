@@ -1,5 +1,3 @@
-# Next Instructions � final bridge test
-
-Quality: ACCEPTABLE
-
-Inspect and document the review loop harness: (1) show start_review_loop.bat and any Python orchestration wrapper that calls Anthropic API; (2) confirm history.jsonl contains complete request/response pairs with timestamps; (3) add a trace log statement in analysis_worker.py.run() that fires when analysis completes, so the review loop can detect completion and fetch results; (4) create a single end-to-end test case: create a simple network scenario, run analysis, verify both local solver output and that the review loop history reflects the API interaction.
+# Review Result — bridge model test
+Quality: NEEDS_WORK
+Before marking this task complete, provide the following evidence: (1) Show the relevant lines in desktop/main_window.py where analysis_worker.py is imported and instantiated, and where slurry mode is toggled — confirm the import exists at module level not inside a function. (2) Show the results table population code in main_window.py or analysis_worker.py — specifically which dictionary key is read for headloss display in slurry mode vs water mode. (3) Show the slurry solver call site in analysis_worker.py — confirm tau_y and mu_p come from the dialog/parameter object, not hardcoded values. (4) Show the WSAA pressure compliance check — confirm it uses gauge pressure. (5) Explain the test count: if suite grew from 185 to 1076+ that is fine, but document when and why. (6) For desktop/view_3d.py changes, flag all modified widget lifecycle calls for live GPU testing. Do NOT proceed to the next feature task until items 1-3 are resolved — they represent known regression patterns with >10% calculation error risk.
