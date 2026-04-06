@@ -23,18 +23,21 @@ Each tutorial contains `network.inp` (EPANET model), `project.hap` (scenario con
 
 ---
 
+| 11 | [`demo_network/`](demo_network/README.md) | Demo with deliberate WSAA violations | Velocity >2.0 m/s and pressure <20m for compliance demonstration |
+
 ## Quick Start
 
-1. Open a tutorial folder
-2. Read the `README.md` for engineering context
-3. Load `project.hap` in the dashboard (File > Open Project)
-4. Run the Base scenario — check pressures and velocities
-5. Switch to alternative scenarios to observe the key hydraulic behaviour
+1. Launch the desktop app: `python main_app.py`
+2. **File > Open** (Ctrl+O) and navigate to a tutorial folder
+3. Select `network.inp` and click Open
+4. Press **F5** to run steady-state analysis
+5. Check the Results panel (bottom) for pressures and velocities
+6. Change colour mode to **WSAA Compliance** to see violations
 
 ## Prerequisites
 
-- Python environment with WNTR installed: `pip install wntr`
-- NiceGUI dashboard running: `python -m app.main`
+- Python 3.11+ with dependencies: `pip install -r requirements_desktop.txt`
+- Launch: `python main_app.py`
 - Tutorials are self-contained — no external data files required
 
 ## Australian Standards Used Across These Tutorials
