@@ -781,13 +781,31 @@ class MainWindow(QMainWindow):
                 'flows': self._last_results.get('flows', {}),
                 'compliance': self._last_results.get('compliance', []),
             }
+            # Include slurry data if present
+            if self._last_results.get('slurry'):
+                last_run['slurry'] = self._last_results['slurry']
 
         # Serialize slurry parameters
         slurry_params = dict(self._slurry_params) if hasattr(self, '_slurry_params') else {}
 
+        # Store inp_path relative to .hap file for portability
+        inp_abs = self._current_file or ''
+        hap_dir = os.path.dirname(os.path.abspath(path))
+        try:
+            inp_rel = os.path.relpath(inp_abs, hap_dir)
+        except ValueError:
+            inp_rel = inp_abs  # Different drive on Windows
+
+        # Capture .inp file modification time for stale detection
+        inp_mtime = 0
+        if inp_abs and os.path.exists(inp_abs):
+            inp_mtime = os.path.getmtime(inp_abs)
+
         project = {
-            'version': '3.1.0',
-            'inp_path': self._current_file or '',
+            'version': '3.3.0',
+            'inp_path': inp_abs,
+            'inp_path_relative': inp_rel,
+            'inp_mtime': inp_mtime,
             'scenarios': scenarios,
             'last_run': last_run,
             'slurry_params': slurry_params,
@@ -814,16 +832,32 @@ class MainWindow(QMainWindow):
                                  f"Could not read project file.\n\n{e}")
             return
 
-        # Load the referenced .inp network
+        # Resolve .inp network path (try absolute, then relative to .hap)
         inp_path = project.get('inp_path', '')
+        hap_dir = os.path.dirname(os.path.abspath(path))
         if not inp_path or not os.path.exists(inp_path):
-            # Try relative to .hap location
-            hap_dir = os.path.dirname(os.path.abspath(path))
-            inp_path = os.path.join(hap_dir, os.path.basename(inp_path))
+            # Try relative path stored in .hap
+            inp_rel = project.get('inp_path_relative', '')
+            if inp_rel:
+                inp_path = os.path.join(hap_dir, inp_rel)
+            if not os.path.exists(inp_path):
+                # Last resort: basename next to .hap
+                inp_path = os.path.join(hap_dir, os.path.basename(
+                    project.get('inp_path', '')))
             if not os.path.exists(inp_path):
                 QMessageBox.warning(self, "Missing Network",
                     f"Network file not found: {project.get('inp_path', '')}")
                 return
+
+        # Warn if .inp was modified since the project was saved
+        saved_mtime = project.get('inp_mtime', 0)
+        if saved_mtime > 0:
+            current_mtime = os.path.getmtime(inp_path)
+            if abs(current_mtime - saved_mtime) > 1.0:
+                QMessageBox.information(self, "Network Modified",
+                    "The .inp file has been modified since this project was saved.\n"
+                    "Saved results may not match the current network.\n"
+                    "Consider re-running analysis (F5) to update.")
 
         try:
             self.api.load_network_from_path(inp_path)
@@ -834,12 +868,15 @@ class MainWindow(QMainWindow):
 
         self._current_file = inp_path
         self._hap_file = path
+        self._last_results = None
+        self.node_results_table.setRowCount(0)
+        self.pipe_results_table.setRowCount(0)
         self._populate_explorer()
         self.canvas.set_api(self.api)
         self.dashboard_widget.update_dashboard(self.api)
         self.what_if_panel.set_api(self.api)
 
-        # Restore analysis results
+        # Restore analysis results to tables without re-running
         last_run = project.get('last_run', {})
         if last_run and last_run.get('pressures'):
             self._last_results = last_run
@@ -864,6 +901,9 @@ class MainWindow(QMainWindow):
         settings = project.get('settings', {})
         if settings.get('slurry_mode', False):
             self.slurry_act.setChecked(True)
+        cm = settings.get('colour_mode')
+        if cm and cm in self.canvas.COLOR_MODES:
+            self.canvas.color_mode_combo.setCurrentText(cm)
 
         self._update_status_bar()
         self.setWindowTitle(f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(path)}")
@@ -1601,7 +1641,8 @@ class MainWindow(QMainWindow):
             return
         from desktop.compliance_dialog import ComplianceDialog
         dialog = ComplianceDialog(self.api, parent=self)
-        dialog.exec()
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.show()
 
     def _on_quick_assessment(self):
         """Run quick assessment and show results."""
@@ -2202,3 +2243,41 @@ class MainWindow(QMainWindow):
         cm = prefs.get('colour_mode')
         if cm and cm in self.canvas.COLOR_MODES:
             self.canvas.color_mode_combo.setCurrentText(cm)
+
+    def show_welcome_if_needed(self):
+        """Show welcome dialog on first launch when no network is loaded."""
+        if self.api.wn is not None:
+            return  # Network already loaded from session restore
+        from desktop.preferences import get_pref, set_pref
+        if get_pref('skip_welcome', False):
+            return
+
+        from desktop.welcome_dialog import WelcomeDialog
+        dlg = WelcomeDialog(parent=self)
+        if dlg.exec() == dlg.DialogCode.Accepted:
+            if dlg.skip_next_time():
+                set_pref('skip_welcome', True)
+            if dlg.choice == WelcomeDialog.DEMO:
+                demo_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'tutorials', 'demo_network', 'network.inp')
+                if os.path.exists(demo_path):
+                    self.api.load_network_from_path(demo_path)
+                    self._current_file = demo_path
+                    self._last_results = None
+                    self._populate_explorer()
+                    self._update_status_bar()
+                    self.canvas.set_api(self.api)
+                    self.dashboard_widget.update_dashboard(self.api)
+                    self.what_if_panel.set_api(self.api)
+                    self.setWindowTitle(
+                        f"Hydraulic Analysis Tool v2.9.0 — network.inp")
+            elif dlg.choice == WelcomeDialog.OPEN:
+                self._on_open_inp()
+            elif dlg.choice == WelcomeDialog.TUTORIALS:
+                tut_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'tutorials')
+                if os.path.isdir(tut_dir):
+                    import subprocess
+                    subprocess.Popen(['explorer', tut_dir])

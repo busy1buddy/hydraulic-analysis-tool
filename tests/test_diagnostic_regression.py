@@ -238,13 +238,17 @@ class TestHeadlossFromSolver:
 class TestHAPRoundtrip:
     """Project .hap files must save and restore full state."""
 
-    def test_save_and_load_hap(self, window, app, tmp_path, monkeypatch):
+    def test_save_and_load_hap(self, window, app, tmp_path):
         import json
 
         # Run analysis first
         results = window.api.run_steady_state(save_plot=False)
         window._on_analysis_finished(results)
         app.processEvents()
+
+        # Record state before save
+        node_rows_before = window.node_results_table.rowCount()
+        pipe_rows_before = window.pipe_results_table.rowCount()
 
         # Save .hap
         hap_path = str(tmp_path / "test_project.hap")
@@ -255,10 +259,76 @@ class TestHAPRoundtrip:
         with open(hap_path) as f:
             project = json.load(f)
 
-        assert project['version'] == '3.1.0'
+        assert project['version'] == '3.3.0'
         assert len(project['last_run']['pressures']) > 0, (
             ".hap must save pressure results")
         assert len(project['last_run']['flows']) > 0, (
             ".hap must save flow results")
         assert len(project['scenarios']) >= 1, (
             ".hap must save scenario definitions")
+        assert project.get('inp_mtime', 0) > 0, (
+            ".hap must save .inp modification time")
+        assert project.get('inp_path_relative'), (
+            ".hap must save relative .inp path")
+
+    def test_load_hap_restores_results(self, window, app, tmp_path, monkeypatch):
+        """Load a .hap file and verify results tables have same rows."""
+        import json
+        from PyQt6 import QtWidgets
+
+        # Run analysis and save
+        results = window.api.run_steady_state(save_plot=False)
+        window._on_analysis_finished(results)
+        app.processEvents()
+        node_rows = window.node_results_table.rowCount()
+        pipe_rows = window.pipe_results_table.rowCount()
+
+        hap_path = str(tmp_path / "roundtrip.hap")
+        window._save_hap(hap_path)
+
+        # Clear state
+        window._last_results = None
+        window.node_results_table.setRowCount(0)
+        window.pipe_results_table.setRowCount(0)
+
+        # Suppress any info dialogs (mtime warning)
+        monkeypatch.setattr(QtWidgets.QMessageBox, 'information',
+                            staticmethod(lambda *a, **kw: None))
+
+        # Load .hap
+        window._load_hap(hap_path)
+        app.processEvents()
+
+        # Verify results restored
+        assert window._last_results is not None, "Results must be restored"
+        assert window.node_results_table.rowCount() == node_rows, (
+            f"Expected {node_rows} node rows, got {window.node_results_table.rowCount()}")
+        assert window.pipe_results_table.rowCount() == pipe_rows, (
+            f"Expected {pipe_rows} pipe rows, got {window.pipe_results_table.rowCount()}")
+
+    def test_hap_warns_on_modified_inp(self, window, app, tmp_path, monkeypatch):
+        """Loading .hap after .inp modification should warn."""
+        import json, time
+        from PyQt6 import QtWidgets
+
+        # Save project
+        results = window.api.run_steady_state(save_plot=False)
+        window._on_analysis_finished(results)
+        hap_path = str(tmp_path / "stale.hap")
+        window._save_hap(hap_path)
+
+        # Tamper with .hap to simulate old mtime
+        with open(hap_path) as f:
+            project = json.load(f)
+        project['inp_mtime'] = project['inp_mtime'] - 100  # fake old timestamp
+        with open(hap_path, 'w') as f:
+            json.dump(project, f)
+
+        # Track if info dialog fires
+        warned = []
+        monkeypatch.setattr(QtWidgets.QMessageBox, 'information',
+                            staticmethod(lambda *a, **kw: warned.append(True)))
+
+        window._load_hap(hap_path)
+        app.processEvents()
+        assert len(warned) == 1, "Should warn about modified .inp file"

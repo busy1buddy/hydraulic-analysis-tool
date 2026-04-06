@@ -107,6 +107,9 @@ def main():
         window._restore_session()
 
     window.show()
+
+    # Show welcome dialog for first-time users (after window is visible)
+    window.show_welcome_if_needed()
     sys.exit(app.exec())
 
 
