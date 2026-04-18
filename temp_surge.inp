@@ -2,21 +2,26 @@
 
 [JUNCTIONS]
 ;ID                      Elevation       Demand Pattern                 
+ J1                      164.04199475               0                            ;
+ J2                      164.04199475    158.50323141                            ;
 
 [RESERVOIRS]
 ;ID                                   Head                  Pattern
+ R1                       328.0839895                            ;
 
 [TANKS]
 ;ID                              Elevation           Init Level            Min Level            Max Level             Diameter           Min Volume Volume Curve         Overflow            
 
 [PIPES]
 ;ID                   Node1                Node2                              Length             Diameter            Roughness           Minor Loss               Status
+ P1                   R1                   J1                      1640.4199475    11.811023622             130               0                 Open   ;
 
 [PUMPS]
 ;ID                   Node1                Node2                Properties          
 
 [VALVES]
 ;ID                   Node1                Node2                            Diameter Type              Setting           Minor Loss
+ V1                   J1                   J2                      11.811023622 TCV                1               0   ;
 
 [TAGS]
 ;type      name       tag       
@@ -93,6 +98,9 @@ TOLERANCE            0.01
 
 [COORDINATES]
 ;Node      X-Coord    Y-Coord   
+R1                  0.000000000        100.000000000
+J1                500.000000000        100.000000000
+J2               1000.000000000        100.000000000
 
 [VERTICES]
 ;Link      X-Coord    Y-Coord   

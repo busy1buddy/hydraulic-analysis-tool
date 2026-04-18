@@ -42,8 +42,22 @@ PRESSURE_COLORS = [
 VELOCITY_COLORS = [
     (0, QColor(80, 200, 80)),     # green (< 1.5 m/s)
     (1.5, QColor(255, 165, 0)),   # orange (1.5-2.0 m/s)
-    (2.0, QColor(220, 50, 50)),   # red (> 2.0 m/s)
-    (3.0, QColor(180, 0, 0)),     # dark red
+    (1.5, QColor(243, 139, 168)), # red
+    (2.0, QColor(210, 45, 45)),   # dark red
+]
+
+QUALITY_COLORS_AGE = [
+    (0.0, QColor(137, 180, 250)),  # blue
+    (24.0, QColor(166, 227, 161)), # green
+    (48.0, QColor(249, 226, 175)), # yellow
+    (72.0, QColor(243, 139, 168)), # red
+]
+
+QUALITY_COLORS_CHEM = [
+    (0.0, QColor(243, 139, 168)),  # red
+    (0.2, QColor(249, 226, 175)),  # yellow
+    (1.0, QColor(166, 227, 161)),  # green
+    (2.0, QColor(137, 180, 250)),  # blue
 ]
 
 # Node shapes
@@ -145,9 +159,10 @@ class NetworkCanvas(QWidget):
 
     element_selected = pyqtSignal(str, str)  # (element_id, element_type)
     probe_requested = pyqtSignal(str, str, int, int)  # (element_id, element_type, global_x, global_y)
+    sigPathChanged = pyqtSignal(list)  # list of pipe IDs
 
     COLOR_MODES = ["WSAA Compliance", "Pressure", "Velocity", "Headloss", "Status",
-                    "Pressure Min (EPS)", "Pressure Max (EPS)"]
+                    "Pressure Min (EPS)", "Pressure Max (EPS)", "quality"]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -173,6 +188,9 @@ class NetworkCanvas(QWidget):
         self._variable_data = {}         # {element_id: float} for custom variable
         
         self._highlighted_nodes = set()  # Set of node IDs to visually highlight
+        self._path_selection_mode = False
+        self._selected_path_pipes = []   # Ordered list of pipe IDs in profile
+        self._path_line_items = []       # Overlay items for path highlighting
 
         self._setup_ui()
 
@@ -270,6 +288,10 @@ class NetworkCanvas(QWidget):
         """Set the HydraulicAPI instance and render the network."""
         self.api = api
         self.render()
+
+    def update_visuals(self):
+        """Refresh the color overlays and legend based on current results."""
+        self._apply_colors()
 
     def set_results(self, results):
         """Set analysis results and re-color the network."""
@@ -430,6 +452,10 @@ class NetworkCanvas(QWidget):
                 elif mode == "Pressure Max (EPS)":
                     max_p = p.get('max_m')
                     color = self._color_from_cmap(max_p, PRESSURE_COLORS) if max_p is not None else QColor(108, 112, 134)
+                elif mode == "quality":
+                    val = self.results.get('node_values', {}).get(str(nid))
+                    cmap = QUALITY_COLORS_AGE if self.results.get('parameter') == 'AGE' else QUALITY_COLORS_CHEM
+                    color = self._color_from_cmap(val, cmap) if val is not None else QColor(108, 112, 134)
                 else:
                     color = QColor(137, 180, 250)  # default blue
 
@@ -474,16 +500,24 @@ class NetworkCanvas(QWidget):
             
         for rid in wn.reservoir_name_list:
             x, y = self._node_positions.get(rid, (0, 0))
-            brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
+            brush = brushes[idx] if idx < len(brushes) else pg.mkBrush(100, 100, 100)
             
             pen = pg.mkPen('#313244', width=1)
-            size = 16
-            if rid in self._highlighted_nodes or brush.color() == QColor(220, 50, 50):
+            size = 14
+            symbol = 'o'
+            
+            # Special symbol for calibration points
+            if hasattr(self.api, '_field_data') and rid in self.api._field_data:
+                symbol = 'star'
+                size = 18
+                pen = pg.mkPen('#fab387', width=3)
+                
+            if rid in self._highlighted_nodes:
                 pen = pg.mkPen('#f38ba8', width=4)
                 size += 4
                 
             spots.append({
-                'pos': (x, y), 'size': size, 'symbol': SHAPE_RESERVOIR,
+                'pos': (x, y), 'size': size, 'symbol': symbol,
                 'brush': brush, 'pen': pen,
                 'data': rid,
             })
@@ -495,12 +529,13 @@ class NetworkCanvas(QWidget):
             
             pen = pg.mkPen('#313244', width=1)
             size = 14
+            symbol = SHAPE_TANK
             if tid in self._highlighted_nodes or brush.color() == QColor(220, 50, 50):
                 pen = pg.mkPen('#f38ba8', width=4)
                 size += 4
                 
             spots.append({
-                'pos': (x, y), 'size': size, 'symbol': SHAPE_TANK,
+                'pos': (x, y), 'size': size, 'symbol': symbol,
                 'brush': brush, 'pen': pen,
                 'data': tid,
             })
@@ -573,6 +608,17 @@ class NetworkCanvas(QWidget):
                             color = self._color_from_cmap((p1 + p2) / 2, PRESSURE_COLORS)
                     except (KeyError, AttributeError):
                         pass
+            elif mode == "quality":
+                vals = self.results.get('node_values', {})
+                try:
+                    pipe = self.api.wn.get_link(pid)
+                    v1 = vals.get(pipe.start_node_name)
+                    v2 = vals.get(pipe.end_node_name)
+                    if v1 is not None and v2 is not None:
+                        cmap = QUALITY_COLORS_AGE if self.results.get('parameter') == 'AGE' else QUALITY_COLORS_CHEM
+                        color = self._color_from_cmap((v1 + v2) / 2, cmap)
+                except:
+                    pass
 
             # Determine line width and Z-value for highlighting
             width = 2
@@ -963,6 +1009,18 @@ class NetworkCanvas(QWidget):
         mouse_point = vb.mapSceneToView(pos)
         mx, my = mouse_point.x(), mouse_point.y()
 
+        # If in path selection mode, handle pipe toggling
+        if self._path_selection_mode:
+            hit_pipe = self._find_nearest_pipe(mx, my)
+            if hit_pipe:
+                if hit_pipe in self._selected_path_pipes:
+                    self._selected_path_pipes.remove(hit_pipe)
+                else:
+                    self._selected_path_pipes.append(hit_pipe)
+                self._update_path_highlight()
+                self.sigPathChanged.emit(self._selected_path_pipes)
+                return
+
         # Route through editor in edit mode
         if self._editor and self._editor.edit_mode:
             button = event.button()
@@ -1184,3 +1242,38 @@ class NetworkCanvas(QWidget):
             brushes.append(pg.mkBrush(highlight if tid in data else default))
 
         self._recolor_nodes(brushes)
+
+    def set_path_selection_mode(self, enabled):
+        """Enable/disable interactive path selection for profiling."""
+        self._path_selection_mode = enabled
+        if not enabled:
+            self._selected_path_pipes.clear()
+            self._update_path_highlight()
+            self.sigPathChanged.emit([])
+
+    def _update_path_highlight(self):
+        """Draw bold highlight over the selected profile path."""
+        for item in self._path_line_items:
+            try:
+                self.plot_widget.removeItem(item)
+            except:
+                pass
+        self._path_line_items.clear()
+        
+        if not self._selected_path_pipes or self.api is None:
+            return
+            
+        for pid in self._selected_path_pipes:
+            try:
+                pipe = self.api.get_link(pid)
+                n1 = self.api.get_node(pipe.start_node_name)
+                n2 = self.api.get_node(pipe.end_node_name)
+                x = [n1.coordinates[0], n2.coordinates[0]]
+                y = [n1.coordinates[1], n2.coordinates[1]]
+                
+                # Thick blue highlight
+                item = pg.PlotDataItem(x, y, pen=pg.mkPen('#89b4fa', width=5))
+                self.plot_widget.addItem(item)
+                self._path_line_items.append(item)
+            except (KeyError, AttributeError):
+                continue

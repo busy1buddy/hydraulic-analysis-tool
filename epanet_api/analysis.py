@@ -745,7 +745,10 @@ class AnalysisMixin:
 
         for node_name in tm.junction_name_list:
             node = tm.get_node(node_name)
-            head = node.head
+            head = getattr(node, 'head', None)
+            if head is None or len(head) == 0:
+                continue
+                
             steady = head[0]
             max_h = float(np.max(head))
             min_h = float(np.min(head))

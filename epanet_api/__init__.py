@@ -36,11 +36,15 @@ from epanet_api.calibration import CalibrationMixin
 from epanet_api.forecasting import ForecastingMixin
 from epanet_api.surge import SurgeMixin
 from epanet_api.comparison import ComparisonMixin
+from epanet_api.terrain import TerrainMixin
+from epanet_api.pumping import PumpingMixin
+from epanet_api.water_quality import WaterQualityMixin
 
 
 class HydraulicAPI(CoreMixin, AnalysisMixin, SlurryMixin, ComplianceMixin,
                    AssetsMixin, AdvancedMixin, TopologyMixin, ResilienceMixin,
-                   CalibrationMixin, ForecastingMixin, SurgeMixin, ComparisonMixin):
+                   CalibrationMixin, ForecastingMixin, SurgeMixin, ComparisonMixin,
+                   TerrainMixin, PumpingMixin, WaterQualityMixin):
     """Unified API for EPANET hydraulic and transient analysis."""
 
     # Australian standard unit defaults
@@ -66,9 +70,35 @@ class HydraulicAPI(CoreMixin, AnalysisMixin, SlurryMixin, ComplianceMixin,
         self.steady_results = None
         self.transient_results = None
         self._inp_file = None
-        # Instance-level copy of defaults so set_compliance_thresholds
-        # doesn't mutate shared class state
+        # Initialize terrain mixin state
+        TerrainMixin.__init__(self)
+        
         self.DEFAULTS = dict(HydraulicAPI.DEFAULTS)
+        self.load_settings()
+
+    def load_settings(self):
+        """Load user settings from settings.json."""
+        import json
+        self.settings = {
+            'units': 'LPS',
+            'theme': 'Dark',
+            'default_roughness': 140
+        }
+        if os.path.exists('settings.json'):
+            try:
+                with open('settings.json', 'r') as f:
+                    self.settings.update(json.load(f))
+            except:
+                pass
+
+    def save_settings(self):
+        """Save current settings to settings.json."""
+        import json
+        try:
+            with open('settings.json', 'w') as f:
+                json.dump(self.settings, f, indent=4)
+        except:
+            pass
 
 
 __all__ = ['HydraulicAPI']

@@ -14,8 +14,8 @@ from PyQt6.QtWidgets import (
     QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
     QMessageBox, QHeaderView, QSplitter, QProgressBar, QPushButton,
 )
-from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent
-from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence
+from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent, QTimer, QPropertyAnimation, QEasingCurve
+from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence, QPalette
 
 import csv
 import logging
@@ -45,9 +45,22 @@ from desktop.canvas_editor import CanvasEditor
 from desktop.colourmap_widget import ColourMapWidget, ColourBar
 from desktop.animation_panel import AnimationPanel
 from desktop.pattern_editor import PatternEditorDialog
+from desktop.profile_panel import ProfilePanel
+from desktop.pump_panel import PumpPanel
 from desktop.eps_dialog import EPSConfigDialog
 from desktop.fire_flow_dialog import FireFlowDialog
-from desktop.water_quality_dialog import WaterQualityDialog
+from epanet_api.water_quality import WaterQualityMixin
+from desktop.quality_dialog import QualityDialog
+from desktop.lcc_dialog import LCCDialog
+from desktop.asset_management_dialog import AssetManagementDialog
+from desktop.tco_dashboard import TCODashboard
+from desktop.calibration_data_dialog import CalibrationDataDialog
+from desktop.calibration_residual_dialog import CalibrationResidualDialog
+from desktop.calibration_dashboard import CalibrationDashboard
+from desktop.sensitivity_dialog import SensitivityDialog
+from desktop.settings_dialog import SettingsDialog
+from desktop.help_dialog import HelpDialog
+from desktop.tutorial_manager import TutorialManager
 from desktop.probe_tooltip import ProbeTooltip
 from desktop.calibration_dialog import CalibrationDialog
 from desktop.statistics_panel import StatisticsPanel
@@ -81,6 +94,7 @@ class MainWindow(QMainWindow):
         self._hap_file = None
         self._last_results = None
         self._probe_tooltip = None  # Created lazily
+        self._setup_auto_save()
         # Slurry params persist across runs; user edits via Analysis > Slurry.
         # Defaults match the "Iron ore tailings" preset in slurry_params_dialog.
         self._slurry_params = {
@@ -163,6 +177,10 @@ class MainWindow(QMainWindow):
         import_bundle_act.triggered.connect(self._on_import_bundle)
         file_menu.addAction(import_bundle_act)
 
+        settings_act = QAction("&Settings...", self)
+        settings_act.triggered.connect(self._on_open_settings)
+        file_menu.addAction(settings_act)
+
         file_menu.addSeparator()
 
         exit_act = QAction("E&xit", self)
@@ -196,6 +214,43 @@ class MainWindow(QMainWindow):
         steady_act.setShortcut("F5")
         steady_act.triggered.connect(self._on_run_steady)
         analysis_menu.addAction(steady_act)
+
+        quality_act = QAction("Water &Quality Config...", self)
+        quality_act.triggered.connect(self._on_water_quality_config)
+        analysis_menu.addAction(quality_act)
+
+        run_quality_act = QAction("Run Quality &Analysis", self)
+        run_quality_act.triggered.connect(self._on_run_quality)
+        analysis_menu.addAction(run_quality_act)
+
+        field_data_act = QAction("&Field Data Entry...", self)
+        field_data_act.triggered.connect(self._on_calibration_data)
+        analysis_menu.addAction(field_data_act)
+
+        residuals_act = QAction("&Accuracy Residuals...", self)
+        residuals_act.triggered.connect(self._on_calibration_residuals)
+        analysis_menu.addAction(residuals_act)
+
+        calibration_dashboard_act = QAction("&Calibration Dashboard...", self)
+        calibration_dashboard_act.triggered.connect(self._on_calibration_dashboard)
+        analysis_menu.addAction(calibration_dashboard_act)
+
+        sensitivity_act = QAction("&Sensitivity Analysis...", self)
+        sensitivity_act.triggered.connect(self._on_sensitivity_analysis)
+        analysis_menu.addAction(sensitivity_act)
+
+        lcc_act = QAction("&Lifecycle Cost (LCC)...", self)
+        lcc_act.triggered.connect(self._on_run_lcc)
+        analysis_menu.addAction(lcc_act)
+
+        assets_menu = menubar.addMenu("A&ssets")
+        asset_mgmt_act = QAction("&Asset Management...", self)
+        asset_mgmt_act.triggered.connect(self._on_asset_management)
+        assets_menu.addAction(asset_mgmt_act)
+
+        tco_act = QAction("&TCO Dashboard...", self)
+        tco_act.triggered.connect(self._on_tco_dashboard)
+        assets_menu.addAction(tco_act)
 
         transient_act = QAction("Run &Transient", self)
         transient_act.setShortcut("F6")
@@ -407,17 +462,30 @@ class MainWindow(QMainWindow):
         self.toggle_what_if_act.setChecked(True)
         view_menu.addAction(self.toggle_what_if_act)
 
-        # --- Help ---
+        self.toggle_profile_act = QAction("Pipe &Profile", self)
+        self.toggle_profile_act.setCheckable(True)
+        self.toggle_profile_act.setChecked(True)
+        view_menu.addAction(self.toggle_profile_act)
+
+        self.toggle_pump_act = QAction("&Pump Analysis", self)
+        self.toggle_pump_act.setCheckable(True)
+        self.toggle_pump_act.setChecked(False)
+        view_menu.addAction(self.toggle_pump_act)
+
         help_menu = menubar.addMenu("&Help")
 
-        about_act = QAction("&About", self)
-        about_act.triggered.connect(self._on_about)
-        help_menu.addAction(about_act)
+        help_act = QAction("&Help & Documentation", self)
+        help_act.setShortcut("F1")
+        help_act.triggered.connect(self._on_show_help)
+        help_menu.addAction(help_act)
 
-        shortcuts_act = QAction("&Keyboard Shortcuts", self)
-        shortcuts_act.setShortcut("F1")
-        shortcuts_act.triggered.connect(self._on_keyboard_shortcuts)
-        help_menu.addAction(shortcuts_act)
+        tour_act = QAction("&Guided Tour...", self)
+        tour_act.triggered.connect(self._on_run_tutorial)
+        help_menu.addAction(tour_act)
+
+        health_act = QAction("System &Health Check", self)
+        health_act.triggered.connect(self._on_health_check)
+        help_menu.addAction(health_act)
 
         help_menu.addSeparator()
         demo_act = QAction("&Run Demo", self)
@@ -435,6 +503,8 @@ class MainWindow(QMainWindow):
         """Network canvas with PyQtGraph 2D view."""
         self.canvas = NetworkCanvas()
         self.canvas.element_selected.connect(self._on_canvas_element_selected)
+        self.canvas.sigPathChanged.connect(self._on_canvas_path_changed)
+        self.canvas.element_selected.connect(self._on_pump_selected_on_canvas)
         # NOTE: setCentralWidget is called ONCE at the end of this method, after
         # the wrapper is built. Previously we set canvas as central here, then
         # replaced it with a wrapper below — Qt deletes the previous central
@@ -646,10 +716,36 @@ class MainWindow(QMainWindow):
         self.scenario_dock.setMinimumWidth(250)
         self.scenario_panel = ScenarioPanel()
         self.scenario_panel.run_all.connect(self._on_run_all_scenarios)
+        self.scenario_panel.scenario_selected.connect(self._on_scenario_selected)
         self.scenario_dock.setWidget(self.scenario_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.scenario_dock)
         # Tab scenario behind explorer so explorer is the visible tab
         self.tabifyDockWidget(self.scenario_dock, self.explorer_dock)
+
+        # --- Bottom: Profile Plot (Tabbed with Results) ---
+        from desktop.profile_panel import ProfilePanel
+        self.profile_dock = QDockWidget("Pipe Profile", self)
+        self.profile_dock.setObjectName("profile_dock")
+        self.profile_dock.setFeatures(_dock_features)
+        self.profile_panel = ProfilePanel(self)
+        self.profile_panel.path_selection_toggled.connect(self.canvas.set_path_selection_mode)
+        self.profile_panel.clear_requested.connect(lambda: self.canvas.set_path_selection_mode(False))
+        self.profile_dock.setWidget(self.profile_panel)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.profile_dock)
+        self.tabifyDockWidget(self.results_dock, self.profile_dock)
+        self.toggle_profile_act.toggled.connect(self.profile_dock.setVisible)
+        self.profile_dock.visibilityChanged.connect(self.toggle_profile_act.setChecked)
+
+        # --- Bottom: Pump Analysis ---
+        self.pump_dock = QDockWidget("Pump Analysis", self)
+        self.pump_dock.setObjectName("pump_dock")
+        self.pump_dock.setFeatures(_dock_features)
+        self.pump_panel = PumpPanel(self)
+        self.pump_dock.setWidget(self.pump_panel)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.pump_dock)
+        self.tabifyDockWidget(self.profile_dock, self.pump_dock)
+        self.toggle_pump_act.toggled.connect(self.pump_dock.setVisible)
+        self.pump_dock.visibilityChanged.connect(self.toggle_pump_act.setChecked)
 
         # --- Bottom: Animation (tabbed with Results) ---
         self.animation_dock = QDockWidget("Animation", self)
@@ -1076,6 +1172,10 @@ class MainWindow(QMainWindow):
         except (KeyError, AttributeError) as e:
             logger.debug("Could not show properties for %s: %s", element_id, e)
 
+    def _on_canvas_path_changed(self, pipe_ids):
+        """Update profile view when a path is selected on the canvas."""
+        self._on_pipe_profile()
+
     def _on_canvas_element_selected(self, element_id, element_type):
         """Handle element selection from the canvas."""
         self.properties_table.setRowCount(0)
@@ -1203,9 +1303,15 @@ class MainWindow(QMainWindow):
     def _on_analysis_progress(self, value):
         self.progress_bar.setValue(value)
 
+    def _flash_status_bar(self, color_hex):
+        """Flash the status bar with a color animation."""
+        self.statusBar().setStyleSheet(f"background-color: {color_hex}; color: #11111b;")
+        QTimer.singleShot(500, lambda: self.statusBar().setStyleSheet(""))
+
     def _on_analysis_finished(self, results):
         self.progress_bar.setVisible(False)
         self._last_results = results
+        self._flash_status_bar("#a6e3a1") # Green flash
 
         # Update Project Explorer Results label
         if getattr(self, '_results_tree_item', None) is not None:
@@ -1506,40 +1612,24 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Analysis failed.", 5000)
 
     def _on_run_all_scenarios(self):
-        """Run all scenarios sequentially and update comparison table."""
         if self.api.wn is None:
-            QMessageBox.warning(self, "No Network",
-                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            QMessageBox.warning(self, "No Network", "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
+            return
+            
+        if not getattr(self.api, '_inp_file', None) or not os.path.exists(self.api._inp_file):
+            QMessageBox.warning(self, "No Network", "Cannot run scenarios: no network file path is known for reloads.")
             return
 
         self.status_bar.showMessage("Running all scenarios...")
         self.progress_bar.setVisible(True)
 
-        # Snapshot all pipe roughness values before the scenario loop
-        roughness_snapshot = {pid: self.api.get_link(pid).roughness for pid in self.api.wn.pipe_name_list}
-
         for i, sc in enumerate(self.scenario_panel.scenarios):
             self.progress_bar.setValue(int((i / len(self.scenario_panel.scenarios)) * 100))
 
-            # Reset to original network via API
-            self.api.load_network_from_path(self.api._inp_file)
-
-            # Apply demand multiplier
-            if sc.demand_multiplier != 1.0:
-                for jname in self.api.get_node_list('junction'):
-                    junc = self.api.get_node(jname)
-                    if junc.demand_timeseries_list:
-                        junc.demand_timeseries_list[0].base_value *= sc.demand_multiplier
-
-            # Restore roughness from snapshot
-            for pid, c in roughness_snapshot.items():
-                self.api.get_link(pid).roughness = c
-
-            # Apply C-factor aging
-            if hasattr(sc, 'metal_age') and (sc.metal_age > 0 or sc.plastic_age > 0):
-                self.api.apply_scenario_aging(sc.metal_age, sc.plastic_age)
-
+            # Reset and apply scenario parameters
             try:
+                self.api.load_network_from_path(self.api._inp_file)
+                self._apply_scenario_to_network(sc)
                 sc.results = self.api.run_steady_state(save_plot=False)
             except Exception as e:
                 sc.results = {'error': str(e), 'pressures': {}, 'flows': {}, 'compliance': []}
@@ -1554,12 +1644,71 @@ class MainWindow(QMainWindow):
         base = self.scenario_panel.scenarios[0]
         if base.results and 'error' not in base.results:
             self.canvas.set_results(base.results)
+            self._last_results = base.results
+            self._update_status_bar()
             self._populate_node_results(base.results)
             self._populate_pipe_results(base.results)
 
         self.status_bar.showMessage(
             f"All {len(self.scenario_panel.scenarios)} scenarios complete.", 5000
         )
+
+    def _on_scenario_selected(self, name):
+        """
+        Handle scenario selection: load the scenario's configuration onto the 
+        active network and update the canvas/results.
+        """
+        if self.api.wn is None:
+            return
+            
+        if not getattr(self.api, '_inp_file', None) or not os.path.exists(self.api._inp_file):
+            QMessageBox.warning(self, "No Network", "Cannot load scenario: no network file path is known.")
+            return
+            
+        sc = next((s for s in self.scenario_panel.scenarios if s.name == name), None)
+        if not sc:
+            return
+            
+        self.status_bar.showMessage(f"Loading scenario: {name}")
+        
+        # Reset to baseline state from disk
+        try:
+            self.api.load_network_from_path(self.api._inp_file)
+            self._apply_scenario_to_network(sc)
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error", f"Failed to reload network for scenario: {e}")
+            return
+            
+        # Update UI with results if they exist
+        if sc.results:
+            self.canvas.set_results(sc.results)
+            self._last_results = sc.results
+            self._update_status_bar()
+            self._populate_node_results(sc.results)
+            self._populate_pipe_results(sc.results)
+        else:
+            self.canvas.set_results(None)
+            self._last_results = None
+            self.status_bar.showMessage(f"Scenario '{name}' loaded. Press F5 to run analysis.")
+        
+        self.canvas.update()
+
+    def _apply_scenario_to_network(self, sc):
+        """Helper to apply scenario parameters (demand, aging, mods) to the API."""
+        # Apply demand multipliers
+        if sc.demand_multiplier != 1.0:
+            for jname in self.api.get_node_list('junction'):
+                junc = self.api.get_node(jname)
+                if junc.demand_timeseries_list:
+                    junc.demand_timeseries_list[0].base_value *= sc.demand_multiplier
+                    
+        # Apply aging
+        if hasattr(sc, 'metal_age') and (sc.metal_age > 0 or sc.plastic_age > 0):
+            self.api.apply_scenario_aging(sc.metal_age, sc.plastic_age)
+            
+        # Apply specific modifications
+        if hasattr(sc, 'modifications') and sc.modifications:
+            self.api.apply_scenario_modifications(sc.modifications)
 
     def _populate_node_results(self, results):
         """Fill the node results table."""
@@ -2207,15 +2356,20 @@ class MainWindow(QMainWindow):
         self._demo_step_num = 0
         self._demo_steps = [_step1, _step2, _step3, _step4]
 
-        def _run_next():
-            if self._demo_step_num >= len(self._demo_steps):
-                return
-            self._demo_steps[self._demo_step_num]()
-            self._demo_step_num += 1
-            if self._demo_step_num < len(self._demo_steps):
-                QTimer.singleShot(500, _run_next)
+        if not hasattr(self, '_demo_timer'):
+            self._demo_timer = QTimer(self)
+            self._demo_timer.setSingleShot(True)
+            def _timer_fired():
+                if self._demo_step_num < len(self._demo_steps):
+                    self._demo_steps[self._demo_step_num]()
+                    self._demo_step_num += 1
+                    if self._demo_step_num < len(self._demo_steps):
+                        self._demo_timer.start(500)
+            self._demo_timer.timeout.connect(_timer_fired)
 
-        _run_next()
+        self._demo_step_num = 1
+        _step1()
+        self._demo_timer.start(500)
 
     def _on_about(self):
         QMessageBox.about(
@@ -2573,4 +2727,241 @@ class MainWindow(QMainWindow):
             icon = QMessageBox.Icon.Critical if res['errors'] else QMessageBox.Icon.Warning
             box = QMessageBox(icon, "Validation Results", msg, QMessageBox.StandardButton.Ok, self)
             box.exec()
+
+    def _on_pipe_profile(self):
+        """Show the elevation profile for the current selected path or the main path."""
+        if self.api.wn is None:
+            return
+            
+        # 1. Use manual path if selected
+        if self.canvas._selected_path_pipes:
+            path_pipes = self.canvas._selected_path_pipes
+            # Need to convert list of pipes to a sequence of nodes for get_path_profile
+            # Simplified: just find a logical path between extreme nodes of selected pipes
+            # But better to just support the pipe list directly.
+            # For now, let's find the logical source and sink of the selected segment.
+            # We'll stick to shortest path between start of first pipe and end of last pipe.
+            p1 = self.api.get_link(path_pipes[0])
+            pL = self.api.get_link(path_pipes[-1])
+            start_node = p1.start_node_name
+            end_node = pL.end_node_name
+        else:
+            # 2. Try to find a logical main path automatically
+            sources = self.api.get_node_list('reservoir') + self.api.get_node_list('tank')
+            if not sources:
+                return
+            start_node = self.api.get_node_list('reservoir')[0] if self.api.get_node_list('reservoir') else sources[0]
+            end_node = self.api.get_node_list('tank')[0] if self.api.get_node_list('tank') else sources[-1]
+        
+        if start_node == end_node:
+            return
+            
+        profile = self.api.get_path_profile_with_terrain(
+            start_node, end_node, steady_results=self.canvas.results)
+            
+        if profile:
+            self.profile_panel.update_profile(
+                profile['chainage'], 
+                profile['elevation'],
+                ground_elev=profile.get('ground_elevation'),
+                hgl=profile.get('hgl'),
+                labels=profile['labels'],
+                appurtenances=profile.get('appurtenances'),
+                vacuum_zones=profile.get('vacuum_zones'),
+                cavitation_risk=profile.get('cavitation_risk'),
+                suggested_avs=profile.get('suggested_avs'),
+                suggested_scours=profile.get('suggested_scours')
+            )
+            
+            if hasattr(self, '_manual_profile_request') and self._manual_profile_request:
+                self.profile_dock.setVisible(True)
+                self.profile_dock.raise_()
+                self._manual_profile_request = False
+        else:
+            if self.canvas._selected_path_pipes:
+                self.status_bar.showMessage("Could not find connected path through selected pipes.", 5000)
+
+    def _on_water_quality_config(self):
+        """Open Water Quality Configuration dialog."""
+        if self.api.wn is None:
+            return
+            
+        dlg = QualityDialog(self.api, self)
+        if dlg.exec():
+            config = dlg.get_config()
+            self.api.set_water_quality_mode(config['mode'])
+            self.api.set_global_reaction_coeffs(config['bulk'], config['wall'])
+            for node, conc in config['sources'].items():
+                self.api.set_source_concentration(node, conc)
+            self.statusBar().showMessage("Water quality configuration updated.", 3000)
+
+    def _on_run_quality(self):
+        """Run Water Quality Analysis (EPS)."""
+        if self.api.wn is None:
+            return
+            
+        # Default to AGE if no mode is set
+        if self.api.wn.options.quality.parameter == 'NONE':
+            self.api.set_water_quality_mode('AGE')
+            self.statusBar().showMessage("Defaulting to Water Age analysis (no mode set).")
+
+        self.statusBar().showMessage("Running Water Quality Analysis (48h EPS)...")
+        results = self.api.run_water_quality_analysis()
+        
+        if 'error' in results:
+            self.statusBar().showMessage(f"Quality Analysis failed: {results['error']}")
+            return
+            
+        # Store results for heatmapping
+        # We store the final concentration/age as the primary value for map display
+        mapped_results = {
+            'nodes': {},
+            'links': {}
+        }
+        
+        mode = results['mode']
+        unit = "h" if mode == "AGE" else "mg/L"
+        
+        for name, data in results['quality'].items():
+            mapped_results['nodes'][name] = data['final']
+            
+        # Update canvas
+        self.canvas.results = {
+            'mode': 'quality',
+            'parameter': mode,
+            'unit': unit,
+            'node_values': mapped_results['nodes']
+        }
+        self.canvas.update_visuals()
+        self.statusBar().showMessage(f"Quality Analysis ({mode}) complete. Showing final {unit}.", 5000)
+
+    def _on_run_lcc(self):
+        """Run Lifecycle Cost (LCC) Analysis."""
+        if self.api.wn is None:
+            return
+            
+        # Ensure costs are loaded
+        self.api.load_default_asset_costs()
+        
+        # Calculate for current scenario
+        res = self.api.calculate_pipeline_lcc()
+        res['name'] = "Current Design"
+        
+        # In a real app, we would collect results from the scenario manager
+        # For now, we compare current vs a theoretical 20% degradation scenario
+        dlg = LCCDialog(self.api, [res], self)
+        dlg.exec()
+
+    def _on_asset_management(self):
+        """Open Asset Management dialog."""
+        if self.api.wn is None:
+            return
+            
+        dlg = AssetManagementDialog(self.api, self)
+        dlg.exec()
+
+    def _on_tco_dashboard(self):
+        """Open TCO Dashboard."""
+        if self.api.wn is None:
+            return
+            
+        dlg = TCODashboard(self.api, self)
+        dlg.exec()
+
+    def _on_calibration_data(self):
+        """Open Field Data Entry dialog."""
+        if self.api.wn is None:
+            return
+            
+        dlg = CalibrationDataDialog(self.api, self)
+        if dlg.exec():
+            self.canvas.update_visuals() # Show markers
+
+    def _on_calibration_residuals(self):
+        """Open Calibration Residuals dialog."""
+        if self.api.wn is None:
+            return
+            
+        dlg = CalibrationResidualDialog(self.api, self)
+        dlg.exec()
+
+    def _on_calibration_dashboard(self):
+        """Open Calibration Dashboard."""
+        if self.api.wn is None:
+            return
+            
+        dlg = CalibrationDashboard(self.api, self)
+        dlg.exec()
+
+    def _on_sensitivity_analysis(self):
+        """Open Sensitivity Analysis dialog."""
+        if self.api.wn is None:
+            return
+            
+        dlg = SensitivityDialog(self.api, self)
+        dlg.exec()
+
+    def _on_open_settings(self):
+        """Open Settings dialog."""
+        dlg = SettingsDialog(self.api, self)
+        if dlg.exec():
+            self.statusBar().showMessage("Settings saved. Some changes may require restart.", 5000)
+
+    def _on_show_help(self):
+        """Open Help dialog."""
+        dlg = HelpDialog(self)
+        dlg.exec()
+
+    def _on_run_tutorial(self):
+        """Start the interactive tutorial."""
+        tm = TutorialManager(self)
+        tm.start()
+
+    def _on_health_check(self):
+        """Run dependency health check."""
+        from desktop.health_check import run_health_check
+        ok, report = run_health_check()
+        icon = QMessageBox.Icon.Information if ok else QMessageBox.Icon.Critical
+        QMessageBox(icon, "System Health Check", report, QMessageBox.StandardButton.Ok, self).exec()
+
+    def _on_pump_selected_on_canvas(self, element_type, name):
+        """When a pump is clicked on canvas, show its system curve."""
+        if self.api.wn is None:
+            return
+            
+        try:
+            link = self.api.get_link(name)
+            if link.link_type == 'Pump':
+                # Show the dock
+                self.pump_dock.setVisible(True)
+                self.pump_dock.raise_()
+                
+                # Generate system curve
+                # We assume a reasonable max flow (2x current flow or 100 LPS)
+                q_current = 0
+                if self.canvas.results:
+                    q_data = self.canvas.results['flows'].get(name, {})
+                    q_current = abs(q_data.get('avg_lps', 0))
+                
+                max_q = max(q_current * 1.5, 50.0)
+                curve = self.api.generate_system_curve_from_network(name, max_flow_lps=max_q)
+                self.pump_panel.set_system_curve(curve)
+        except:
+            pass
+
+    def _setup_auto_save(self):
+        """Initialize the background auto-save timer."""
+        self.auto_save_timer = QTimer(self)
+        self.auto_save_timer.timeout.connect(self._on_auto_save)
+        self.auto_save_timer.start(5 * 60 * 1000) # Every 5 minutes
+
+    def _on_auto_save(self):
+        """Periodically save a backup of the network."""
+        if self.api.wn is not None:
+            try:
+                backup_path = "backup.inp"
+                self.api.wn.write_inpfile(backup_path)
+                logger.info(f"Auto-saved backup to {backup_path}")
+            except Exception as e:
+                logger.error(f"Auto-save failed: {e}")
 

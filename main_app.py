@@ -17,9 +17,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
 from desktop.main_window import MainWindow
+from desktop.crash_dialog import CrashDialog
+
+
+def exception_hook(exctype, value, tb):
+    """Global exception handler to show CrashDialog."""
+    print(f"CRITICAL ERROR: {exctype} - {value}")
+    try:
+        if QApplication.instance():
+            dlg = CrashDialog(value, tb)
+            dlg.exec()
+        else:
+            import traceback
+            traceback.print_exception(exctype, value, tb)
+    except:
+        pass
+    sys.__excepthook__(exctype, value, tb)
 
 
 def main():
+    sys.excepthook = exception_hook
     app = QApplication(sys.argv)
     app.setApplicationName("Hydraulic Analysis Tool")
     app.setOrganizationName("HydraulicTool")

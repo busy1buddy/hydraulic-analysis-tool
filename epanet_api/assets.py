@@ -688,3 +688,227 @@ class AssetsMixin:
                          'Shamir & Howard (1979) AWWA Journal 71(5); '
                          'Kleiner & Rajani (2001) Urban Water 3:131-150',
         }
+        
+    def load_default_asset_costs(self):
+        """Load rates from data/asset_costs.py into the internal cost dict."""
+        from data.asset_costs import PIPE_SUPPLY_RATES, PIPE_INSTALL_RATES
+        if not hasattr(self, 'PIPE_COST_PER_M'):
+            self.PIPE_COST_PER_M = {}
+            
+        for dn in PIPE_SUPPLY_RATES.keys():
+            total = PIPE_SUPPLY_RATES[dn] + PIPE_INSTALL_RATES.get(dn, 0)
+            self.PIPE_COST_PER_M[dn] = total
+
+    # =========================================================================
+    # LIFECYCLE COST & NPV ANALYSIS (NEW)
+    # =========================================================================
+
+    def calculate_npv(self, initial_cost, annual_opex, years=25, discount_rate=0.07, inflation_rate=0.03):
+        """
+        Calculate Net Present Value of an asset over its lifecycle.
+        
+        Parameters
+        ----------
+        initial_cost : float (CAPEX)
+        annual_opex : float (Maintenance + Energy + Chemicals)
+        years : int (Analysis period)
+        discount_rate : float (e.g. 0.07 for 7%)
+        inflation_rate : float (e.g. 0.03 for 3%)
+        """
+        npv = initial_cost
+        for t in range(1, years + 1):
+            # Future value adjusted for inflation
+            fv = annual_opex * ((1 + inflation_rate) ** t)
+            # Present value discounted
+            pv = fv / ((1 + discount_rate) ** t)
+            npv += pv
+        return round(npv, 2)
+
+    def calculate_pipeline_lcc(self, years=25, discount_rate=0.07, inflation_rate=0.03, electricity_rate=0.25):
+        """
+        Perform a network-wide Lifecycle Cost (LCC) analysis.
+        Sums CAPEX of all pipes and NPV of OPEX (Maintenance + Energy).
+        """
+        if self.wn is None:
+            return None
+            
+        total_capex = 0
+        total_annual_maint = 0
+        
+        # 1. Pipe CAPEX and Maintenance
+        # Maintenance heuristic: $500/km/year for new, $2000/km/year for old
+        from data.asset_costs import MAINTENANCE_RATES
+        
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            dn = int(pipe.diameter * 1000)
+            length_km = pipe.length / 1000.0
+            
+            # CAPEX
+            cost_per_m = self.get_pipe_cost(dn)
+            if cost_per_m == 0:
+                # Use heuristics from asset_costs if possible
+                from data.asset_costs import get_total_unit_rate
+                cost_per_m = get_total_unit_rate(dn)
+                
+            total_capex += cost_per_m * pipe.length
+            
+            # Maintenance OPEX
+            # Find material
+            mat = 'PE'
+            if hasattr(self, '_pipe_conditions'):
+                cond = self._pipe_conditions.get(pid, {})
+                mat = cond.get('material', 'PE')
+                
+            maint_rate = MAINTENANCE_RATES.get(mat, 1000)
+            
+            # Adjust based on condition if available
+            if hasattr(self, '_pipe_conditions'):
+                cond = self._pipe_conditions.get(pid, {})
+                score = cond.get('condition_score', 2)
+                maint_rate *= (score / 2.0)
+            total_annual_maint += maint_rate * length_km
+            
+        # 2. Pumping Energy OPEX
+        total_annual_energy = 0
+        for pname in self.wn.pump_name_list:
+            try:
+                # Estimate power based on recent results or default
+                p_kw = 10.0 # fallback
+                if hasattr(self, 'results') and 'pumps' in self.results:
+                    p_kw = self.results['pumps'].get(pname, {}).get('avg_power_kw', 10.0)
+                
+                cost_res = self.calculate_energy_cost(p_kw, rate_aud_kwh=electricity_rate)
+                total_annual_energy += cost_res['annual_cost_aud']
+            except:
+                pass
+        
+        total_annual_opex = total_annual_maint + total_annual_energy
+        total_npv = self.calculate_npv(total_capex, total_annual_opex, years, discount_rate, inflation_rate)
+        
+        return {
+            'capex': round(total_capex, 2),
+            'annual_opex': round(total_annual_opex, 2),
+            'npv': total_npv,
+            'years': years,
+            'discount_rate': discount_rate
+        }
+
+    def suggest_replacements(self, horizon_years=10):
+        """
+        Suggest pipes for replacement based on risk and break forecast.
+        """
+        if self.wn is None:
+            return []
+            
+        # 1. Get Break Forecasts
+        from datetime import date
+        current_year = date.today().year
+        target_year = current_year + horizon_years
+        
+        forecast = self.lamont_break_forecast(forecast_years=[target_year])
+        
+        suggestions = []
+        for f in forecast.get('pipe_forecasts', []):
+            pid = f['pipe_id']
+            rate = f['forecasts'][target_year]['break_rate_per_km_yr']
+            
+            # 2. Get Deterioration Score
+            pred = self.predict_deterioration(pid, forecast_years=[target_year])
+            cs_future = pred.get(target_year, {}).get('condition_score', 0)
+            
+            # Heuristic for replacement:
+            # - High break rate (> 0.5 per km/yr)
+            # - OR high condition score (> 4.5)
+            # - OR high overall priority score from prioritize_rehabilitation
+            
+            reason = ""
+            if rate > 0.5:
+                reason = f"High break risk ({rate:.2f}/km/yr)"
+            elif cs_future > 4.5:
+                reason = f"End of life predicted (Score {cs_future:.1f})"
+                
+            if reason:
+                suggestions.append({
+                    'pipe_id': pid,
+                    'reason': reason,
+                    'priority': rate * 10 + cs_future,
+                    'est_replacement_cost': self.get_pipe_cost(f['length_m']) # wait, get_pipe_cost takes DN
+                })
+        
+        # Add cost
+        for s in suggestions:
+            pipe = self.wn.get_link(s['pipe_id'])
+            dn = int(pipe.diameter * 1000)
+            s['cost'] = self.get_pipe_cost(dn) * pipe.length
+            
+        suggestions.sort(key=lambda x: x['priority'], reverse=True)
+        return suggestions
+
+    def calculate_carbon_footprint(self):
+        """
+        Estimate embodied carbon (kg CO2) of the pipeline network.
+        Factors based on Inventory of Carbon and Energy (ICE) or similar.
+        """
+        if self.wn is None:
+            return None
+            
+        # Factors: kg CO2 / kg material
+        CARBON_FACTORS = {
+            'PE': 2.5,
+            'PVC': 2.8,
+            'DI': 1.8,
+            'Steel': 2.2,
+            'Concrete': 0.15
+        }
+        
+        # Density: kg / m3
+        DENSITY = {
+            'PE': 950,
+            'PVC': 1400,
+            'DI': 7100,
+            'Steel': 7850,
+            'Concrete': 2400
+        }
+        
+        total_kg_co2 = 0
+        
+        for pid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(pid)
+            dn = pipe.diameter # metres
+            # Simplified wall thickness assumption: SDR 11 -> wall = dn / 11
+            # Area = pi * (R_outer^2 - R_inner^2)
+            ro = dn / 2.0
+            ri = ro - (dn / 11.0)
+            area = 3.14159 * (ro**2 - ri**2)
+            volume = area * pipe.length
+            
+            mat = 'PE'
+            if hasattr(self, '_pipe_conditions'):
+                mat = self._pipe_conditions.get(pid, {}).get('material', 'PE')
+                
+            weight = volume * DENSITY.get(mat, 950)
+            total_kg_co2 += weight * CARBON_FACTORS.get(mat, 2.5)
+            
+        return round(total_kg_co2 / 1000.0, 1) # tonnes CO2
+
+    def generate_asset_report(self):
+        """
+        Aggregate all asset and economic data into a single report dict.
+        """
+        lcc = self.calculate_pipeline_lcc()
+        carbon = self.calculate_carbon_footprint()
+        replacements = self.suggest_replacements()
+        
+        return {
+            'project_name': self.wn.name if self.wn else "Unnamed",
+            'economics': lcc,
+            'sustainability': {
+                'embodied_carbon_tonnes': carbon
+            },
+            'renewal_strategy': {
+                'critical_count': len(replacements),
+                'total_renewal_capex': sum([r['cost'] for r in replacements]),
+                'top_priorities': replacements[:5]
+            }
+        }

@@ -8,6 +8,7 @@ EPANET network models via WNTR.
 import os
 import math
 import wntr
+import networkx as nx
 
 
 class CoreMixin:
@@ -864,6 +865,38 @@ class CoreMixin:
             except KeyError:
                 pass
 
+    def apply_scenario_modifications(self, modifications: list) -> None:
+        """
+        Apply a list of network modifications (roughness overrides, status toggles).
+        """
+        if self.wn is None:
+            return
+            
+        for mod in modifications:
+            m_type = mod.get('type')
+            pipe_id = mod.get('pipe_id')
+            
+            if pipe_id not in self.wn.link_name_list:
+                continue
+                
+            link = self.wn.get_link(pipe_id)
+            
+            if m_type == "roughness_override":
+                if not isinstance(link, wntr.network.Pipe):
+                    continue
+                val = mod.get('value')
+                if val is not None:
+                    link.roughness = val
+                    
+            elif m_type == "status_toggle":
+                if not isinstance(link, (wntr.network.Pipe, wntr.network.Pump, wntr.network.Valve)):
+                    continue
+                status = mod.get('status')
+                if isinstance(status, str):
+                    link.initial_status = (wntr.network.LinkStatus.Open 
+                                           if status.lower() == "open" 
+                                           else wntr.network.LinkStatus.Closed)
+
     def set_node_demand(self, node_id: str, demand_lps: float, pattern_name: str = None) -> dict:
         """
         Assign a base demand to a junction.
@@ -1203,6 +1236,15 @@ class CoreMixin:
         self.wn.add_pipe(pid, start_node, end_node, length=length,
                          diameter=diameter_m, roughness=roughness)
 
+    def add_valve(self, vid, start_node, end_node, diameter_m=0.3, valve_type='GPV',
+                  setting=0, minor_loss=0):
+        """Add a valve to the network."""
+        if self.wn is None:
+            raise RuntimeError("No network loaded")
+        self.wn.add_valve(vid, start_node, end_node, diameter=diameter_m,
+                          valve_type=valve_type, initial_setting=setting,
+                          minor_loss=minor_loss)
+
     def update_pipe(self, pid, length=None, diameter_m=None, roughness=None, description=None):
         """Update pipe properties. Diameter in metres."""
         if self.wn is None:
@@ -1309,3 +1351,57 @@ class CoreMixin:
         if self.wn is None:
             raise RuntimeError("No network loaded")
         wntr.network.write_inpfile(self.wn, path)
+
+    def get_path_profile(self, start_node, end_node):
+        """
+        Extract chainage and elevation along the shortest path between two nodes.
+        Returns dict with 'chainage', 'elevation', and 'labels'.
+        """
+        if self.wn is None:
+            return None
+            
+        def _get_node_elevation(nid):
+            node_obj = self.wn.get_node(nid)
+            # Reservoirs use base_head as the reference elevation
+            if hasattr(node_obj, 'base_head'):
+                return node_obj.base_head
+            return getattr(node_obj, 'elevation', 0.0)
+
+        # Collapse parallel edges to the minimum length for shortest-path calculation
+        G = nx.Graph()
+        for link_name, link in self.wn.links():
+            # Pumps and valves might not have 'length', default to 1.0m for connectivity
+            length = getattr(link, 'length', 1.0)
+            if length <= 0: length = 1.0
+            
+            n1, n2 = link.start_node_name, link.end_node_name
+            if G.has_edge(n1, n2):
+                if G[n1][n2]['weight'] > length:
+                    G[n1][n2]['weight'] = length
+            else:
+                G.add_edge(n1, n2, weight=length)
+            
+        try:
+            path_nodes = nx.shortest_path(G, source=start_node, target=end_node, weight='weight')
+        except (nx.NetworkXNoPath, nx.NodeNotFound, KeyError):
+            return None
+            
+        chainage = [0.0]
+        elevation = [_get_node_elevation(path_nodes[0])]
+        labels = [path_nodes[0]]
+        
+        current_dist = 0.0
+        for i in range(len(path_nodes)-1):
+            n1 = path_nodes[i]
+            n2 = path_nodes[i+1]
+            dist = G[n1][n2]['weight']
+            current_dist += dist
+            chainage.append(current_dist)
+            elevation.append(_get_node_elevation(n2))
+            labels.append(n2)
+            
+        return {
+            'chainage': chainage,
+            'elevation': elevation,
+            'labels': labels
+        }

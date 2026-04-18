@@ -3,6 +3,138 @@ import numpy as np
 
 
 class CalibrationMixin:
+    def set_field_measurement(self, node_id, pressure_m=None, flow_lps=None):
+        """
+        Store a field measurement for a specific node.
+        """
+        if not hasattr(self, '_field_data'):
+            self._field_data = {}
+            
+        self._field_data[node_id] = {
+            'pressure_m': pressure_m,
+            'flow_lps': flow_lps
+        }
+
+    def get_calibration_residuals(self):
+        """
+        Compare the most recent model results with field data.
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded.'}
+            
+        if not hasattr(self, '_field_data') or not self._field_data:
+            return {'error': 'No field measurements set.'}
+            
+        results = self.run_steady_state(save_plot=False)
+        pressures = results.get('pressures', {})
+        
+        residuals = []
+        errors_p = []
+        
+        for node_id, measured in self._field_data.items():
+            model_p = pressures.get(node_id, {}).get('avg_m')
+            
+            if model_p is not None and measured['pressure_m'] is not None:
+                error = model_p - measured['pressure_m']
+                errors_p.append(error)
+                residuals.append({
+                    'node_id': node_id,
+                    'measured_p': measured['pressure_m'],
+                    'model_p': round(model_p, 2),
+                    'error_p': round(error, 2),
+                    'error_percent': round((error / measured['pressure_m']) * 100, 1) if measured['pressure_m'] != 0 else 0
+                })
+                
+        # Aggregate stats
+        stats = {
+            'mae_p': round(float(np.mean(np.abs(errors_p))), 3) if errors_p else 0,
+            'rmse_p': round(float(np.sqrt(np.mean(np.square(errors_p)))), 3) if errors_p else 0,
+            'max_error_p': round(float(np.max(np.abs(errors_p))), 3) if errors_p else 0
+        }
+        
+        return {
+            'residuals': residuals,
+            'stats': stats
+        }
+
+    def set_fire_flow_test(self, node_id, test_flow_lps, measured_pressure_m):
+        """
+        Record a fire flow test event for calibration.
+        """
+        if not hasattr(self, '_fire_tests'):
+            self._fire_tests = []
+            
+        self._fire_tests.append({
+            'node_id': node_id,
+            'flow_lps': test_flow_lps,
+            'measured_p': measured_pressure_m
+        })
+
+    def run_fire_test_verification(self):
+        """
+        Run the model for each fire test and calculate accuracy.
+        """
+        if not hasattr(self, '_fire_tests') or not self._fire_tests:
+            return []
+            
+        results = []
+        for test in self._fire_tests:
+            node_id = test['node_id']
+            # Save original demand
+            junc = self.wn.get_node(node_id)
+            orig_demand = junc.demand_timeseries_list[0].base_value
+            
+            # Apply test flow
+            junc.demand_timeseries_list[0].base_value = (test['flow_lps'] / 1000.0)
+            
+            # Run
+            try:
+                sim_res = self.run_steady_state(save_plot=False)
+                model_p = sim_res['pressures'].get(node_id, {}).get('avg_m', 0)
+                results.append({
+                    'node_id': node_id,
+                    'test_flow_lps': test['flow_lps'],
+                    'measured_p': test['measured_p'],
+                    'model_p': round(model_p, 2),
+                    'error_p': round(model_p - test['measured_p'], 2)
+                })
+            finally:
+                # Restore
+                junc.demand_timeseries_list[0].base_value = orig_demand
+                
+        return results
+
+    def apply_global_demand_multiplier(self, multiplier):
+        """
+        Apply a multiplier to all junction base demands.
+        Useful for matching total system inflow.
+        """
+        if self.wn is None:
+            return
+            
+        for jid in self.wn.junction_name_list:
+            junc = self.wn.get_node(jid)
+            if junc.demand_timeseries_list:
+                for ts in junc.demand_timeseries_list:
+                    ts.base_value *= multiplier
+                
+        logger.info(f"Applied global demand multiplier: {multiplier}")
+
+    def generate_calibration_report(self):
+        """
+        Generate a summary report of the calibration status.
+        """
+        residuals = self.get_calibration_residuals()
+        fire_tests = self.run_fire_test_verification()
+        
+        report = {
+            'summary': residuals.get('stats', {}),
+            'node_residuals': residuals.get('residuals', []),
+            'fire_test_results': fire_tests,
+            'timestamp': str(np.datetime64('now')),
+            'status': 'Calibrated' if residuals.get('stats', {}).get('rmse_p', 10) < 2.0 else 'Verification Required'
+        }
+        return report
 
     # =========================================================================
     # SENSITIVITY ANALYSIS
@@ -221,7 +353,7 @@ class CalibrationMixin:
     # AUTO-CALIBRATION (Roughness Optimisation)
     # =========================================================================
 
-    def auto_calibrate_roughness(self, measured_pressures, material_groups=None):
+    def auto_calibrate_roughness(self, measured_pressures=None, material_groups=None):
         """
         Automatically calibrate pipe roughness (Hazen-Williams C) by minimising
         pressure residuals using scipy.optimize.minimize.
@@ -231,8 +363,9 @@ class CalibrationMixin:
 
         Parameters
         ----------
-        measured_pressures : dict
-            {node_id: measured_pressure_m} — field measurements at junctions
+        measured_pressures : dict or None
+            {node_id: measured_pressure_m} — field measurements at junctions.
+            If None, uses stored _field_data.
         material_groups : dict or None
             {material_name: {'pipes': [pipe_ids], 'bounds': (C_min, C_max)}}
             If None, auto-groups by roughness similarity.
@@ -254,6 +387,14 @@ class CalibrationMixin:
 
         if self.wn is None:
             return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
+
+        if measured_pressures is None:
+            if not hasattr(self, '_field_data'):
+                return {'error': 'No field data provided for calibration.'}
+            measured_pressures = {nid: d['pressure_m'] for nid, d in self._field_data.items() if d['pressure_m'] is not None}
+            
+        if not measured_pressures:
+            return {'error': 'No measured pressure data available.'}
 
         # Default material grouping by roughness value clusters
         if material_groups is None:

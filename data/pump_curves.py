@@ -146,6 +146,61 @@ PUMP_DATABASE = {
         'npshr_m': 5.5,
         'application': 'Large slurry pipeline, paste fill',
     },
+    # High-Head Multi-stage centrifugal
+    'HHP-100-500': {
+        'manufacturer': 'Generic Industrial',
+        'model': 'HHP-100-500',
+        'type': 'multi_stage_centrifugal',
+        'rated_speed_rpm': 2950,
+        'stages': 10,
+        'curve_points': [
+            (0, 520), (5, 510), (10, 480), (15, 420),
+            (20, 320), (22, 250),
+        ],
+        'efficiency_points': [
+            (0, 0), (5, 40), (10, 65), (15, 78),
+            (20, 68), (22, 50),
+        ],
+        'power_kW': 110,
+        'npshr_m': 3.5,
+        'application': 'High-lift water transfer / Boiler feed',
+    },
+    # Positive Displacement (Piston)
+    'PDP-050-800': {
+        'manufacturer': 'Generic Mining',
+        'model': 'PDP-050-800',
+        'type': 'piston',
+        'rated_speed_rpm': 120,
+        'curve_points': [
+            (0, 1000), (2, 980), (4, 950), (6, 900),
+            (8, 850), (10, 800),
+        ],
+        'efficiency_points': [
+            (0, 0), (2, 85), (4, 88), (6, 90),
+            (8, 92), (10, 93),
+        ],
+        'power_kW': 132,
+        'npshr_m': 2.0,
+        'application': 'High-pressure slurry / paste injection',
+    },
+    # Submersible Borehole Pump
+    'SBP-040-150': {
+        'manufacturer': 'Generic Water',
+        'model': 'SBP-040-150',
+        'type': 'submersible',
+        'rated_speed_rpm': 2850,
+        'curve_points': [
+            (0, 180), (1, 175), (2, 165), (3, 150),
+            (4, 120), (5, 80),
+        ],
+        'efficiency_points': [
+            (0, 0), (1, 45), (2, 65), (3, 72),
+            (4, 60), (5, 40),
+        ],
+        'power_kW': 15,
+        'npshr_m': 1.5,
+        'application': 'Borehole extraction / deep well',
+    },
 }
 
 
