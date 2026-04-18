@@ -22,7 +22,7 @@ class TestRestAPI:
     @pytest.fixture(autouse=True)
     def server(self):
         """Start REST API server on random port for testing."""
-        from rest_api import HydraulicHandler, _api
+        from app.rest_api import HydraulicHandler, _api
         from http.server import HTTPServer
 
         # Load a network for testing

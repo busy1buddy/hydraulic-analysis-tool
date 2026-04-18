@@ -1,5 +1,8 @@
 import os, ast, importlib, re, sys
 
+# Ensure project root is in path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 print("=== DIAGNOSTIC 1: Wiring Verification ===")
 desktop_modules = []
 for f in os.listdir('desktop'):
@@ -155,7 +158,7 @@ if 'P1' in headloss_data.columns:
     status = 'PASS' if diff_pct < 5 else 'FAIL'
     results.append(f'{status}: Hazen-Williams headloss hand={hw_per_km:.2f} m/km, tool={tool_hl_per_km:.2f} m/km, diff={diff_pct:.1f}%')
 
-from slurry_solver import bingham_plastic_headloss
+from epanet_api.slurry_solver import bingham_plastic_headloss
 rho, tau_y, mu_p = 1800, 15.0, 0.05
 A = math.pi / 4 * D**2
 V = Q / A

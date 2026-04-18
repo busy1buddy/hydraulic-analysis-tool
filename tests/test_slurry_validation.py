@@ -10,7 +10,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from slurry_solver import bingham_plastic_headloss
+from epanet_api.slurry_solver import bingham_plastic_headloss
 
 
 class TestBuckinghamReinerValidation:
@@ -69,7 +69,7 @@ class TestBuckinghamReinerValidation:
 
     def test_turbulent_bingham_darby_correction(self):
         """Turbulent Bingham friction >= Colebrook-White (Darby correction)."""
-        from slurry_solver import _colebrook_white
+        from epanet_api.slurry_solver import _colebrook_white
         # Near-transition turbulent: Re just above Re_crit
         r = bingham_plastic_headloss(0.01, 0.1, 100, 1200, 1, 0.02, 0.05)
         if r['regime'] == 'turbulent':
@@ -81,7 +81,7 @@ class TestBuckinghamReinerValidation:
 
     def test_all_three_models_use_darcy(self):
         """Bingham, Herschel-Bulkley, Power Law all use Darcy convention."""
-        from slurry_solver import power_law_headloss, herschel_bulkley_headloss
+        from epanet_api.slurry_solver import power_law_headloss, herschel_bulkley_headloss
         # Same pipe, laminar flow — all should give f = 64/Re for Newtonian limit
         Q, D, L, rho = 0.0001, 0.05, 10, 1000
         r_b = bingham_plastic_headloss(Q, D, L, rho, tau_y=0.001, mu_p=0.001)

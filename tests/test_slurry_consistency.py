@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PyQt6.QtWidgets import QApplication
 
 from desktop.main_window import MainWindow
-from slurry_solver import bingham_plastic_headloss
+from epanet_api.slurry_solver import bingham_plastic_headloss
 
 
 @pytest.fixture(scope='module')

@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 @pytest.fixture(scope="module")
 def client():
     from fastapi.testclient import TestClient
-    from server import app
+    from app.server import app
     return TestClient(app)
 
 

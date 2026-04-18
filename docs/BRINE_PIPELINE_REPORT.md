@@ -57,3 +57,31 @@ The transfer pump must be sized to deliver the required flow rate against the to
 *   **Duty Head:** 140.0 m (Brine)
 
 It is recommended to run a **Transient Surge Analysis (Water Hammer)** using the `tsnet` solver prior to final pump procurement to ensure the maximum surge envelope does not exceed the PN16 pipe ratings during a sudden pump trip.
+
+---
+
+## 6. Pipeline Derating Considerations
+When finalizing the PE (Polyethylene) pipe material specification, the following derating factors must be applied to the nominal pressure rating (PN):
+
+1.  **Temperature Derating:** The standard PN rating (e.g., PN16 = 16 bar) is calculated at 20°C. If the brine temperature exceeds 20°C, the allowable operating pressure (MAOP) drops significantly. For PE100 pipe at 40°C, a derating factor of **~0.74** applies, meaning a PN16 pipe is only rated for 11.8 bar, which would fail under the 13.8 bar static head.
+2.  **Cyclic Fatigue Derating:** If the pump operates on a frequent on/off cycle (e.g., filling a batch tank), the repeated pressure transients can cause fatigue failure in plastic pipes. For high-cycle operations, a fatigue derating factor must be applied per PIPA guidelines.
+3.  **Chemical Resistance:** While PE is highly resistant to brine, any trace hydrocarbons or solvents in the brine mixture may require further chemical derating.
+
+## 7. Site Operational Recommendations
+To ensure long-term reliability of the brine transfer system, the following operational procedures are recommended:
+
+*   **Soft Start/Stop (VSD):** The pump should be equipped with a Variable Speed Drive (VSD) with a minimum 30-second ramp-up and ramp-down profile to minimize water hammer during normal starting and stopping.
+*   **Air Valve Maintenance:** Brine is highly corrosive and prone to crystallization when exposed to air. The Air/Vacuum valves at the 45m and 40m peaks must be placed on a strict preventative maintenance schedule. If these valves crystalize shut, the pipeline is at extreme risk of vacuum collapse during a pump trip.
+*   **Scour Valve Monitoring:** The scour valve at the 15m valley must be checked for sediment build-up, as heavy particulates in the brine will naturally settle at this low point during shutdown periods.
+
+## 8. Transient Surge Analysis (Sudden Pump Trip)
+A transient analysis (MOC) was performed to simulate a sudden power failure causing the transfer pump to trip.
+
+*   **Simulation Parameters:** 30 seconds total duration, wave speed (celerity) = 400 m/s (PE pipe).
+*   **Pump Trip Profile:** Coast down to 0 RPM over 2.0 seconds.
+
+**Surge Results:**
+*   **Pump Discharge (Chainage 0m):** The pressure drops from 120m operating head to 0m (gauge) instantly as the pump stops.
+*   **Peak 1 (Chainage 600m):** As the fluid column continues forward due to momentum, a massive low-pressure wave reflects back. The pressure at the first high point (45m elevation) rapidly drops to **-30.6 m gauge (vacuum)**. 
+
+**Conclusion:** The pipeline experiences severe **Column Separation** (vacuum) at the first high point within 5 seconds of the pump tripping. The Air/Vacuum valve specified in Section 3.1 is absolutely critical. Without it admitting air to break the vacuum, the PE pipe will instantly buckle and collapse.

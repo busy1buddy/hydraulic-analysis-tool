@@ -21,7 +21,7 @@ def manager(tmp_path):
         if f.endswith('.inp'):
             shutil.copy2(os.path.join(src_models, f), models_dir / f)
 
-    from scenario_manager import ScenarioManager
+    from epanet_api.scenario_manager import ScenarioManager
     return ScenarioManager(work_dir=str(tmp_path))
 
 

@@ -15,14 +15,14 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from slurry_solver import (
+from epanet_api.slurry_solver import (
     bingham_plastic_headloss,
     power_law_headloss,
     herschel_bulkley_headloss,
     settling_velocity,
     critical_deposition_velocity,
 )
-from pipe_stress import hoop_stress, analyze_pipe_stress
+from epanet_api.pipe_stress import hoop_stress, analyze_pipe_stress
 
 
 # ── Slurry Solver Boundary Tests ────────────────────────────────────────────

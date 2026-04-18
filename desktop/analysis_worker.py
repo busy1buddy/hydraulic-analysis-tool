@@ -65,7 +65,7 @@ class AnalysisWorker(QThread):
                 self.progress.emit(60)
 
                 # Add slurry analysis for each pipe
-                from slurry_solver import bingham_plastic_headloss
+                from epanet_api.slurry_solver import bingham_plastic_headloss
                 slurry_results = {}
                 slurry_params = self.params.get('slurry', {})
                 tau_y = slurry_params.get('yield_stress', 10.0)

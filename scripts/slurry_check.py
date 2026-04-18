@@ -1,5 +1,7 @@
 from epanet_api import HydraulicAPI
-from slurry_solver import bingham_plastic_headloss
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from epanet_api.slurry_solver import bingham_plastic_headloss
 
 api = HydraulicAPI()
 api.load_network_from_path('tutorials/mining_slurry_line/network.inp')

@@ -14,8 +14,8 @@ import pytest
 import numpy as np
 
 from epanet_api import HydraulicAPI
-from pipe_stress import hoop_stress, radial_stress, axial_stress, von_mises_stress, barlow_wall_thickness
-from slurry_solver import bingham_plastic_headloss
+from epanet_api.pipe_stress import hoop_stress, radial_stress, axial_stress, von_mises_stress, barlow_wall_thickness
+from epanet_api.slurry_solver import bingham_plastic_headloss
 from data.pump_curves import get_pump_head
 
 

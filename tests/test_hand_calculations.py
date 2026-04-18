@@ -18,8 +18,8 @@ References
 import math
 import pytest
 
-import pipe_stress
-import slurry_solver
+from epanet_api import pipe_stress
+from epanet_api import slurry_solver
 
 
 # ============================================================================

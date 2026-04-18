@@ -35,7 +35,7 @@ class SlurryMixin:
         if self.wn is None:
             return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
-        from slurry_solver import (critical_deposition_velocity,
+        from .slurry_solver import (critical_deposition_velocity,
                                     wasp_critical_velocity,
                                     settling_velocity,
                                     derate_pump_for_slurry)

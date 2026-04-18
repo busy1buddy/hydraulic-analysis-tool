@@ -7,7 +7,7 @@ from nicegui import ui
 from app.theme import PLOTLY_LAYOUT, COLORS, CHART_COLORS
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from scenario_manager import ScenarioManager
+from epanet_api.scenario_manager import ScenarioManager
 
 
 def create_page(api, status_refs):

@@ -87,12 +87,19 @@ python main_app.py
 - **Dashboard**: at-a-glance KPI cards (pressure, velocity, resilience, connectivity)
 
 ### Data & Integration
-- **REST API**: 11 HTTP endpoints for remote access (`python rest_api.py`)
+- **REST API**: 11 HTTP endpoints for remote access (`python -m app.server`)
 - **Batch analysis**: run multiple .inp files through configurable pipeline
 - **Demand patterns**: 8 built-in (WSAA, commercial, industrial, mining), custom save
 - **Project bundles**: .hydraulic ZIP export/import
 - **Importers**: CSV, DXF, Shapefile
 - **Scenario management**: create, compare, run-all
+
+## Project Documentation
+For technical depth and maintenance instructions, see the following:
+- **[HANDOVER.md](HANDOVER.md)** — Architectural overview and recent remediation work (Start here for developers).
+- **[THEORY_MANUAL.md](docs/THEORY_MANUAL.md)** — Mathematical basis for all solvers.
+- **[USER_GUIDE.md](docs/USER_GUIDE.md)** — Comprehensive operations manual.
+- **[NEW_USER_TUTORIAL.md](docs/NEW_USER_TUTORIAL.md)** — Step-by-step onboarding guide.
 
 ## Tutorial Networks
 

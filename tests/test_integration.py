@@ -49,7 +49,7 @@ class TestWorkflow1_SteadyVsSlurry:
 
     def test_slurry_headloss_exceeds_water(self, api):
         """Slurry headloss should be higher than water for same network."""
-        from slurry_solver import bingham_plastic_headloss
+        from epanet_api.slurry_solver import bingham_plastic_headloss
 
         water_results = api.run_steady_state(save_plot=False)
         water_flows = water_results['flows']

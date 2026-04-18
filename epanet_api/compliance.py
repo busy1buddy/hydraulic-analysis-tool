@@ -129,7 +129,7 @@ class ComplianceMixin:
                 })
 
         # 3. Pipe stress check
-        from pipe_stress import hoop_stress
+        from .pipe_stress import hoop_stress
         stress_failures = []
         for pid in self.wn.pipe_name_list:
             pipe = self.wn.get_link(pid)

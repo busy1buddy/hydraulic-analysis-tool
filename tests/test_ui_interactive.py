@@ -37,7 +37,7 @@ from PyQt6.QtGui import QColor
 
 from desktop.main_window import MainWindow
 from desktop.scenario_panel import ScenarioData
-from slurry_solver import bingham_plastic_headloss
+from epanet_api.slurry_solver import bingham_plastic_headloss
 
 
 # =========================================================================
@@ -656,7 +656,7 @@ class TestSlurryParameterValidation:
             captured.update(kw)
             return real_headloss(**kw)
 
-        import slurry_solver
+        from epanet_api import slurry_solver
         slurry_solver.bingham_plastic_headloss = spy
         try:
             worker = AnalysisWorker(

@@ -8,7 +8,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from slurry_solver import (wasp_critical_velocity, derate_pump_for_slurry,
+from epanet_api.slurry_solver import (wasp_critical_velocity, derate_pump_for_slurry,
                             critical_deposition_velocity)
 from epanet_api import HydraulicAPI
 

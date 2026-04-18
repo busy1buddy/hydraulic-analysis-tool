@@ -10,7 +10,7 @@ import math
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from slurry_solver import (
+from epanet_api.slurry_solver import (
     settling_velocity,
     critical_deposition_velocity,
     concentration_profile,

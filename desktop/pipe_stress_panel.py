@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QFont, QColor
 
-from pipe_stress import analyze_pipe_stress, MATERIAL_STRENGTH
+from epanet_api.pipe_stress import analyze_pipe_stress, MATERIAL_STRENGTH
 
 
 # Material detection by roughness (Hazen-Williams C-factor)
