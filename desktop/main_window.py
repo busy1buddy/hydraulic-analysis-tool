@@ -61,6 +61,13 @@ from desktop.report_scheduler import ReportSchedulerDialog
 from desktop.pipe_profile_dialog import PipeProfileDialog
 from desktop.dashboard_widget import DashboardWidget
 from desktop.what_if_panel import WhatIfPanel
+from desktop.slurry_params_dialog import SlurryParamsDialog
+from desktop.safety_case_dialog import SafetyCaseDialog
+from desktop.pump_energy_dialog import PumpEnergyDialog
+from desktop.compliance_dialog import ComplianceDialog
+from desktop.welcome_dialog import WelcomeDialog
+from desktop.report_templates import ReportTemplateDialog
+from desktop.units import dn_display, lps_to_m3s, m_to_mm
 
 
 class MainWindow(QMainWindow):
@@ -176,6 +183,12 @@ class MainWindow(QMainWindow):
         self.redo_act.triggered.connect(self._on_redo)
         edit_menu.addAction(self.redo_act)
 
+        edit_menu.addSeparator()
+
+        bulk_pipe_act = QAction("&Bulk Edit Pipes...", self)
+        bulk_pipe_act.triggered.connect(lambda: self.editor.bulk_edit_pipes())
+        edit_menu.addAction(bulk_pipe_act)
+
         # --- Analysis ---
         analysis_menu = menubar.addMenu("&Analysis")
 
@@ -279,10 +292,10 @@ class MainWindow(QMainWindow):
         schedule_act.triggered.connect(self._on_schedule_reports)
         tools_menu.addAction(schedule_act)
 
-        assess_act = QAction("&Quick Assessment...", self)
+        assess_act = QAction("&Network Validator...", self)
         assess_act.setShortcut("F10")
-        assess_act.setToolTip("Generate comprehensive quick assessment of network health")
-        assess_act.triggered.connect(self._on_quick_assessment)
+        assess_act.setToolTip("Check network for disconnected segments, missing elevations, etc.")
+        assess_act.triggered.connect(self._on_validate_network)
         tools_menu.addAction(assess_act)
 
         diag_act = QAction("&Network Diagnostics...", self)
@@ -294,6 +307,25 @@ class MainWindow(QMainWindow):
         topo_act.setToolTip("Analyse dead ends, loops, bridges, connectivity")
         topo_act.triggered.connect(self._on_topology)
         tools_menu.addAction(topo_act)
+
+        tools_menu.addSeparator()
+
+        bpt_act = QAction("Auto-place &Break Pressure Tanks", self)
+        bpt_act.setToolTip("Place tanks along gravity routes to maintain safe static pressure")
+        bpt_act.triggered.connect(self._on_auto_place_bpts)
+        tools_menu.addAction(bpt_act)
+
+        pump_act = QAction("Auto-place &Booster Pumps", self)
+        pump_act.setToolTip("Place inline pumps to maintain residual pressure > 20m")
+        pump_act.triggered.connect(self._on_auto_place_booster_pumps)
+        tools_menu.addAction(pump_act)
+
+        tools_menu.addSeparator()
+
+        aging_act = QAction("Apply Network &Aging...", self)
+        aging_act.setToolTip("Degrade pipe C-factors based on material and service years")
+        aging_act.triggered.connect(self._on_apply_aging)
+        tools_menu.addAction(aging_act)
 
         tools_menu.addSeparator()
 
@@ -311,6 +343,15 @@ class MainWindow(QMainWindow):
         pdf_act = QAction("Generate Report (&PDF)", self)
         pdf_act.triggered.connect(self._on_report_pdf)
         reports_menu.addAction(pdf_act)
+
+        reports_menu.addSeparator()
+
+        templates_act = QAction("Report &Templates...", self)
+        templates_act.setToolTip(
+            "Manage report templates — choose Standard, Executive, or Technical "
+            "preset, or save your own custom section configuration.")
+        templates_act.triggered.connect(self._on_report_templates)
+        reports_menu.addAction(templates_act)
 
         # --- View ---
         view_menu = menubar.addMenu("&View")
@@ -687,6 +728,12 @@ class MainWindow(QMainWindow):
         self.wsaa_label = QLabel("WSAA: --")
         self.resilience_label = QLabel("Ir: --")
         self.quality_label = QLabel("Score: --")
+        
+        base_style = "padding: 2px 8px; border-radius: 6px; font-weight: bold; margin: 2px;"
+        neutral_style = f"background-color: #313244; color: #cdd6f4; {base_style}"
+        self.wsaa_label.setStyleSheet(neutral_style)
+        self.resilience_label.setStyleSheet(neutral_style)
+        self.quality_label.setStyleSheet(neutral_style)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(150)
@@ -1185,18 +1232,21 @@ class MainWindow(QMainWindow):
         infos = sum(1 for c in compliance if c.get('type') == 'INFO')
         # Compact format to fit the status-bar slot:
         #   "WSAA: PASS", "WSAA: PASS 2i", "WSAA: 8! 7i"
+        
+        base_style = "padding: 2px 8px; border-radius: 6px; font-weight: bold; margin: 2px;"
         if fails == 0 and infos == 0:
             self.wsaa_label.setText("WSAA: PASS")
-            self.wsaa_label.setStyleSheet("color: #a6e3a1;")
+            self.wsaa_label.setStyleSheet(f"background-color: #a6e3a1; color: #1e1e2e; {base_style}")
         elif fails == 0:
-            self.wsaa_label.setText(f"WSAA: PASS {infos}i")
-            self.wsaa_label.setStyleSheet("color: #a6e3a1;")
+            self.wsaa_label.setText(f"WSAA: PASS ({infos}i)")
+            self.wsaa_label.setStyleSheet(f"background-color: #a6e3a1; color: #1e1e2e; {base_style}")
         else:
             info_str = f" {infos}i" if infos > 0 else ""
-            self.wsaa_label.setText(f"WSAA: {fails}!{info_str}")
-            self.wsaa_label.setStyleSheet("color: #f38ba8;")
+            self.wsaa_label.setText(f"WSAA: FAIL {fails}!{info_str}")
+            self.wsaa_label.setStyleSheet(f"background-color: #f38ba8; color: #1e1e2e; {base_style}")
+            
         self.wsaa_label.setToolTip(
-            f"WSAA: {fails} issue(s), {infos} info — {'PASS' if fails == 0 else 'FAIL'}"
+            f"WSAA Compliance: {fails} issue(s), {infos} info — {'PASS' if fails == 0 else 'FAIL'}"
         )
 
         # Update resilience index
@@ -1205,22 +1255,22 @@ class MainWindow(QMainWindow):
             ri_val = ri['resilience_index']
             self.resilience_label.setText(f"Ir: {ri_val:.3f} ({ri['grade']})")
             if ri_val >= 0.3:
-                self.resilience_label.setStyleSheet("color: #a6e3a1;")
+                self.resilience_label.setStyleSheet(f"background-color: #a6e3a1; color: #1e1e2e; {base_style}")
             elif ri_val >= 0.15:
-                self.resilience_label.setStyleSheet("color: #f9e2af;")
+                self.resilience_label.setStyleSheet(f"background-color: #f9e2af; color: #1e1e2e; {base_style}")
             else:
-                self.resilience_label.setStyleSheet("color: #f38ba8;")
+                self.resilience_label.setStyleSheet(f"background-color: #f38ba8; color: #1e1e2e; {base_style}")
 
         # Update quality score
         qs = self.api.compute_quality_score(results)
         if 'error' not in qs:
             self.quality_label.setText(f"Score: {qs['total_score']:.0f}/100 ({qs['grade']})")
             if qs['total_score'] >= 75:
-                self.quality_label.setStyleSheet("color: #a6e3a1;")
+                self.quality_label.setStyleSheet(f"background-color: #a6e3a1; color: #1e1e2e; {base_style}")
             elif qs['total_score'] >= 60:
-                self.quality_label.setStyleSheet("color: #f9e2af;")
+                self.quality_label.setStyleSheet(f"background-color: #f9e2af; color: #1e1e2e; {base_style}")
             else:
-                self.quality_label.setStyleSheet("color: #f38ba8;")
+                self.quality_label.setStyleSheet(f"background-color: #f38ba8; color: #1e1e2e; {base_style}")
 
         analysis_type = "Slurry" if self.slurry_act.isChecked() else "Hydraulic"
         if 'junctions' in results and 'max_surge_m' in results:
@@ -1465,6 +1515,9 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Running all scenarios...")
         self.progress_bar.setVisible(True)
 
+        # Snapshot all pipe roughness values before the scenario loop
+        roughness_snapshot = {pid: self.api.get_link(pid).roughness for pid in self.api.wn.pipe_name_list}
+
         for i, sc in enumerate(self.scenario_panel.scenarios):
             self.progress_bar.setValue(int((i / len(self.scenario_panel.scenarios)) * 100))
 
@@ -1477,6 +1530,14 @@ class MainWindow(QMainWindow):
                     junc = self.api.get_node(jname)
                     if junc.demand_timeseries_list:
                         junc.demand_timeseries_list[0].base_value *= sc.demand_multiplier
+
+            # Restore roughness from snapshot
+            for pid, c in roughness_snapshot.items():
+                self.api.get_link(pid).roughness = c
+
+            # Apply C-factor aging
+            if hasattr(sc, 'metal_age') and (sc.metal_age > 0 or sc.plastic_age > 0):
+                self.api.apply_scenario_aging(sc.metal_age, sc.plastic_age)
 
             try:
                 sc.results = self.api.run_steady_state(save_plot=False)
@@ -1560,10 +1621,10 @@ class MainWindow(QMainWindow):
         # Reconfigure columns depending on mode
         if is_slurry:
             hdr = ["ID", "Diameter (DN)", "Length (m)", "Velocity (m/s)",
-                   "Headloss Slurry (m/km)", "Regime", "Re_B"]
+                   "Headloss Slurry (m/km)", "Total HL (m)", "Regime", "Re_B"]
         else:
             hdr = ["ID", "Diameter (DN)", "Length (m)", "Velocity (m/s)",
-                   "Headloss (m/km)"]
+                   "Headloss (m/km)", "Total HL (m)"]
         if self.pipe_results_table.columnCount() != len(hdr):
             self.pipe_results_table.setColumnCount(len(hdr))
             for c in range(len(hdr) - 1):
@@ -1580,7 +1641,7 @@ class MainWindow(QMainWindow):
 
             try:
                 pipe = self.api.get_link(pid)
-                dn = f"{int(pipe.diameter * 1000)} mm"
+                dn = dn_display(pipe.diameter)   # e.g. "DN200" — AS/NZS convention
                 length = f"{pipe.length:.1f}"
                 pipe_length = pipe.length
                 pipe_diameter = pipe.diameter
@@ -1593,30 +1654,30 @@ class MainWindow(QMainWindow):
                 pipe_roughness = 130
 
             v = fdata.get('max_velocity_ms', 0)
-            avg_lps = abs(fdata.get('avg_lps', 0))
+            hl_per_km = fdata.get('headloss_per_km', 0)
+            total_hl = fdata.get('total_headloss_m', 0)
 
             if is_slurry and pid in slurry_data:
                 # Use slurry-solver headloss and velocity
                 sd = slurry_data[pid]
                 # Use slurry velocity, not water velocity
                 v_display = sd.get('velocity_ms', v)
+                total_hl = sd.get('headloss_m', total_hl)
                 if pipe_length > 0:
-                    hl_per_km = sd.get('headloss_m', 0) / pipe_length * 1000
+                    hl_per_km = total_hl / pipe_length * 1000
                 else:
                     hl_per_km = 0
                 regime = sd.get('regime', '--')
                 re_b = sd.get('reynolds', 0)
                 items = [pid, dn, length, f"{v_display:.2f}",
-                         f"{hl_per_km:.1f}", regime, f"{re_b:.0f}"]
+                         f"{hl_per_km:.1f}", f"{total_hl:.2f}", regime, f"{re_b:.0f}"]
             else:
-                # Read headloss from solver results (not recalculated)
-                hl_per_km = fdata.get('headloss_per_km', 0)
                 if is_slurry:
                     # Zero-flow pipe in slurry mode — fill extra columns
                     items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}",
-                             "--", "0"]
+                             f"{total_hl:.2f}", "--", "0"]
                 else:
-                    items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}"]
+                    items = [pid, dn, length, f"{v:.2f}", f"{hl_per_km:.1f}", f"{total_hl:.2f}"]
 
             # Determine actual displayed velocity for WSAA flagging
             v_check = v_display if (is_slurry and pid in slurry_data) else v
@@ -2049,11 +2110,34 @@ class MainWindow(QMainWindow):
         dialog = ReportDialog(self.api, self._last_results, self)
         dialog.exec()
 
+    def _on_report_templates(self):
+        """Open the Report Templates manager dialog."""
+        dialog = ReportTemplateDialog(self)
+        if dialog.exec():
+            # User clicked "Use Template" — carry the selected sections into
+            # a Report dialog so they can immediately generate with that preset.
+            sections = dialog.get_selected_sections()
+            if self._last_results is None:
+                QMessageBox.information(
+                    self, "Template Selected",
+                    "Template selections saved. Run an analysis then generate a "
+                    "report to apply them.")
+                return
+            report_dialog = ReportDialog(self.api, self._last_results, self)
+            # Pre-apply the section choices if ReportDialog exposes them
+            if hasattr(report_dialog, 'apply_sections'):
+                report_dialog.apply_sections(sections)
+            report_dialog.exec()
+
     def _on_reset_layout(self):
         self.explorer_dock.setVisible(True)
         self.properties_dock.setVisible(True)
         self.results_dock.setVisible(True)
         self.animation_dock.setVisible(True)
+        # Sync toggle checkmarks so View menu reflects actual dock state
+        self.toggle_explorer_act.setChecked(True)
+        self.toggle_properties_act.setChecked(True)
+        self.toggle_results_act.setChecked(True)
 
     def _on_run_demo(self):
         """One-click guided demo: load demo network → steady → show violations."""
@@ -2407,3 +2491,86 @@ class MainWindow(QMainWindow):
                 if os.path.isdir(tut_dir):
                     import subprocess
                     subprocess.Popen(['explorer', tut_dir])
+
+    def _on_auto_place_bpts(self):
+        """Place BPTs to maintain static head."""
+        if not self.api.wn:
+            QMessageBox.warning(self, "No Network", "Please load a network first.")
+            return
+
+        res = self.api.auto_place_break_pressure_tanks(
+            max_static_head_m=120.0,
+            tank_diameter_m=10.0
+        )
+
+        if res['status'] == 'success':
+            msg = f"Successfully placed {res['tanks_placed']} Break Pressure Tank(s)."
+            if res['tanks_placed'] > 0:
+                self._populate_explorer()
+                self.canvas.render()
+            QMessageBox.information(self, "BPT Placement", msg)
+        else:
+            QMessageBox.critical(self, "BPT Error", res.get('reason', 'Unknown error'))
+
+    def _on_auto_place_booster_pumps(self):
+        """Place booster pumps to maintain residual pressure."""
+        if not self.api.wn:
+            QMessageBox.warning(self, "No Network", "Please load a network first.")
+            return
+
+        res = self.api.auto_place_booster_pumps(
+            min_pressure_m=20.0,
+            target_boost_kw=100.0
+        )
+
+        if res['status'] == 'success':
+            msg = f"Successfully placed {res['pumps_placed']} Booster Pump(s)."
+            if res['pumps_placed'] > 0:
+                self._populate_explorer()
+                self.canvas.render()
+            QMessageBox.information(self, "Pump Placement", msg)
+        else:
+            QMessageBox.critical(self, "Pump Error", res.get('reason', 'Unknown error'))
+
+    def _on_apply_aging(self):
+        """Apply roughness degradation based on age."""
+        if not self.api.wn:
+            QMessageBox.warning(self, "No Network", "Please load a network first.")
+            return
+
+        years, ok = QInputDialog.getInt(self, "Network Aging", "Enter pipe age (years):", 20, 0, 100)
+        if ok:
+            res = self.api.apply_network_aging(years)
+            if res['status'] == 'success':
+                msg = f"Applied {years}-year aging to {res['updated_count']} pipe(s)."
+                self._populate_explorer()
+                self.canvas.render()
+                QMessageBox.information(self, "Aging Applied", msg)
+            else:
+                QMessageBox.critical(self, "Aging Error", res.get('reason', 'Unknown error'))
+
+    def _on_validate_network(self):
+        """Run the Network Validator and show results."""
+        if not self.api.wn:
+            QMessageBox.warning(self, "No Network", "Please load a network first.")
+            return
+            
+        res = self.api.validate_network()
+        
+        # Highlight isolated nodes on the canvas
+        isolated = res.get('isolated_nodes', [])
+        self.canvas.highlight_nodes(isolated)
+        
+        if res['status'] == 'success':
+            QMessageBox.information(self, "Network Validator", "Network topology and properties are valid!")
+        else:
+            msg = ""
+            if res['errors']:
+                msg += "CRITICAL ERRORS:\n" + "\n".join([f"- {e}" for e in res['errors']]) + "\n\n"
+            if res['warnings']:
+                msg += "WARNINGS:\n" + "\n".join([f"- {w}" for w in res['warnings']])
+                
+            icon = QMessageBox.Icon.Critical if res['errors'] else QMessageBox.Icon.Warning
+            box = QMessageBox(icon, "Validation Results", msg, QMessageBox.StandardButton.Ok, self)
+            box.exec()
+

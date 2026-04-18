@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QGroupBox, QFormLayout, QSizePolicy,
 )
 
+from data.au_pipes import lookup_roughness
+
 
 class WhatIfPanel(QWidget):
     """Dockable What-If panel for live sensitivity sliders."""
@@ -32,6 +34,7 @@ class WhatIfPanel(QWidget):
         self._original_demands = None
         self._original_roughness = None
         self._original_source_heads = None
+        self._original_diameters = None
 
         # Debounce re-analysis so sliders feel responsive
         self._debounce = QTimer(self)
@@ -48,6 +51,15 @@ class WhatIfPanel(QWidget):
         box = QGroupBox("What If...")
         form = QFormLayout(box)
 
+        # Diameter multiplier: 50%..200% (slider 50..200)
+        self.diam_slider, self.diam_label = self._make_slider(
+            50, 200, 100, fmt='{:d}%')
+        self.diam_slider.setToolTip(
+            "Scale all pipe diameters by this multiplier.\n"
+            "Quickly test up-sizing or down-sizing the entire network.")
+        form.addRow("Diameter:", self._combine(self.diam_slider,
+                                              self.diam_label))
+
         # Demand multiplier: 50%..200% (slider 50..200)
         self.demand_slider, self.demand_label = self._make_slider(
             50, 200, 100, fmt='{:d}%')
@@ -57,15 +69,23 @@ class WhatIfPanel(QWidget):
         form.addRow("Demand:", self._combine(self.demand_slider,
                                               self.demand_label))
 
-        # Roughness multiplier: 50%..150% (slider 50..150)
-        self.rough_slider, self.rough_label = self._make_slider(
-            50, 150, 100, fmt='{:d}%')
-        self.rough_slider.setToolTip(
-            "Scale all pipe Hazen-Williams C-factors by this multiplier.\n"
-            "50% = heavily tuberculated old pipe, 100% = design, "
-            "150% = new smooth pipe.")
-        form.addRow("Roughness:", self._combine(self.rough_slider,
-                                                 self.rough_label))
+        # Metal Pipe Age: 0..100 years
+        self.metal_age_slider, self.metal_age_label = self._make_slider(
+            0, 100, 0, fmt='{:d} yrs')
+        self.metal_age_slider.setToolTip(
+            "Set age of Metal/Concrete pipes (Ductile Iron, Steel, CI, Concrete).\n"
+            "Degrades C-factor automatically based on AS/NZS degradation curves.")
+        form.addRow("Metal Age:", self._combine(self.metal_age_slider,
+                                                self.metal_age_label))
+
+        # Plastic Pipe Age: 0..100 years
+        self.plastic_age_slider, self.plastic_age_label = self._make_slider(
+            0, 100, 0, fmt='{:d} yrs')
+        self.plastic_age_slider.setToolTip(
+            "Set age of Plastic pipes (PVC, PE).\n"
+            "Degrades C-factor automatically based on AS/NZS degradation curves.")
+        form.addRow("Plastic Age:", self._combine(self.plastic_age_slider,
+                                                  self.plastic_age_label))
 
         # Source pressure: -20..+20 m
         self.source_slider, self.source_label = self._make_slider(
@@ -92,8 +112,10 @@ class WhatIfPanel(QWidget):
         layout.addStretch()
 
         # Wire slider changes
+        self.diam_slider.valueChanged.connect(self._on_any_change)
         self.demand_slider.valueChanged.connect(self._on_any_change)
-        self.rough_slider.valueChanged.connect(self._on_any_change)
+        self.metal_age_slider.valueChanged.connect(self._on_any_change)
+        self.plastic_age_slider.valueChanged.connect(self._on_any_change)
         self.source_slider.valueChanged.connect(self._on_any_change)
 
     def _make_slider(self, low, high, initial, fmt='{}'):
@@ -140,6 +162,9 @@ class WhatIfPanel(QWidget):
         self._original_roughness = {
             pid: wn.get_link(pid).roughness for pid in wn.pipe_name_list
         }
+        self._original_diameters = {
+            pid: wn.get_link(pid).diameter for pid in wn.pipe_name_list
+        }
         self._original_source_heads = {}
         for rid in wn.reservoir_name_list:
             try:
@@ -149,8 +174,10 @@ class WhatIfPanel(QWidget):
                 continue
 
     def _on_reset(self):
+        self.diam_slider.setValue(100)
         self.demand_slider.setValue(100)
-        self.rough_slider.setValue(100)
+        self.metal_age_slider.setValue(0)
+        self.plastic_age_slider.setValue(0)
         self.source_slider.setValue(0)
 
     def restore_baseline(self):
@@ -170,6 +197,12 @@ class WhatIfPanel(QWidget):
             for pid, base_c in self._original_roughness.items():
                 try:
                     wn.get_link(pid).roughness = base_c
+                except (KeyError, AttributeError, ValueError):
+                    pass
+        if self._original_diameters:
+            for pid, base_d in self._original_diameters.items():
+                try:
+                    wn.get_link(pid).diameter = base_d
                 except (KeyError, AttributeError, ValueError):
                     pass
         if self._original_source_heads:
@@ -197,8 +230,10 @@ class WhatIfPanel(QWidget):
         if self.api is None or self.api.wn is None:
             return
         wn = self.api.wn
+        diam_m = self.diam_slider.value() / 100.0
         dm = self.demand_slider.value() / 100.0
-        rm = self.rough_slider.value() / 100.0
+        metal_age = self.metal_age_slider.value()
+        plastic_age = self.plastic_age_slider.value()
         sh = self.source_slider.value()
 
         # Apply multipliers
@@ -208,9 +243,17 @@ class WhatIfPanel(QWidget):
                     base * dm
             except (KeyError, AttributeError, ValueError):
                 pass
+        
+        # Apply C-factor degradation using the central helper method
         for pid, base_c in self._original_roughness.items():
             try:
-                wn.get_link(pid).roughness = base_c * rm
+                wn.get_link(pid).roughness = base_c
+            except (KeyError, AttributeError, ValueError):
+                pass
+        self.api.apply_scenario_aging(metal_age, plastic_age)
+        for pid, base_d in self._original_diameters.items():
+            try:
+                wn.get_link(pid).diameter = base_d * diam_m
             except (KeyError, AttributeError, ValueError):
                 pass
         for rid, base_h in self._original_source_heads.items():
@@ -232,14 +275,47 @@ class WhatIfPanel(QWidget):
             return
 
         # Summarise pressures/velocities for status label
-        p_vals = [p.get('avg_m', 0)
-                  for p in results.get('pressures', {}).values()]
+        p_data = results.get('pressures', {}).values()
+        p_mins = [p.get('min_m', 0) for p in p_data]
+        p_maxs = [p.get('max_m', 0) for p in p_data]
+        p_min = min(p_mins) if p_mins else 0
+        p_max = max(p_maxs) if p_maxs else 0
+        
         v_vals = [f.get('max_velocity_ms', 0)
                   for f in results.get('flows', {}).values()]
-        p_min = min(p_vals) if p_vals else 0
         v_max = max(v_vals) if v_vals else 0
-        self.status_label.setText(
-            f"Updated: min pressure {p_min:.1f} m, max velocity "
-            f"{v_max:.2f} m/s ({self.demand_slider.value()}% demand, "
-            f"{self.rough_slider.value()}% C, {sh:+d} m source)")
+        
+        hl_sum = sum(f.get('total_headloss_m', 0)
+                     for f in results.get('flows', {}).values())
+
+        # WSAA 20m pressure sweep check
+        threshold_min = 20.0
+        if self.api and hasattr(self.api, 'DEFAULTS'):
+            threshold_min = self.api.DEFAULTS.get('min_pressure_m', 20.0)
+            
+        fail_min_nodes = [p for p in p_mins if p < threshold_min]
+        n_fail_min = len(fail_min_nodes)
+        
+        # PN Rating / Max Pressure sweep check
+        compliance = results.get('compliance', [])
+        max_p_fails = [c for c in compliance if 'Max pressure' in c.get('message', '')]
+        n_fail_max = len(max_p_fails)
+        
+        # Build status string with HTML for color highlighting
+        p_min_color = "red" if n_fail_min > 0 else "#a6adc8"
+        p_max_color = "red" if n_fail_max > 0 else "#a6adc8"
+        v_color = "red" if v_max > 2.0 else "#a6adc8"
+        
+        n_total_fail = n_fail_min + n_fail_max
+        wsaa_status = f"<b style='color:red;'>FAIL ({n_total_fail} nodes)</b>" if n_total_fail > 0 else "<b style='color:#a6e3a1;'>PASS</b>"
+
+        status_html = (
+            f"<b>WSAA Status: {wsaa_status}</b><br/>"
+            f"Min P: <span style='color:{p_min_color};font-weight:bold;'>{p_min:.1f} m</span><br/>"
+            f"Max P: <span style='color:{p_max_color};font-weight:bold;'>{p_max:.1f} m</span><br/>"
+            f"Max V: <span style='color:{v_color};font-weight:bold;'>{v_max:.2f} m/s</span><br/>"
+            f"Friction Loss: {hl_sum:.1f} m"
+        )
+        
+        self.status_label.setText(status_html)
         self.analysis_updated.emit(results)

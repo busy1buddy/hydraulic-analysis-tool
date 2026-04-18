@@ -79,6 +79,24 @@ SLURRY_DATABASE = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Bridge: expose FluidProperties catalogue alongside legacy dict database.
+# New code should use data.fluid_properties directly.
+# Legacy code (tests, epanet_api) continues to use SLURRY_DATABASE.
+# ---------------------------------------------------------------------------
+try:
+    from data.fluid_properties import (
+        FluidProperties, FLUID_CATALOGUE,
+        water_at_temperature, bingham_plastic as _bp,
+        power_law as _pl, herschel_bulkley as _hb,
+        get_fluid as get_fluid_properties,
+        list_fluids as list_fluid_properties,
+        get_water_reference,
+    )
+    _FLUID_PROPERTIES_AVAILABLE = True
+except ImportError:
+    _FLUID_PROPERTIES_AVAILABLE = False
+
 
 # ============================================================================
 # RHEOLOGICAL MODELS

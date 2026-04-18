@@ -24,9 +24,11 @@ from PyQt6.QtGui import QFont, QColor
 class ScenarioData:
     """Data container for a single scenario."""
 
-    def __init__(self, name, demand_multiplier=1.0, modifications=None):
+    def __init__(self, name, demand_multiplier=1.0, modifications=None, metal_age=0, plastic_age=0):
         self.name = name
         self.demand_multiplier = demand_multiplier
+        self.metal_age = metal_age
+        self.plastic_age = plastic_age
         self.modifications = modifications or []
         self.results = None
 
@@ -34,6 +36,8 @@ class ScenarioData:
         return {
             'name': self.name,
             'demand_multiplier': self.demand_multiplier,
+            'metal_age': self.metal_age,
+            'plastic_age': self.plastic_age,
             'modifications': self.modifications,
         }
 
@@ -59,6 +63,19 @@ class ScenarioDialog(QDialog):
         self.demand_spin.setSuffix("x")
         layout.addRow("Demand Multiplier:", self.demand_spin)
 
+        from PyQt6.QtWidgets import QSpinBox
+        self.metal_spin = QSpinBox()
+        self.metal_spin.setRange(0, 100)
+        self.metal_spin.setValue(scenario.metal_age if scenario else 0)
+        self.metal_spin.setSuffix(" yrs")
+        layout.addRow("Metal Age:", self.metal_spin)
+
+        self.plastic_spin = QSpinBox()
+        self.plastic_spin.setRange(0, 100)
+        self.plastic_spin.setValue(scenario.plastic_age if scenario else 0)
+        self.plastic_spin.setSuffix(" yrs")
+        layout.addRow("Plastic Age:", self.plastic_spin)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -70,6 +87,8 @@ class ScenarioDialog(QDialog):
         return ScenarioData(
             name=self.name_input.text().strip(),
             demand_multiplier=self.demand_spin.value(),
+            metal_age=self.metal_spin.value(),
+            plastic_age=self.plastic_spin.value(),
         )
 
 
@@ -81,10 +100,10 @@ class ScenarioComparisonTable(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels([
-            "Scenario", "Demand (x)", "Min P (m)", "Max P (m)",
-            "Max V (m/s)", "WSAA Issues"
+            "Scenario", "Demand", "Metal Age", "Plast Age",
+            "Min P (m)", "Max P (m)", "Max V (m/s)", "Issues"
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setFont(QFont("Consolas", 9))
@@ -98,7 +117,7 @@ class ScenarioComparisonTable(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            items = [sc.name, f"{sc.demand_multiplier:.1f}"]
+            items = [sc.name, f"{sc.demand_multiplier:.1f}x", f"{sc.metal_age}", f"{sc.plastic_age}"]
 
             if sc.results:
                 pressures = sc.results.get('pressures', {})
@@ -132,9 +151,9 @@ class ScenarioComparisonTable(QWidget):
             for col, val in enumerate(items):
                 item = QTableWidgetItem(str(val))
                 # Color WSAA issues column
-                if col == 5 and val != "--" and int(val) > 0:
+                if col == 7 and val != "--" and int(val) > 0:
                     item.setForeground(QColor(243, 139, 168))
-                elif col == 5 and val == "0":
+                elif col == 7 and val == "0":
                     item.setForeground(QColor(166, 227, 161))
                 self.table.setItem(row, col, item)
 
@@ -201,7 +220,7 @@ class ScenarioPanel(QWidget):
         for sc in self.scenarios:
             status = "done" if sc.results else "pending"
             item = QTreeWidgetItem(self.tree,
-                                   [f"{sc.name} ({sc.demand_multiplier:.1f}x) [{status}]"])
+                                   [f"{sc.name} ({sc.demand_multiplier:.1f}x, {sc.metal_age}y/{sc.plastic_age}y) [{status}]"])
             item.setData(0, Qt.ItemDataRole.UserRole, sc.name)
 
     def _get_selected_scenario(self):
@@ -247,6 +266,8 @@ class ScenarioPanel(QWidget):
             name=f"{sc.name} (copy)",
             demand_multiplier=sc.demand_multiplier,
             modifications=copy.deepcopy(sc.modifications),
+            metal_age=sc.metal_age,
+            plastic_age=sc.plastic_age,
         )
         self.scenarios.append(new_sc)
         self._refresh_tree()

@@ -21,7 +21,7 @@ class AnalysisMixin:
     # STEADY-STATE ANALYSIS
     # =========================================================================
 
-    def run_steady_state(self, save_plot=True):
+    def run_steady_state(self, save_plot=False):
         """
         Run extended period hydraulic simulation using EPANET solver.
 
@@ -30,8 +30,11 @@ class AnalysisMixin:
         if self.wn is None:
             return {'error': 'No network loaded. Fix: Call api.load_network(path) or api.create_network(...) first.'}
 
+        import time
+        t0 = time.perf_counter()
         sim = wntr.sim.EpanetSimulator(self.wn)
         self.steady_results = sim.run_sim()
+        t1 = time.perf_counter()
 
         pressures = self.steady_results.node['pressure']
         flows = self.steady_results.link['flowrate']
@@ -42,57 +45,103 @@ class AnalysisMixin:
             'pressures': {},
             'flows': {},
             'compliance': [],
+            'timing': {'solver': t1 - t0}
         }
+
+        # Vectorized pandas operations for speed
+        p_min = pressures.min()
+        p_max = pressures.max()
+        p_mean = pressures.mean()
 
         # Junction pressures
         for junc in self.wn.junction_name_list:
-            p = pressures[junc]
             results['pressures'][junc] = {
-                'min_m': round(float(p.min()), 1),
-                'max_m': round(float(p.max()), 1),
-                'avg_m': round(float(p.mean()), 1),
+                'min_m': round(float(p_min[junc]), 1),
+                'max_m': round(float(p_max[junc]), 1),
+                'avg_m': round(float(p_mean[junc]), 1),
             }
+
+        f_min = flows.min()
+        f_max = flows.max()
+        f_mean = flows.mean()
+        f_abs_max = flows.abs().max()
+        
+        hl_abs_max = headloss.abs().max()
 
         # Pipe flows and velocities
         for pipe_name in self.wn.pipe_name_list:
             pipe = self.wn.get_link(pipe_name)
-            f = flows[pipe_name]
             area = np.pi * (pipe.diameter / 2) ** 2
             if area <= 0:
                 continue  # skip degenerate pipe with zero diameter
-            v_avg = abs(float(f.mean())) / area
-            # abs() required — flow can be negative on reversing pipes
-            v_max = float(f.abs().max()) / area
+            v_avg = abs(float(f_mean[pipe_name])) / area
+            v_max = float(f_abs_max[pipe_name]) / area
 
-            # Headloss from solver (m per km of pipe)
-            hl = headloss[pipe_name]
-            hl_abs = float(hl.abs().max())
-            hl_per_km = (hl_abs / pipe.length * 1000) if pipe.length > 0 else 0
+            total_hl_m = float(hl_abs_max[pipe_name])
+            hl_per_km = (total_hl_m / pipe.length * 1000) if pipe.length > 0 else 0
 
             results['flows'][pipe_name] = {
-                'min_lps': round(float(f.min()) * 1000, 2),
-                'max_lps': round(float(f.max()) * 1000, 2),
-                'avg_lps': round(float(f.mean()) * 1000, 2),
+                'min_lps': round(float(f_min[pipe_name]) * 1000, 2),
+                'max_lps': round(float(f_max[pipe_name]) * 1000, 2),
+                'avg_lps': round(float(f_mean[pipe_name]) * 1000, 2),
                 'avg_velocity_ms': round(v_avg, 2),
                 'max_velocity_ms': round(v_max, 2),
                 'headloss_per_km': round(hl_per_km, 2),
+                'total_headloss_m': round(total_hl_m, 2),
             }
 
         # Australian compliance check
+        import re
+        from data.au_pipes import get_pipe_properties
+
+        # PRE-CALCULATE limit per pipe to avoid repeated regex matching
+        pipe_limits_cache = {}
+        for lid in self.wn.pipe_name_list:
+            pipe = self.wn.get_link(lid)
+            desc = getattr(pipe, 'description', '')
+            if desc:
+                match = re.search(r"Material: ([^,]+), DN: (\d+)", desc)
+                if match:
+                    mat = match.group(1).strip()
+                    dn = int(match.group(2).strip())
+                    props = get_pipe_properties(mat, dn)
+                    if props and 'pressure_class' in props:
+                        pc = props['pressure_class']
+                        pn_match = re.search(r'PN(\d+(?:\.\d+)?)', pc)
+                        if pn_match:
+                            pipe_limits_cache[lid] = float(pn_match.group(1)) * 10.0
+
         for junc in self.wn.junction_name_list:
-            p_min = pressures[junc].min()
-            p_max = pressures[junc].max()
-            if p_min < self.DEFAULTS['min_pressure_m']:
+            p_min_val = float(p_min[junc])
+            p_max_val = float(p_max[junc])
+            
+            if p_min_val < self.DEFAULTS['min_pressure_m']:
                 results['compliance'].append({
                     'type': 'WARNING',
                     'element': junc,
-                    'message': f'Min pressure {p_min:.1f}m < {self.DEFAULTS["min_pressure_m"]}m (WSAA minimum)',
+                    'message': f'Min pressure {p_min_val:.1f}m < {self.DEFAULTS["min_pressure_m"]}m (WSAA minimum)',
                 })
-            if p_max > self.DEFAULTS['max_pressure_m']:
+
+            max_allowable_head = self.DEFAULTS['max_pressure_m']
+            connected_links = self.wn.get_links_for_node(junc)
+            pipe_limits = []
+            
+            for lid in connected_links:
+                if lid in pipe_limits_cache:
+                    pipe_limits.append(pipe_limits_cache[lid])
+
+            if pipe_limits:
+                # Use the weakest connected pipe rating
+                max_allowable_head = min(pipe_limits)
+                limit_src = "Pipe PN Rating"
+            else:
+                limit_src = "Default Limit"
+
+            if p_max_val > max_allowable_head:
                 results['compliance'].append({
                     'type': 'WARNING',
                     'element': junc,
-                    'message': f'Max pressure {p_max:.1f}m > {self.DEFAULTS["max_pressure_m"]}m (consider PRV)',
+                    'message': f'Max pressure {p_max_val:.1f}m > {max_allowable_head}m ({limit_src})',
                 })
 
         for pipe_name in self.wn.pipe_name_list:

@@ -171,8 +171,15 @@ class NetworkCanvas(QWidget):
         self._value_items = []           # List of pg.TextItem for value overlay
         self._variable_name = None       # Currently displayed variable name
         self._variable_data = {}         # {element_id: float} for custom variable
+        
+        self._highlighted_nodes = set()  # Set of node IDs to visually highlight
 
         self._setup_ui()
+
+    def highlight_nodes(self, node_ids):
+        """Highlight specific nodes on the canvas."""
+        self._highlighted_nodes = set(node_ids)
+        self._apply_colors()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -267,6 +274,7 @@ class NetworkCanvas(QWidget):
     def set_results(self, results):
         """Set analysis results and re-color the network."""
         self.results = results
+        self._highlighted_nodes.clear() # Clear any validation highlights
         self._push_colourmap_range()
         self._apply_colors()
 
@@ -450,30 +458,54 @@ class NetworkCanvas(QWidget):
             x, y = self._node_positions.get(jid, (0, 0))
             brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
             size = self._node_size(jid, base_size=10)
+            
+            pen = pg.mkPen('#313244', width=1)
+            # Highlight if isolated/validator highlighted OR if failing WSAA compliance
+            if jid in self._highlighted_nodes or brush.color() == QColor(220, 50, 50):
+                pen = pg.mkPen('#f38ba8', width=4) # Red, thick outline
+                size += 4
+                
             spots.append({
                 'pos': (x, y), 'size': size, 'symbol': SHAPE_JUNCTION,
-                'brush': brush, 'pen': pg.mkPen('#313244', width=1),
+                'brush': brush, 'pen': pen,
                 'data': jid,
             })
             idx += 1
+            
         for rid in wn.reservoir_name_list:
             x, y = self._node_positions.get(rid, (0, 0))
             brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
+            
+            pen = pg.mkPen('#313244', width=1)
+            size = 16
+            if rid in self._highlighted_nodes or brush.color() == QColor(220, 50, 50):
+                pen = pg.mkPen('#f38ba8', width=4)
+                size += 4
+                
             spots.append({
-                'pos': (x, y), 'size': 16, 'symbol': SHAPE_RESERVOIR,
-                'brush': brush, 'pen': pg.mkPen('#313244', width=1),
+                'pos': (x, y), 'size': size, 'symbol': SHAPE_RESERVOIR,
+                'brush': brush, 'pen': pen,
                 'data': rid,
             })
             idx += 1
+            
         for tid in wn.tank_name_list:
             x, y = self._node_positions.get(tid, (0, 0))
             brush = brushes[idx] if idx < len(brushes) else pg.mkBrush('#6c7086')
+            
+            pen = pg.mkPen('#313244', width=1)
+            size = 14
+            if tid in self._highlighted_nodes or brush.color() == QColor(220, 50, 50):
+                pen = pg.mkPen('#f38ba8', width=4)
+                size += 4
+                
             spots.append({
-                'pos': (x, y), 'size': 14, 'symbol': SHAPE_TANK,
-                'brush': brush, 'pen': pg.mkPen('#313244', width=1),
+                'pos': (x, y), 'size': size, 'symbol': SHAPE_TANK,
+                'brush': brush, 'pen': pen,
                 'data': tid,
             })
             idx += 1
+            
         self.node_scatter.setData(spots)
 
     def _redraw_pipes_batched(self, mode, pressures, flows):
@@ -542,9 +574,16 @@ class NetworkCanvas(QWidget):
                     except (KeyError, AttributeError):
                         pass
 
-            key = (color.red(), color.green(), color.blue())
+            # Determine line width and Z-value for highlighting
+            width = 2
+            z_val = 0
+            if mode in ("WSAA Compliance", "Velocity") and color == QColor(220, 50, 50):
+                width = 5
+                z_val = 10  # draw failing pipes on top
+
+            key = (color.red(), color.green(), color.blue(), width, z_val)
             if key not in colour_groups:
-                colour_groups[key] = {'color': color, 'xs': [], 'ys': []}
+                colour_groups[key] = {'color': color, 'width': width, 'z_val': z_val, 'xs': [], 'ys': []}
             g = colour_groups[key]
             g['xs'].extend([x0, x1, nan])
             g['ys'].extend([y0, y1, nan])
@@ -553,9 +592,10 @@ class NetworkCanvas(QWidget):
         for g in colour_groups.values():
             item = self.plot_widget.plot(
                 g['xs'], g['ys'],
-                pen=pg.mkPen(color=g['color'], width=2),
+                pen=pg.mkPen(color=g['color'], width=g['width']),
                 antialias=False, connect='finite',
             )
+            item.setZValue(g['z_val'])
             self._pipe_lines.append(item)
 
     def _color_pipes_grey(self):
@@ -633,8 +673,30 @@ class NetworkCanvas(QWidget):
         self._colourmap_widget.set_unit(unit)
 
     def _fit_view(self):
-        """Auto-fit to show all elements with padding."""
-        self.plot_widget.autoRange(padding=0.25)
+        """Auto-fit to show all elements with padding, establishing spatial bounds."""
+        if not self._node_positions:
+            self.plot_widget.autoRange(padding=0.25)
+            return
+            
+        # Calculate strict spatial boundaries for massive (1000km+) networks
+        xs = [pos[0] for pos in self._node_positions.values()]
+        ys = [pos[1] for pos in self._node_positions.values()]
+        
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        
+        dx = max(max_x - min_x, 10.0)
+        dy = max(max_y - min_y, 10.0)
+        
+        # Set absolute pan/zoom limits to prevent the user from scrolling out to infinity
+        # and losing a 1000km pipeline in grey canvas space.
+        vb = self.plot_widget.plotItem.vb
+        vb.setLimits(xMin=min_x - dx, xMax=max_x + dx,
+                     yMin=min_y - dy, yMax=max_y + dy,
+                     minXRange=0.5, minYRange=0.5,
+                     maxXRange=dx * 3, maxYRange=dy * 3)
+                     
+        self.plot_widget.autoRange(padding=0.1)
 
     def _toggle_labels(self, show):
         """Toggle node/pipe labels."""

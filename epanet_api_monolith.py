@@ -348,12 +348,18 @@ class HydraulicAPI:
             # abs() required — flow can be negative on reversing pipes
             v_max = float(f.abs().max()) / area
 
+            # Headloss from solver (WNTR returns gradient in m/m)
+            hl = self.steady_results.link['headloss'][pipe_name]
+            hl_abs = float(hl.abs().max())
+            hl_per_km = hl_abs * 1000
+
             results['flows'][pipe_name] = {
                 'min_lps': round(float(f.min()) * 1000, 2),
                 'max_lps': round(float(f.max()) * 1000, 2),
                 'avg_lps': round(float(f.mean()) * 1000, 2),
                 'avg_velocity_ms': round(v_avg, 2),
                 'max_velocity_ms': round(v_max, 2),
+                'headloss_m_per_km': round(hl_per_km, 2),
             }
 
         # Australian compliance check

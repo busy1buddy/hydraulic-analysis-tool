@@ -69,17 +69,50 @@ def import_from_dxf(dxf_file, output_name='dxf_network', output_dir=None,
     doc = ezdxf.readfile(dxf_file)
     msp = doc.modelspace()
 
+    # Parse Coordinate Reference System (CRS) units from DXF header ($INSUNITS)
+    # This is critical for large spatial extents (1000km+) to ensure lengths are in metres.
+    insunits = doc.header.get('$INSUNITS', 0)
+    unit_factors = {
+        0: 1.0,       # Unitless, default to metres
+        1: 0.0254,    # Inches -> Metres
+        2: 0.3048,    # Feet -> Metres
+        3: 1609.34,   # Miles -> Metres
+        4: 0.001,     # Millimetres -> Metres
+        5: 0.01,      # Centimetres -> Metres
+        6: 1.0,       # Metres -> Metres
+        7: 1000.0     # Kilometres -> Metres
+    }
+    scale_factor = unit_factors.get(insunits, 1.0)
+
     wn = wntr.network.WaterNetworkModel()
     nodes_added = {'junction': 0, 'reservoir': 0}
     links_added = {'pipe': 0}
     node_coords = {}  # (x, y) -> node_id
+    spatial_grid = {} # (grid_x, grid_y) -> list of (x, y)
     snap_tolerance = 0.5  # metres
+    grid_size = snap_tolerance * 2.0  # Cell size for spatial hashing
 
     def _get_or_create_node(x, y, node_type='junction'):
-        """Get existing node at coords or create a new one."""
-        for (nx, ny), nid in node_coords.items():
-            if math.hypot(x - nx, y - ny) < snap_tolerance:
-                return nid
+        """Get existing node at coords or create a new one using O(1) spatial hashing."""
+        grid_x = int(math.floor(x / grid_size))
+        grid_y = int(math.floor(y / grid_size))
+        
+        # Check current and 8 neighboring grid cells
+        found_nid = None
+        min_dist = float('inf')
+        
+        for i in (-1, 0, 1):
+            for j in (-1, 0, 1):
+                cell = (grid_x + i, grid_y + j)
+                if cell in spatial_grid:
+                    for nx, ny in spatial_grid[cell]:
+                        dist = math.hypot(x - nx, y - ny)
+                        if dist < snap_tolerance and dist < min_dist:
+                            min_dist = dist
+                            found_nid = node_coords[(nx, ny)]
+                            
+        if found_nid is not None:
+            return found_nid
 
         if node_type == 'reservoir':
             nid = f'R{nodes_added["reservoir"] + 1}'
@@ -92,6 +125,10 @@ def import_from_dxf(dxf_file, output_name='dxf_network', output_dir=None,
             nodes_added['junction'] += 1
 
         node_coords[(x, y)] = nid
+        if (grid_x, grid_y) not in spatial_grid:
+            spatial_grid[(grid_x, grid_y)] = []
+        spatial_grid[(grid_x, grid_y)].append((x, y))
+        
         return nid
 
     # Process explicit node entities (points, circles)
@@ -105,6 +142,9 @@ def import_from_dxf(dxf_file, output_name='dxf_network', output_dir=None,
                 x, y = entity.dxf.center.x, entity.dxf.center.y
             else:
                 continue
+
+            x *= scale_factor
+            y *= scale_factor
 
             if any(l.upper() in layer for l in reservoir_layers):
                 _get_or_create_node(x, y, 'reservoir')
@@ -120,12 +160,12 @@ def import_from_dxf(dxf_file, output_name='dxf_network', output_dir=None,
 
         points = []
         if entity.dxftype() == 'LINE':
-            points = [(entity.dxf.start.x, entity.dxf.start.y),
-                      (entity.dxf.end.x, entity.dxf.end.y)]
+            points = [(entity.dxf.start.x * scale_factor, entity.dxf.start.y * scale_factor),
+                      (entity.dxf.end.x * scale_factor, entity.dxf.end.y * scale_factor)]
         elif entity.dxftype() == 'LWPOLYLINE':
-            points = [(p[0], p[1]) for p in entity.get_points()]
+            points = [(p[0] * scale_factor, p[1] * scale_factor) for p in entity.get_points()]
         elif entity.dxftype() == 'POLYLINE':
-            points = [(v.dxf.location.x, v.dxf.location.y)
+            points = [(v.dxf.location.x * scale_factor, v.dxf.location.y * scale_factor)
                       for v in entity.vertices]
 
         if len(points) < 2:
@@ -168,6 +208,8 @@ def import_from_dxf(dxf_file, output_name='dxf_network', output_dir=None,
         'links': links_added,
         'total_nodes': sum(nodes_added.values()),
         'total_links': sum(links_added.values()),
+        'crs_units_code': insunits,
+        'crs_scale_factor': scale_factor,
         'default_diameter_mm': default_diameter,
         'default_roughness': default_roughness,
         'layers_found': list(set(e.dxf.layer for e in msp if hasattr(e.dxf, 'layer'))),

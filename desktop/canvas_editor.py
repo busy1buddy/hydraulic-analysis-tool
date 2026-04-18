@@ -21,14 +21,24 @@ from PyQt6.QtCore import pyqtSignal, Qt, QPointF, QTimer
 from PyQt6.QtGui import QFont, QCursor
 
 from data.au_pipes import PIPE_DATABASE, list_materials, list_sizes
+from desktop.units import (
+    WSAA_MIN_PRESSURE_M, WSAA_MAX_PRESSURE_M, WSAA_MAX_VELOCITY_MS,
+    WSAA_FIRE_FLOW_LPS, MINING_MAX_PRESSURE_M,
+    lps_to_m3s, m3s_to_lps, mm_to_m, m_to_mm,
+    validate_elevation_m, validate_flow_lps, validate_diameter_mm,
+    UnitValidationError,
+)
 
 
 # Standard pipe sizes for the dropdown
 MATERIAL_DEFAULTS = {
-    'Ductile Iron': {'roughness': 130, 'sizes': [100, 150, 200, 250, 300, 375, 450, 500, 600]},
+    'Ductile Iron': {'roughness': 140, 'sizes': [100, 150, 200, 250, 300, 375, 450, 500, 600]},
     'PVC PN12': {'roughness': 150, 'sizes': [250, 300, 375]},
     'PVC PN18': {'roughness': 150, 'sizes': [100, 150, 200]},
-    'PE100': {'roughness': 150, 'sizes': [63, 90, 110, 160, 200, 250, 315, 400, 500, 630]},
+    'PE100 PN10 (SDR 17)': {'roughness': 150, 'sizes': [63, 90, 110, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1200]},
+    'PE100 PN12.5 (SDR 13.6)': {'roughness': 150, 'sizes': [63, 90, 110, 160, 200, 250, 315, 400, 500, 630, 800, 1000]},
+    'PE100 PN16 (SDR 11)': {'roughness': 150, 'sizes': [63, 90, 110, 160, 200, 250, 315, 400, 500, 630, 800, 1000]},
+    'PE100 PN20 (SDR 9)': {'roughness': 150, 'sizes': [63, 90, 110, 160, 200, 250, 315, 400, 500, 630, 800]},
     'Concrete': {'roughness': 110, 'sizes': [300, 375, 450, 525, 600, 750, 900]},
 }
 
@@ -91,6 +101,51 @@ class UndoStack:
 # Dialogs
 # =========================================================================
 
+class BulkPipeEditDialog(QDialog):
+    """Dialog for bulk-editing multiple pipes' material and diameter."""
+    def __init__(self, parent=None, pipe_ids=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Bulk Edit {len(pipe_ids)} Pipe(s)")
+        self.pipe_ids = pipe_ids
+        
+        layout = QFormLayout(self)
+        
+        self.material_combo = QComboBox()
+        self.material_combo.addItems(list(MATERIAL_DEFAULTS.keys()))
+        self.material_combo.currentTextChanged.connect(self._on_material_changed)
+        layout.addRow("Material:", self.material_combo)
+        
+        self.dn_combo = QComboBox()
+        layout.addRow("Diameter (DN):", self.dn_combo)
+        
+        self.roughness_spin = QDoubleSpinBox()
+        self.roughness_spin.setRange(10, 200)
+        self.roughness_spin.setValue(150)
+        layout.addRow("Roughness (C):", self.roughness_spin)
+        
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+        
+        self._on_material_changed(self.material_combo.currentText())
+
+    def _on_material_changed(self, material):
+        self.dn_combo.clear()
+        if material in MATERIAL_DEFAULTS:
+            sizes = [str(s) for s in MATERIAL_DEFAULTS[material]['sizes']]
+            self.dn_combo.addItems(sizes)
+            self.roughness_spin.setValue(MATERIAL_DEFAULTS[material]['roughness'])
+            
+    def get_values(self):
+        return {
+            'material': self.material_combo.currentText(),
+            'dn_mm': int(self.dn_combo.currentText()) if self.dn_combo.currentText() else 100,
+            'roughness': self.roughness_spin.value()
+        }
+
+
 class AddJunctionDialog(QDialog):
     """Dialog for adding a new junction."""
 
@@ -105,26 +160,32 @@ class AddJunctionDialog(QDialog):
         layout.addRow("ID:", self.id_input)
 
         self.elev_spin = QDoubleSpinBox()
-        self.elev_spin.setRange(-100, 500)
+        self.elev_spin.setRange(-100, 2500)  # Australian AHD range: -100m to 2228m (Kosciuszko)
         self.elev_spin.setValue(0.0)
-        self.elev_spin.setSuffix(" m")
+        self.elev_spin.setSuffix(" m AHD")
+        self.elev_spin.setToolTip("Elevation in metres above Australian Height Datum (m AHD)")
         layout.addRow("Elevation:", self.elev_spin)
 
         self.demand_spin = QDoubleSpinBox()
-        self.demand_spin.setRange(0, 1000)
+        self.demand_spin.setRange(0, 50000)  # Max 50,000 LPS — validated on accept
         self.demand_spin.setValue(0.0)
         self.demand_spin.setSuffix(" LPS")
+        self.demand_spin.setToolTip("Base demand in LPS (Litres Per Second). Converted to m³/s internally.")
         layout.addRow("Base Demand:", self.demand_spin)
 
         self.x_spin = QDoubleSpinBox()
-        self.x_spin.setRange(-10000, 10000)
+        self.x_spin.setRange(-9_999_999, 9_999_999)  # Supports MGA94/GDA2020 Easting up to 10,000 km
+        self.x_spin.setDecimals(2)
         self.x_spin.setValue(x)
-        layout.addRow("X:", self.x_spin)
+        self.x_spin.setToolTip("X coordinate (Easting) in map units (metres if CRS is metric)")
+        layout.addRow("X (Easting):", self.x_spin)
 
         self.y_spin = QDoubleSpinBox()
-        self.y_spin.setRange(-10000, 10000)
+        self.y_spin.setRange(-9_999_999, 9_999_999)  # Supports MGA94/GDA2020 Northing
+        self.y_spin.setDecimals(2)
         self.y_spin.setValue(y)
-        layout.addRow("Y:", self.y_spin)
+        self.y_spin.setToolTip("Y coordinate (Northing) in map units (metres if CRS is metric)")
+        layout.addRow("Y (Northing):", self.y_spin)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -174,8 +235,12 @@ class AddPipeDialog(QDialog):
         layout.addRow("Length:", self.length_spin)
 
         self.roughness_spin = QDoubleSpinBox()
-        self.roughness_spin.setRange(10, 200)
+        self.roughness_spin.setRange(10, 200)  # WSAA range: 90 (aged concrete) to 150 (new PVC)
         self.roughness_spin.setValue(130)
+        self.roughness_spin.setToolTip(
+            "Hazen-Williams C-factor. Higher = smoother pipe.\n"
+            "DI (new): 130-140 | PVC/PE: 140-150 | Concrete: 90-120\n"
+            "Ref: WSAA WSA 03-2011 Table 3.2")
         layout.addRow("Roughness (C):", self.roughness_spin)
 
         buttons = QDialogButtonBox(
@@ -410,8 +475,16 @@ class CanvasEditor:
             cx = dialog.x_spin.value()
             cy = dialog.y_spin.value()
 
-            # Convert LPS to m³/s for WNTR
-            demand_m3s = demand_lps / 1000
+            # Validate units before writing to model
+            try:
+                validate_elevation_m(elev, f"Elevation for {jid}")
+                validate_flow_lps(demand_lps, f"Demand for {jid}")
+            except UnitValidationError as exc:
+                QMessageBox.warning(self.mw, "Unit Validation Error", str(exc))
+                return
+
+            # Convert LPS to m³/s for WNTR — ref: CLAUDE.md unit conventions
+            demand_m3s = lps_to_m3s(demand_lps)
 
             self.api.add_junction(jid, elevation=elev, base_demand=demand_m3s,
                                   coordinates=(cx, cy))
@@ -526,10 +599,71 @@ class CanvasEditor:
         else:
             del_act = menu.addAction(f"Delete {node_id}")
             del_act.triggered.connect(lambda: self._delete_junction(node_id))
+            
+        menu.addSeparator()
+        merge_act = menu.addAction(f"Merge into nearest node...")
+        merge_act.triggered.connect(lambda: self._merge_nearest(node_id))
+        
         menu.exec(QCursor.pos())
+
+    def _merge_nearest(self, node_id):
+        """Find the nearest node and merge this node into it."""
+        try:
+            node = self.api.get_node(node_id)
+            x, y = node.coordinates
+        except (KeyError, AttributeError):
+            return
+
+        best_dist = float('inf')
+        best_id = None
+        
+        for nid in self.api.wn.node_name_list:
+            if nid == node_id:
+                continue
+            try:
+                n = self.api.get_node(nid)
+                nx, ny = n.coordinates
+                dist = math.sqrt((x - nx)**2 + (y - ny)**2)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_id = nid
+            except (KeyError, AttributeError):
+                continue
+                
+        if best_id is None:
+            QMessageBox.information(self.mw, "Merge Node", "No other nodes found to merge into.")
+            return
+            
+        # Format distance for readability
+        dist_str = f"{best_dist:.2f}" if best_dist > 0.01 else "< 0.01"
+        
+        reply = QMessageBox.question(
+            self.mw, 
+            "Confirm Merge",
+            f"Are you sure you want to merge node '{node_id}' into nearest node '{best_id}'?\n\n"
+            f"Distance: {dist_str} map units.\n\n"
+            f"All pipes connected to '{node_id}' will be re-routed to '{best_id}', and '{node_id}' will be deleted.\n"
+            f"This action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            res = self.api.merge_nodes(node_id, best_id)
+            if res.get('status') == 'success':
+                # Clear undo stack because merge is highly destructive and complex to undo
+                self.undo_stack.clear()
+                self._mark_modified()
+                self.canvas.render()
+                self.mw.status_bar.showMessage(f"Merged {node_id} into {best_id}. {len(res.get('reconnected_links', []))} pipes updated.", 5000)
+            else:
+                QMessageBox.critical(self.mw, "Merge Failed", res.get('reason', 'Unknown error'))
 
     def _show_pipe_context_menu(self, pipe_id):
         menu = QMenu(self.mw)
+        bulk_act = menu.addAction(f"Bulk Edit {pipe_id} & Others...")
+        bulk_act.triggered.connect(lambda: self.bulk_edit_pipes([pipe_id]))
+
         del_act = menu.addAction(f"Delete pipe {pipe_id}")
         del_act.triggered.connect(lambda: self._delete_pipe(pipe_id))
         menu.exec(QCursor.pos())
@@ -573,6 +707,46 @@ class CanvasEditor:
             if link.start_node_name == node_id or link.end_node_name == node_id:
                 connected.append(lid)
         return connected
+
+    def bulk_edit_pipes(self, pipe_ids=None):
+        """Show bulk edit dialog for pipes."""
+        if not self.api or not self.api.wn:
+            return
+            
+        ids = pipe_ids or list(self.api.wn.pipe_name_list)
+        if not ids:
+            return
+            
+        dialog = BulkPipeEditDialog(self.mw, ids)
+        if dialog.exec():
+            vals = dialog.get_values()
+            material = vals['material']
+            dn_mm = vals['dn_mm']
+            roughness = vals['roughness']
+            
+            # Look up internal diameter from database
+            from data.au_pipes import get_pipe_properties
+            props = get_pipe_properties(material, dn_mm)
+            if props:
+                id_mm = props['internal_diameter_mm']
+            else:
+                id_mm = dn_mm # fallback
+                
+            diameter_m = id_mm / 1000.0
+            
+            # Apply to all pipes
+            for pid in ids:
+                desc = f"Material: {material}, DN: {dn_mm}"
+                self.api.update_pipe(pid, diameter_m=diameter_m, roughness=roughness, description=desc)
+                
+            self.undo_stack.push(EditAction(
+                'bulk_edit_pipes', f'Bulk edit {len(ids)} pipes',
+                {'ids': ids, 'diameter_m': diameter_m, 'roughness': roughness, 'material': material, 'dn_mm': dn_mm}
+            ))
+            self._mark_modified()
+            self.canvas.render()
+            self.mw.status_bar.showMessage(f"Applied {material} DN{dn_mm} to {len(ids)} pipes.", 5000)
+
 
     # ----- Undo/Redo -----
 
@@ -738,7 +912,7 @@ class CanvasEditor:
         return True
 
     def handle_mouse_release(self, mx, my):
-        """Finalise drag — push to undo stack."""
+        """Finalise drag — push to undo stack and check for snapping."""
         if self._dragging_node is None:
             return False
 
@@ -760,6 +934,39 @@ class CanvasEditor:
                 node.coordinates = new_pos
             except (KeyError, AttributeError):
                 pass
+                
+            # Check for snapping (if dropped within small radius of another node)
+            best_dist = float('inf')
+            best_id = None
+            for other_nid in self.api.wn.node_name_list:
+                if other_nid == nid: continue
+                try:
+                    n = self.api.get_node(other_nid)
+                    nx, ny = n.coordinates
+                    dist = math.sqrt((new_pos[0] - nx)**2 + (new_pos[1] - ny)**2)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_id = other_nid
+                except (KeyError, AttributeError):
+                    continue
+                    
+            # Use viewport-based threshold similar to click threshold, or static 5.0
+            vb = self.canvas.plot_widget.plotItem.vb
+            vr = vb.viewRange()
+            thresh = max(vr[0][1] - vr[0][0], vr[1][1] - vr[1][0]) * 0.02
+            
+            if best_id and best_dist < thresh:
+                reply = QMessageBox.question(
+                    self.mw, 
+                    "Snap & Merge",
+                    f"Node '{nid}' dropped very close to '{best_id}' (distance {best_dist:.2f}m).\n\n"
+                    f"Do you want to merge '{nid}' into '{best_id}'?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self._merge_nearest(nid)
+                    return True
 
             self.undo_stack.push(EditAction(
                 'move_node', f'Move {nid}',
