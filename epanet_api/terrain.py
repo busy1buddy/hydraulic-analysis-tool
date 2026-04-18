@@ -60,7 +60,7 @@ class TerrainMixin:
                 p_data = pressures.get(nid, {})
                 p = p_data.get('avg_m', 0.0)
                 hgl.append(p + node.elevation)
-            except:
+            except Exception:
                 hgl.append(0.0)
         return hgl
 
@@ -192,7 +192,7 @@ class TerrainMixin:
                         'pipe_dn': pipe_dn_mm,
                         'av_dn': recommended
                     })
-                except:
+                except Exception:
                     suggestions.append({
                         'chainage': chainage[i],
                         'elevation': elev[i],

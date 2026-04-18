@@ -155,7 +155,7 @@ class QualityDialog(QDialog):
             try:
                 conc = float(self.source_table.item(i, 1).text())
                 sources[name] = conc
-            except:
+            except Exception:
                 pass
                 
         return {

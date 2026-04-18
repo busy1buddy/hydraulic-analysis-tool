@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QMenuBar, QMenu, QStatusBar, QDockWidget,
     QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem,
     QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFileDialog,
-    QMessageBox, QHeaderView, QSplitter, QProgressBar, QPushButton,
+    QMessageBox, QHeaderView, QSplitter, QProgressBar, QPushButton, QInputDialog,
 )
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence, QPalette
@@ -49,6 +49,7 @@ from desktop.profile_panel import ProfilePanel
 from desktop.pump_panel import PumpPanel
 from desktop.eps_dialog import EPSConfigDialog
 from desktop.fire_flow_dialog import FireFlowDialog
+from desktop.water_quality_dialog import WaterQualityDialog
 from epanet_api.water_quality import WaterQualityMixin
 from desktop.quality_dialog import QualityDialog
 from desktop.lcc_dialog import LCCDialog
@@ -1659,6 +1660,8 @@ class MainWindow(QMainWindow):
         active network and update the canvas/results.
         """
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         if not getattr(self.api, '_inp_file', None) or not os.path.exists(self.api._inp_file):
@@ -2731,6 +2734,8 @@ class MainWindow(QMainWindow):
     def _on_pipe_profile(self):
         """Show the elevation profile for the current selected path or the main path."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         # 1. Use manual path if selected
@@ -2784,6 +2789,8 @@ class MainWindow(QMainWindow):
     def _on_water_quality_config(self):
         """Open Water Quality Configuration dialog."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         dlg = QualityDialog(self.api, self)
@@ -2798,6 +2805,8 @@ class MainWindow(QMainWindow):
     def _on_run_quality(self):
         """Run Water Quality Analysis (EPS)."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         # Default to AGE if no mode is set
@@ -2838,6 +2847,8 @@ class MainWindow(QMainWindow):
     def _on_run_lcc(self):
         """Run Lifecycle Cost (LCC) Analysis."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         # Ensure costs are loaded
@@ -2855,6 +2866,8 @@ class MainWindow(QMainWindow):
     def _on_asset_management(self):
         """Open Asset Management dialog."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         dlg = AssetManagementDialog(self.api, self)
@@ -2863,6 +2876,8 @@ class MainWindow(QMainWindow):
     def _on_tco_dashboard(self):
         """Open TCO Dashboard."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         dlg = TCODashboard(self.api, self)
@@ -2871,6 +2886,8 @@ class MainWindow(QMainWindow):
     def _on_calibration_data(self):
         """Open Field Data Entry dialog."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         dlg = CalibrationDataDialog(self.api, self)
@@ -2880,6 +2897,8 @@ class MainWindow(QMainWindow):
     def _on_calibration_residuals(self):
         """Open Calibration Residuals dialog."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         dlg = CalibrationResidualDialog(self.api, self)
@@ -2888,6 +2907,8 @@ class MainWindow(QMainWindow):
     def _on_calibration_dashboard(self):
         """Open Calibration Dashboard."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         dlg = CalibrationDashboard(self.api, self)
@@ -2896,6 +2917,8 @@ class MainWindow(QMainWindow):
     def _on_sensitivity_analysis(self):
         """Open Sensitivity Analysis dialog."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         dlg = SensitivityDialog(self.api, self)
@@ -2927,6 +2950,8 @@ class MainWindow(QMainWindow):
     def _on_pump_selected_on_canvas(self, element_type, name):
         """When a pump is clicked on canvas, show its system curve."""
         if self.api.wn is None:
+            QMessageBox.warning(self, "No Network",
+                "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
             
         try:
@@ -2946,7 +2971,7 @@ class MainWindow(QMainWindow):
                 max_q = max(q_current * 1.5, 50.0)
                 curve = self.api.generate_system_curve_from_network(name, max_flow_lps=max_q)
                 self.pump_panel.set_system_curve(curve)
-        except:
+        except Exception:
             pass
 
     def _setup_auto_save(self):

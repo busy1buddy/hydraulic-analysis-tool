@@ -1,6 +1,8 @@
 """Calibration mixin: sensitivity, Monte Carlo, auto-calibration, leakage analysis."""
+import logging
 import numpy as np
 
+logger = logging.getLogger(__name__)
 
 class CalibrationMixin:
     def set_field_measurement(self, node_id, pressure_m=None, flow_lps=None):

@@ -4,6 +4,7 @@ Calibration Dashboard — Model Validation Visualization
 Visualizes the goodness-of-fit between model and field data.
 """
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox, QPushButton
 )

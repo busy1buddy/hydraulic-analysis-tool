@@ -77,6 +77,25 @@ class ReportDialog(QDialog):
         sections_group.setLayout(sections_layout)
         layout.addWidget(sections_group)
 
+        # Buttons
+        btn_layout = QHBoxLayout()
+
+        docx_btn = QPushButton("Generate DOCX")
+        docx_btn.setFont(QFont("Consolas", 10))
+        docx_btn.clicked.connect(self._on_docx)
+        btn_layout.addWidget(docx_btn)
+
+        pdf_btn = QPushButton("Generate PDF")
+        pdf_btn.setFont(QFont("Consolas", 10))
+        pdf_btn.clicked.connect(self._on_pdf)
+        btn_layout.addWidget(pdf_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        layout.addLayout(btn_layout)
+
     def _detect_conditional_sections(self, sections):
         """Add conditional sections based on what analysis was run (N4)."""
         if not self.results:
@@ -104,25 +123,6 @@ class ReportDialog(QDialog):
         # Scenarios with no data → uncheck scenario comparison
         if 'scenario_comparison' in self.checkboxes:
             pass  # Already in base sections
-
-        # Buttons
-        btn_layout = QHBoxLayout()
-
-        docx_btn = QPushButton("Generate DOCX")
-        docx_btn.setFont(QFont("Consolas", 10))
-        docx_btn.clicked.connect(self._on_docx)
-        btn_layout.addWidget(docx_btn)
-
-        pdf_btn = QPushButton("Generate PDF")
-        pdf_btn.setFont(QFont("Consolas", 10))
-        pdf_btn.clicked.connect(self._on_pdf)
-        btn_layout.addWidget(pdf_btn)
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(cancel_btn)
-
-        layout.addLayout(btn_layout)
 
     def _get_sections(self):
         return [k for k, cb in self.checkboxes.items() if cb.isChecked()]

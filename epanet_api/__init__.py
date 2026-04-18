@@ -88,7 +88,7 @@ class HydraulicAPI(CoreMixin, AnalysisMixin, SlurryMixin, ComplianceMixin,
             try:
                 with open('settings.json', 'r') as f:
                     self.settings.update(json.load(f))
-            except:
+            except Exception:
                 pass
 
     def save_settings(self):
@@ -97,7 +97,7 @@ class HydraulicAPI(CoreMixin, AnalysisMixin, SlurryMixin, ComplianceMixin,
         try:
             with open('settings.json', 'w') as f:
                 json.dump(self.settings, f, indent=4)
-        except:
+        except Exception:
             pass
 
 

@@ -780,7 +780,7 @@ class AssetsMixin:
                 
                 cost_res = self.calculate_energy_cost(p_kw, rate_aud_kwh=electricity_rate)
                 total_annual_energy += cost_res['annual_cost_aud']
-            except:
+            except Exception:
                 pass
         
         total_annual_opex = total_annual_maint + total_annual_energy

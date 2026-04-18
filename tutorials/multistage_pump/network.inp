@@ -19,7 +19,6 @@ Transient analysis on pump trip
 
 [PIPES]
 ;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
- P1              J1              J2              50              300             130             0               Open    ;  Interstage pipe
  P2              J2              J3              400             300             130             0               Open    ;  High-zone main feed
  P3              J3              J4              350             250             130             0               Open    ;  High-zone A to B
  P4              J4              J5              300             250             130             0               Open    ;  High-zone B to C

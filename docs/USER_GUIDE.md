@@ -158,3 +158,23 @@ The tool includes pipe data for:
 | PVC | AS/NZS 1477 | DN100 - DN375 | C = 150 |
 | PE/HDPE | AS/NZS 4130 | DN63 - DN630 | C = 150 |
 | Concrete | AS 4058 | DN300 - DN900 | C = 90-120 |
+
+## Guide for Mechanical & Industrial Engineers
+
+If you are coming from a mechanical engineering, mining, or industrial piping background (e.g., using AFT Fathom or Pipe-Flo), please note the following differences in this software:
+
+### 1. WSAA Compliance Warnings (Velocities)
+This tool automatically flags pipes that exceed **2.0 m/s** in red as a "FAIL". This is based on the WSAA (Water Services Association of Australia) municipal code for plastic/AC pipes. If you are designing heavy-duty industrial steel pipelines where 3.0 - 4.5 m/s is acceptable, you can safely ignore these red WSAA warnings. Your design is mathematically sound; it just violates a municipal standard.
+
+### 2. Civil vs. Mechanical Terminology
+Because the underlying engine (EPANET) was built for city grids, the terminology differs from mechanical CAD:
+- **Reservoir**: Represents an infinite source of water at a fixed pressure or head (e.g., a pressurized feed tank, or a large suction header). 
+- **Junction**: Represents a standard node where pipes meet, or where flow is extracted/injected into the system.
+- **Tank**: Represents a finite storage vessel whose water level changes over time based on flow.
+
+### 3. 1D Node-Link Abstraction
+Unlike SolidWorks or Inventor, this is a **1D hydraulic solver**. It does not import 3D STEP/IGES geometry. You must mentally abstract your 3D pipe routing into a simplified 2D "Node and Link" schematic. 
+- You must manually calculate and input "Minor Loss Coefficients" (K-factors) for all elbows, tees, and valves into the pipe properties, as the software will not automatically detect them from geometry.
+
+### 4. Transient (Water Hammer) Complexity
+The **Transient Analysis (F6)** tool is powerful but requires precise physics inputs. If you do not specify the correct **Wave Speed (Celerity)** for your specific pipe material (e.g., ~1200 m/s for Steel vs. ~300 m/s for PVC), the surge pressure results will be wildly inaccurate. Ensure your valve closure times and wave speeds are correct before relying on the surge envelope results.

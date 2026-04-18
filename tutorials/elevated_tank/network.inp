@@ -17,7 +17,7 @@ Shows tank level drawdown over 24-hour demand cycle
 
 [TANKS]
 ;ID              Elevation       InitLevel       MinLevel        MaxLevel        Diameter        MinVol          VolCurve
- T1              80              4.0             0.5             6.0             15.0            0                               ;  Elevated steel tank (elev 80m, cap ~1060m3)
+ T1              80              4.0             0.5             6.0             30.0            0                               ;  Elevated steel tank (elev 80m, cap ~3880m3)
 
 [PIPES]
 ;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status

@@ -302,3 +302,10 @@ python -m hydraulic_tool analyse network.inp --format json
 python -m hydraulic_tool validate network.inp
 python -m hydraulic_tool report network.inp --output report.docx
 ```
+
+## Next Steps for Mechanical/Industrial Engineers
+If you are designing mechanical pump systems, tailings lines, or industrial process piping (rather than municipal grids), it is highly recommended that you load and run the following tutorials next to understand the advanced physics solvers:
+
+1. **`tutorials/multistage_pump/network.inp`** — Demonstrates configuring series pumps for high-head applications.
+2. **`tutorials/mining_slurry_line/network.inp`** — Demonstrates configuring Non-Newtonian (Bingham Plastic) slurry parameters using the **Analysis > Slurry Mode** toggle.
+3. **Transient Surge Analysis** — Open the multistage pump tutorial and press **F6** to see how the TSNet solver models the water hammer envelope after a pump trip.

@@ -617,7 +617,7 @@ class NetworkCanvas(QWidget):
                     if v1 is not None and v2 is not None:
                         cmap = QUALITY_COLORS_AGE if self.results.get('parameter') == 'AGE' else QUALITY_COLORS_CHEM
                         color = self._color_from_cmap((v1 + v2) / 2, cmap)
-                except:
+                except Exception:
                     pass
 
             # Determine line width and Z-value for highlighting
@@ -1256,7 +1256,7 @@ class NetworkCanvas(QWidget):
         for item in self._path_line_items:
             try:
                 self.plot_widget.removeItem(item)
-            except:
+            except Exception:
                 pass
         self._path_line_items.clear()
         
