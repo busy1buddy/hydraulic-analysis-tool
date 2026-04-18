@@ -59,7 +59,7 @@ class TerrainMixin:
                 node = self.wn.get_node(nid)
                 p_data = pressures.get(nid, {})
                 p = p_data.get('avg_m', 0.0)
-                hgl.append(p + node.elevation)
+                hgl.append(p + getattr(node, 'elevation', getattr(node, 'base_head', 0.0)))
             except Exception:
                 hgl.append(0.0)
         return hgl
@@ -81,7 +81,7 @@ class TerrainMixin:
             if ge is None:
                 # If no LiDAR, assume ground is 0.75m above pipe
                 # For nodes, pipe elevation = node elevation
-                ge = node.elevation + self._default_depth_of_cover
+                ge = getattr(node, 'elevation', getattr(node, 'base_head', 0.0)) + self._default_depth_of_cover
             ground_elev.append(ge)
             
         profile['ground_elevation'] = ground_elev

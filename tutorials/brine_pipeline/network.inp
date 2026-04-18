@@ -1,0 +1,36 @@
+[TITLE]
+Brine Transfer Pipeline - DN125 PN10
+Two high points and a dip. Brine specific gravity 1.15.
+
+[JUNCTIONS]
+;ID              Elev            Demand          Pattern
+ J1              20.0            0               
+ J2              45.0            0               ; High point 1
+ J3              30.0            0               
+ J4              15.0            0               ; Low dip (Scour location)
+ J5              25.0            0               
+ J6              40.0            0               ; High point 2
+ J7              35.0            0               
+ J8              25.0            15.0            ; End of line demand 15 L/s
+
+[RESERVOIRS]
+;ID              Head            Pattern
+ R1              140.0                           ; Pump station equivalent head
+
+[PIPES]
+;ID              Node1           Node2           Length          Diameter        Roughness       MinorLoss       Status
+ P1              R1              J1              10              110             130             0               Open
+ P2              J1              J2              600             110             130             0               Open
+ P3              J2              J3              500             110             130             0               Open
+ P4              J3              J4              700             110             130             0               Open
+ P5              J4              J5              400             110             130             0               Open
+ P6              J5              J6              500             110             130             0               Open
+ P7              J6              J7              400             110             130             0               Open
+ P8              J7              J8              600             110             130             0               Open
+
+[OPTIONS]
+UNITS               LPS
+HEADLOSS            H-W
+SPECIFIC GRAVITY    1.15
+
+[END]
