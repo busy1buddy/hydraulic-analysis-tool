@@ -1,0 +1,94 @@
+
+======================================================================
+COLD-START UX WALKTHROUGH — Logan 30-lot subdivision
+======================================================================
+Started at 2026-04-25 15:28:19
+Project root: C:\Users\brian\Downloads\EPANET_CLAUDE
+
+======================================================================
+PHASE 0 — First launch
+======================================================================
+  [OBS] Window title at launch: 'Hydraulic Analysis Tool — v2.9.0'
+  [OBS] Window size: 1632x900
+  [OBS] Status-bar WSAA label: 'WSAA: --'
+  [OBS] Status-bar nodes label: 'Nodes: 0'
+  [OBS] Status-bar pipes label: 'Pipes: 0'
+  [FRICTION] Status bar shows 'WSAA: --' on cold start. blockers.md flagged this — confirmed live: looks unfinished before any network is loaded.
+  [OBS] Welcome dialog (via WelcomeDialog) offers 3 buttons: Open Demo, Open File, View Tutorials. NO 'Create New Project' button.
+  [FRICTION] Cold-start engineer with their own brief has no welcome-dialog path to 'design a network from scratch'. They must dismiss the dialog and find File > New themselves.
+
+======================================================================
+PHASE 1 — File > New
+======================================================================
+  [OBS] After File>New — wn is None? True
+  [OBS] After File>New — title: 'Hydraulic Analysis Tool — v2.9.0'
+  [OBS] Canvas node positions count: 0
+  [FRICTION] File > New does NOT create an empty WaterNetworkModel. It just resets state — wn stays None. Many menu actions will refuse to open until a network is loaded. The user is in a state where almost every menu item shows 'No Network' if clicked. There is no project-creation wizard.
+  [FRICTION] File > New does not prompt for project name, source head, WSAA mode, units, or any defaults. The user has nowhere to put the basic project metadata.
+
+======================================================================
+PHASE 2 — Adding the source reservoir
+======================================================================
+  [OBS] Canvas Edit mode toggle: window.edit_mode_act exists. Activating it lets the user click on the canvas to add junctions and connect pipes. Inspecting canvas_editor.AddJunctionDialog vs add-reservoir UI.
+  [FRICTION] Canvas Edit mode supports adding only JUNCTIONS and PIPES via clicks. There is no GUI primitive for adding a reservoir or a tank by clicking the canvas. AddReservoirDialog and AddTankDialog do not exist in desktop/canvas_editor.py. The user cannot start a from-scratch design with the canvas alone — they need a source node first.
+  [FRICTION] No 'Add Reservoir' or 'Add Tank' action found in the menu bar. The user has no UI path to introduce a source. The only way is Open .inp / Open Tutorial / Import Bundle — i.e. start from an existing file.
+
+======================================================================
+PHASE 3 — Falling back: CSV / .inp import?
+======================================================================
+  [OBS] File menu items: ['&New', '&Open (.inp)...', 'Open &Tutorial...', '', '&Save', 'Save &As (.hap)...', '', 'Export Project &Bundle...', '&Import Project Bundle...', '&Settings...', '', 'E&xit']
+  [FRICTION] File menu has 'Open (.inp)', 'Open Tutorial', 'Import Project Bundle' but NO 'Import from CSV'. importers/csv_import.py exists in code but is not wired to the menu. A user with a 30-row CSV of junction coordinates cannot use it without writing Python.
+  [OBS] The realistic cold-start path therefore becomes: open an .inp file as a starting template. The 'australian_subdivision' tutorial network is the closest match (50 lots vs our 30, but same topology pattern).
+  [STRENGTH] Tutorial 'network.inp' loads cleanly — 13 junctions, 17 pipes. Ready to use as template.
+  [OBS] After tutorial load — title: 'Hydraulic Analysis Tool — v2.9.0'
+  [OBS] Status bar WSAA: 'WSAA: --'
+
+======================================================================
+PHASE 4 — Adjusting demands and elevations to brief
+======================================================================
+  [OBS] Tutorial has 13 junctions named: ['J1', 'J2', 'J3', 'J4', 'J5']...
+  [OBS] Bulk-edit-demands action present? False
+  [OBS] Demand patterns action present? False
+  [FRICTION] USER-VISIBLE GAP: To apply a uniform per-lot demand of 0.05 LPS to the 13 junctions in this tutorial, I had no choice but to script directly against api.wn — an action the layer-purity test would fail on. The GUI does not let me do this.
+
+======================================================================
+PHASE 5 — Run Steady State (F5)
+======================================================================
+  [OBS] Steady-state dispatched and completed in 0.30 s
+  [OBS] Result keys: ['compliance', 'flows', 'pressures', 'timing']
+  [OBS] WSAA badge after run: 'WSAA: PASS (3i)'
+  [OBS] Compliance items: 3
+  [STRENGTH] Status-bar WSAA badge updates correctly post-analysis: 'WSAA: PASS (3i)'. Engineer sees a one-glance verdict.
+
+======================================================================
+PHASE 6 — Fire Flow Wizard (F8)
+======================================================================
+  [OBS] Worst-pressure junction: J1 at 35.0 m
+  [OBS] FireFlowDialog defaults — flow 25.0 LPS, residual 12.0 m
+  [STRENGTH] Fire-flow dialog defaults to 25 LPS / 12 m residual — exactly the WSAA values from the brief. No knowledge required of the user.
+
+======================================================================
+PHASE 7 — Design Compliance Check (F9)
+======================================================================
+  [OBS] ComplianceDialog visible: True
+  [STRENGTH] Analysis > Design Compliance Check (F9) opens a dedicated dialog with formal pass/fail per standard. This is exactly the right primitive for engineering sign-off.
+
+======================================================================
+PHASE 8 — Generate report
+======================================================================
+  [OBS] ReportDialog has 8 option checkboxes
+  [STRENGTH] Reports > DOCX / PDF route through ReportDialog with section selection (executive summary / compliance / nodes / pipes / stress / etc.). The output is professional.
+
+======================================================================
+PHASE 9 — Save project (.hap)
+======================================================================
+  [OBS] Save uses QFileDialog.getSaveFileName for .hap files. Skipping the dialog programmatically here — but in real use the dialog appears on every Save until _hap_file is set.
+
+======================================================================
+WALKTHROUGH SUMMARY
+======================================================================
+Final state — window title: 'Hydraulic Analysis Tool — v2.9.0'
+Final WSAA badge: 'WSAA: PASS (3i)'
+Final node count: 13
+Final pipe count: 17
+Walkthrough complete — log written to C:\Users\brian\Downloads\EPANET_CLAUDE\docs\walkthroughs\2026-04-25-cold-start\log.txt

@@ -60,14 +60,16 @@ class ReportDialog(QDialog):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
+        # Section checklist (must initialise the dict before we check
+        # conditional sections, since _detect_conditional_sections reads it)
+        self.checkboxes = {}
+
         # Build section list based on what was actually run (N4)
         active_sections = list(self.BASE_SECTIONS)
         self._detect_conditional_sections(active_sections)
 
-        # Section checklist
         sections_group = QGroupBox("Report Sections (auto-detected from analysis)")
         sections_layout = QVBoxLayout()
-        self.checkboxes = {}
         for key, label in active_sections:
             cb = QCheckBox(label)
             cb.setChecked(True)
