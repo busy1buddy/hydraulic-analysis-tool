@@ -35,6 +35,61 @@ class CoreMixin:
         self.wn = wntr.network.WaterNetworkModel(abs_path)
         return self.get_network_summary()
 
+    def import_from_csv(self, nodes_csv, pipes_csv, name='imported_csv'):
+        """Import a network from a pair of CSVs (nodes + pipes) and load it.
+
+        Wraps ``importers.csv_import.import_from_csv`` so UI code (Layer 4)
+        does not have to reach into the importer module directly. The
+        produced ``.inp`` is written to the API's ``output_dir`` and then
+        loaded via ``load_network_from_path``.
+
+        Parameters
+        ----------
+        nodes_csv : str
+            Path to the nodes CSV. Required columns: id, type, x, y,
+            elevation. Optional: demand (LPS), head (m for reservoirs).
+            ``type`` is one of junction / reservoir / tank.
+        pipes_csv : str
+            Path to the pipes CSV. Required columns: id, start, end,
+            length, diameter (mm). Optional: roughness (default 130),
+            type (pipe / valve, default pipe).
+        name : str, optional
+            Base name for the staged ``.inp`` file in ``output_dir``.
+
+        Returns
+        -------
+        dict
+            Network summary on success (junctions, reservoirs, tanks,
+            pipes, valves, pumps, duration_hrs, junction_list, pipe_list)
+            with an additional ``inp_file`` key pointing at the staged
+            file. ``{'error': ...}`` on failure (missing input file,
+            malformed CSV, etc.).
+        """
+        if not os.path.exists(nodes_csv):
+            return {'error': f'Nodes CSV not found: {nodes_csv}'}
+        if not os.path.exists(pipes_csv):
+            return {'error': f'Pipes CSV not found: {pipes_csv}'}
+
+        from importers.csv_import import import_from_csv as _csv_import
+        try:
+            import_result = _csv_import(
+                nodes_csv=nodes_csv,
+                pipes_csv=pipes_csv,
+                output_name=name,
+                output_dir=self.output_dir,
+            )
+        except Exception as e:
+            return {'error': f'CSV import failed: {e}'}
+
+        inp_path = import_result.get('output_file')
+        if not inp_path or not os.path.exists(inp_path):
+            return {'error': 'CSV import produced no .inp file'}
+
+        self.load_network_from_path(inp_path)
+        summary = self.get_network_summary()
+        summary['inp_file'] = inp_path
+        return summary
+
     def create_network(self, name="network",
                        junctions=None, reservoirs=None, tanks=None,
                        pipes=None, valves=None,

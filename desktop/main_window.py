@@ -178,6 +178,13 @@ class MainWindow(QMainWindow):
         import_bundle_act.triggered.connect(self._on_import_bundle)
         file_menu.addAction(import_bundle_act)
 
+        import_csv_act = QAction("Import from &CSV...", self)
+        import_csv_act.setToolTip(
+            "Import a network from two CSV files (nodes + pipes). "
+            "See Help > Documentation for the column format.")
+        import_csv_act.triggered.connect(self._on_import_csv)
+        file_menu.addAction(import_csv_act)
+
         settings_act = QAction("&Settings...", self)
         settings_act.triggered.connect(self._on_open_settings)
         file_menu.addAction(settings_act)
@@ -2239,6 +2246,51 @@ class MainWindow(QMainWindow):
                     "The bundle did not contain an .inp network file.")
         except Exception as e:
             QMessageBox.critical(self, "Import Error", str(e))
+
+    def _on_import_csv(self):
+        """File > Import from CSV — pick nodes CSV, then pipes CSV."""
+        nodes_csv, _ = QFileDialog.getOpenFileName(
+            self, "Select Nodes CSV (id, type, x, y, elevation, demand, head)",
+            "", "CSV Files (*.csv);;All Files (*)")
+        if not nodes_csv:
+            return
+
+        pipes_csv, _ = QFileDialog.getOpenFileName(
+            self, "Select Pipes CSV (id, start, end, length, diameter, roughness, type)",
+            os.path.dirname(nodes_csv),  # default to the same folder for convenience
+            "CSV Files (*.csv);;All Files (*)")
+        if not pipes_csv:
+            return
+
+        result = self.api.import_from_csv(nodes_csv, pipes_csv)
+        if 'error' in result:
+            QMessageBox.warning(self, "CSV Import Failed", result['error'])
+            return
+
+        inp_path = result.get('inp_file')
+        self._current_file = inp_path
+        self._last_results = None
+        self.node_results_table.setRowCount(0)
+        self.pipe_results_table.setRowCount(0)
+        self._populate_explorer()
+        self._update_status_bar()
+        self.canvas.set_api(self.api)
+        self.dashboard_widget.update_dashboard(self.api)
+        self.what_if_panel.set_api(self.api)
+        self.setWindowTitle(
+            f"Hydraulic Analysis Tool v2.9.0 — {os.path.basename(inp_path)}"
+            f" (imported from CSV)"
+        )
+        QMessageBox.information(
+            self, "CSV Import Complete",
+            f"Imported {result.get('junctions', 0)} junctions, "
+            f"{result.get('reservoirs', 0)} reservoirs, "
+            f"{result.get('tanks', 0)} tanks, "
+            f"{result.get('pipes', 0)} pipes, "
+            f"{result.get('valves', 0)} valves.\n\n"
+            f"Network saved to:\n{inp_path}\n\n"
+            f"Use File > Save As (.hap)... to keep your work as a project."
+        )
 
     def _on_quality_review(self):
         self.status_bar.showMessage("Quality review triggered.", 3000)
