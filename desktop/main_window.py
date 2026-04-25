@@ -223,42 +223,130 @@ class MainWindow(QMainWindow):
         bulk_junction_act.triggered.connect(lambda: self.editor.bulk_edit_junctions())
         edit_menu.addAction(bulk_junction_act)
 
-        # --- Analysis ---
+        # --- Analysis (PR #5: regrouped into 4 submenus for scannability) ---
         analysis_menu = menubar.addMenu("&Analysis")
 
-        steady_act = QAction("Run &Steady State", self)
+        # Sub: Run — headline solvers
+        run_menu = QMenu("&Run", self)
+        analysis_menu.addMenu(run_menu)
+
+        steady_act = QAction("&Steady State", self)
         steady_act.setShortcut("F5")
         steady_act.triggered.connect(self._on_run_steady)
-        analysis_menu.addAction(steady_act)
+        run_menu.addAction(steady_act)
 
-        quality_act = QAction("Water &Quality Config...", self)
-        quality_act.triggered.connect(self._on_water_quality_config)
-        analysis_menu.addAction(quality_act)
+        eps_act = QAction("&Extended Period (EPS)", self)
+        eps_act.setShortcut("F7")
+        eps_act.triggered.connect(self._on_run_eps)
+        run_menu.addAction(eps_act)
 
-        run_quality_act = QAction("Run Quality &Analysis", self)
+        transient_act = QAction("&Transient", self)
+        transient_act.setShortcut("F6")
+        transient_act.triggered.connect(self._on_run_transient)
+        run_menu.addAction(transient_act)
+
+        run_quality_act = QAction("Run &Quality Analysis", self)
         run_quality_act.triggered.connect(self._on_run_quality)
-        analysis_menu.addAction(run_quality_act)
+        run_menu.addAction(run_quality_act)
+
+        fire_act = QAction("&Fire Flow Wizard...", self)
+        fire_act.setShortcut("F8")
+        fire_act.triggered.connect(self._on_fire_flow)
+        run_menu.addAction(fire_act)
+
+        # Water Quality sub-submenu (preset modes)
+        wq_menu = QMenu("&Water Quality (presets)", self)
+        run_menu.addMenu(wq_menu)
+        wq_age_act = QAction("Water &Age...", self)
+        wq_age_act.triggered.connect(self._on_water_quality_age)
+        wq_menu.addAction(wq_age_act)
+        wq_cl_act = QAction("&Chlorine Decay...", self)
+        wq_cl_act.triggered.connect(self._on_water_quality_chlorine)
+        wq_menu.addAction(wq_cl_act)
+        wq_trace_act = QAction("&Trace...", self)
+        wq_trace_act.triggered.connect(self._on_water_quality_trace)
+        wq_menu.addAction(wq_trace_act)
+
+        # Sub: Configure — parameter setters
+        configure_menu = QMenu("&Configure", self)
+        analysis_menu.addMenu(configure_menu)
+
+        wq_config_act = QAction("Water Quality &Config...", self)
+        wq_config_act.triggered.connect(self._on_water_quality_config)
+        configure_menu.addAction(wq_config_act)
+
+        pattern_act = QAction("&Demand Patterns...", self)
+        pattern_act.triggered.connect(self._on_demand_patterns)
+        configure_menu.addAction(pattern_act)
+
+        self.slurry_act = QAction("Slurry &Mode", self)
+        self.slurry_act.setCheckable(True)
+        self.slurry_act.toggled.connect(self._on_slurry_toggle)
+        configure_menu.addAction(self.slurry_act)
+
+        slurry_params_act = QAction("Slurry &Parameters...", self)
+        slurry_params_act.triggered.connect(self._on_edit_slurry_params)
+        slurry_params_act.setToolTip(
+            "Edit Bingham-plastic parameters: yield stress, plastic "
+            "viscosity, density")
+        configure_menu.addAction(slurry_params_act)
+
+        # Sub: Calibration — model-fitting workflow
+        calib_menu = QMenu("Cali&bration", self)
+        analysis_menu.addMenu(calib_menu)
+
+        calibration_act = QAction("&Calibration Wizard...", self)
+        calibration_act.triggered.connect(self._on_calibration)
+        calib_menu.addAction(calibration_act)
 
         field_data_act = QAction("&Field Data Entry...", self)
         field_data_act.triggered.connect(self._on_calibration_data)
-        analysis_menu.addAction(field_data_act)
+        calib_menu.addAction(field_data_act)
 
         residuals_act = QAction("&Accuracy Residuals...", self)
         residuals_act.triggered.connect(self._on_calibration_residuals)
-        analysis_menu.addAction(residuals_act)
+        calib_menu.addAction(residuals_act)
 
-        calibration_dashboard_act = QAction("&Calibration Dashboard...", self)
+        calibration_dashboard_act = QAction("&Dashboard...", self)
         calibration_dashboard_act.triggered.connect(self._on_calibration_dashboard)
-        analysis_menu.addAction(calibration_dashboard_act)
+        calib_menu.addAction(calibration_dashboard_act)
 
         sensitivity_act = QAction("&Sensitivity Analysis...", self)
         sensitivity_act.triggered.connect(self._on_sensitivity_analysis)
-        analysis_menu.addAction(sensitivity_act)
+        calib_menu.addAction(sensitivity_act)
+
+        # Sub: Reports — engineering deliverables
+        analysis_reports_menu = QMenu("Re&ports", self)
+        analysis_menu.addMenu(analysis_reports_menu)
+
+        design_check_act = QAction("&Design Compliance Check...", self)
+        design_check_act.setShortcut("F9")
+        design_check_act.setToolTip("Run all WSAA compliance checks and generate certificate")
+        design_check_act.triggered.connect(self._on_design_compliance_check)
+        analysis_reports_menu.addAction(design_check_act)
+
+        safety_case_act = QAction("&Safety Case Report...", self)
+        safety_case_act.setToolTip(
+            "Generate formal pipeline safety case for regulatory submission.")
+        safety_case_act.triggered.connect(self._on_safety_case)
+        analysis_reports_menu.addAction(safety_case_act)
+
+        pump_energy_act = QAction("&Pump Energy Analysis...", self)
+        pump_energy_act.setToolTip(
+            "Calculate pump energy consumption with time-of-use tariff breakdown.")
+        pump_energy_act.triggered.connect(self._on_pump_energy)
+        analysis_reports_menu.addAction(pump_energy_act)
+
+        profile_act = QAction("Pipe &Profile (HGL)...", self)
+        profile_act.setToolTip("Longitudinal profile of HGL, invert, and pressure.")
+        profile_act.triggered.connect(self._on_pipe_profile)
+        analysis_reports_menu.addAction(profile_act)
 
         lcc_act = QAction("&Lifecycle Cost (LCC)...", self)
         lcc_act.triggered.connect(self._on_run_lcc)
-        analysis_menu.addAction(lcc_act)
+        analysis_reports_menu.addAction(lcc_act)
 
+        # --- Assets (kept top-level — distinct concern from Analysis) ---
         assets_menu = menubar.addMenu("A&ssets")
         asset_mgmt_act = QAction("&Asset Management...", self)
         asset_mgmt_act.triggered.connect(self._on_asset_management)
@@ -267,82 +355,6 @@ class MainWindow(QMainWindow):
         tco_act = QAction("&TCO Dashboard...", self)
         tco_act.triggered.connect(self._on_tco_dashboard)
         assets_menu.addAction(tco_act)
-
-        transient_act = QAction("Run &Transient", self)
-        transient_act.setShortcut("F6")
-        transient_act.triggered.connect(self._on_run_transient)
-        analysis_menu.addAction(transient_act)
-
-        eps_act = QAction("Run &Extended Period (EPS)", self)
-        eps_act.setShortcut("F7")
-        eps_act.triggered.connect(self._on_run_eps)
-        analysis_menu.addAction(eps_act)
-
-        fire_act = QAction("&Fire Flow Wizard...", self)
-        fire_act.setShortcut("F8")
-        fire_act.triggered.connect(self._on_fire_flow)
-        analysis_menu.addAction(fire_act)
-
-        # --- Water Quality submenu ---
-        wq_menu = QMenu("&Water Quality", self)
-        analysis_menu.addMenu(wq_menu)
-
-        wq_age_act = QAction("Water &Age...", self)
-        wq_age_act.triggered.connect(self._on_water_quality_age)
-        wq_menu.addAction(wq_age_act)
-
-        wq_cl_act = QAction("&Chlorine Decay...", self)
-        wq_cl_act.triggered.connect(self._on_water_quality_chlorine)
-        wq_menu.addAction(wq_cl_act)
-
-        wq_trace_act = QAction("&Trace...", self)
-        wq_trace_act.triggered.connect(self._on_water_quality_trace)
-        wq_menu.addAction(wq_trace_act)
-
-        profile_act = QAction("&Pipe Profile...", self)
-        profile_act.triggered.connect(self._on_pipe_profile)
-        analysis_menu.addAction(profile_act)
-
-        analysis_menu.addSeparator()
-
-        calibration_act = QAction("&Calibration...", self)
-        calibration_act.triggered.connect(self._on_calibration)
-        analysis_menu.addAction(calibration_act)
-
-        pattern_act = QAction("&Demand Patterns...", self)
-        pattern_act.triggered.connect(self._on_demand_patterns)
-        analysis_menu.addAction(pattern_act)
-
-        self.slurry_act = QAction("Slurry &Mode", self)
-        self.slurry_act.setCheckable(True)
-        self.slurry_act.toggled.connect(self._on_slurry_toggle)
-        analysis_menu.addAction(self.slurry_act)
-
-        slurry_params_act = QAction("Slurry &Parameters...", self)
-        slurry_params_act.triggered.connect(self._on_edit_slurry_params)
-        slurry_params_act.setToolTip(
-            "Edit Bingham-plastic parameters: yield stress, plastic "
-            "viscosity, density")
-        analysis_menu.addAction(slurry_params_act)
-
-        analysis_menu.addSeparator()
-        design_check_act = QAction("&Design Compliance Check...", self)
-        design_check_act.setShortcut("F9")
-        design_check_act.setToolTip("Run all WSAA compliance checks and generate certificate")
-        design_check_act.triggered.connect(self._on_design_compliance_check)
-        analysis_menu.addAction(design_check_act)
-
-        safety_case_act = QAction("&Safety Case Report...", self)
-        safety_case_act.setToolTip(
-            "Generate formal pipeline safety case for regulatory submission.")
-        safety_case_act.triggered.connect(self._on_safety_case)
-        analysis_menu.addAction(safety_case_act)
-
-        pump_energy_act = QAction("&Pump Energy Analysis...", self)
-        pump_energy_act.setToolTip(
-            "Calculate pump energy consumption with time-of-use tariff breakdown.")
-        pump_energy_act.triggered.connect(self._on_pump_energy)
-        analysis_menu.addAction(pump_energy_act)
 
         # --- Tools ---
         tools_menu = menubar.addMenu("&Tools")
@@ -398,11 +410,9 @@ class MainWindow(QMainWindow):
         aging_act.triggered.connect(self._on_apply_aging)
         tools_menu.addAction(aging_act)
 
-        tools_menu.addSeparator()
-
-        settings_act = QAction("&Settings", self)
-        settings_act.triggered.connect(self._on_settings)
-        tools_menu.addAction(settings_act)
+        # PR #5: removed duplicate Tools > Settings — File > Settings is the
+        # real entry point (the Tools one was a stub showing "not yet
+        # implemented"). Cold-start friction #6 in REPORT.md.
 
         # --- Reports ---
         reports_menu = menubar.addMenu("&Reports")
@@ -478,7 +488,10 @@ class MainWindow(QMainWindow):
         self.toggle_what_if_act.setChecked(True)
         view_menu.addAction(self.toggle_what_if_act)
 
-        self.toggle_profile_act = QAction("Pipe &Profile", self)
+        # Renamed for clarity — was "Pipe Profile" which read as a duplicate
+        # of Analysis > Reports > Pipe Profile (HGL); this one toggles the
+        # dock visibility, the other one runs the calculation.
+        self.toggle_profile_act = QAction("Pipe Profile &Dock", self)
         self.toggle_profile_act.setCheckable(True)
         self.toggle_profile_act.setChecked(True)
         view_menu.addAction(self.toggle_profile_act)
@@ -510,6 +523,23 @@ class MainWindow(QMainWindow):
             "violations and recommended fixes.")
         demo_act.triggered.connect(self._on_run_demo)
         help_menu.addAction(demo_act)
+
+        help_menu.addSeparator()
+        # PR #5: link to docs/USER_GUIDE.md and docs/THEORY_MANUAL.md so the
+        # written documentation is reachable from inside the app.
+        user_guide_act = QAction("&User Guide", self)
+        user_guide_act.setToolTip("Open docs/USER_GUIDE.md in the system viewer.")
+        user_guide_act.triggered.connect(
+            lambda: self._open_docs_file('USER_GUIDE.md'))
+        help_menu.addAction(user_guide_act)
+
+        theory_manual_act = QAction("&Theory Manual", self)
+        theory_manual_act.setToolTip(
+            "Open docs/THEORY_MANUAL.md (formula derivations and Australian "
+            "standards references) in the system viewer.")
+        theory_manual_act.triggered.connect(
+            lambda: self._open_docs_file('THEORY_MANUAL.md'))
+        help_menu.addAction(theory_manual_act)
 
     # =====================================================================
     # CENTRAL WIDGET
@@ -3088,6 +3118,27 @@ class MainWindow(QMainWindow):
         """Open Help dialog."""
         dlg = HelpDialog(self)
         dlg.exec()
+
+    def _open_docs_file(self, filename):
+        """Open a Markdown file from docs/ in the OS default handler.
+
+        Used by Help > User Guide and Help > Theory Manual.
+        """
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'docs', filename)
+        if not os.path.exists(path):
+            QMessageBox.warning(
+                self, "Document Not Found",
+                f"Expected docs/{filename} but the file is missing.")
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+            QMessageBox.warning(
+                self, "Cannot Open Document",
+                f"Failed to launch the system handler for:\n{path}\n\n"
+                f"Open it manually with a Markdown viewer.")
 
     def _on_run_tutorial(self):
         """Start the interactive tutorial."""

@@ -11,8 +11,10 @@
 | 1 | `File > Import from CSV...` | **DONE** | `8757042` |
 | 2 | New Project wizard | **DONE** | `beac5b1` |
 | 3 | `Edit > Bulk Edit Junctions...` | **DONE** | `655da09` |
-| 4 | `AddReservoirDialog` / `AddTankDialog` in canvas editor | **DONE** | (this commit) |
-| 5 | Menu cleanup (deduplicate Settings + Pipe Profile, regroup Analysis) | Next | — |
+| 4 | `AddReservoirDialog` / `AddTankDialog` in canvas editor | **DONE** | `dc70c52` |
+| 5 | Menu cleanup (deduplicate Settings + Pipe Profile, regroup Analysis) | **DONE** | (this commit) |
+
+**All 5 cold-start roadmap items shipped.** Friction lines #1, #3, #4, and #6 in `docs/walkthroughs/2026-04-25-cold-start/REPORT.md` are RESOLVED. Friction #5 (`WSAA: --` placeholder on cold start) remains open as a visual-design concern in `docs/blockers.md`. The walkthrough's Gap "no AddReservoir/AddTank dialog" closed in PR #4.
 
 The order is **not** the original priority order from the walkthrough — it's been resequenced so each PR builds on the previous, and so the lowest-risk mechanical work lands last (when the cognitive load of reviewing it is highest).
 

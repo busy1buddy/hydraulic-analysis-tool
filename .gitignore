@@ -39,6 +39,13 @@ output/wizard_test.inp
 output/imported_csv.inp
 output/api_smoke.inp
 output/api_run.inp
+output/pr*.inp
+output/extend_test.inp
+output/conn_proj.inp
+output/tank_proj.inp
+output/logan.inp
+output/defaults_test.inp
+output/trivial.inp
 
 # Audit trail (auto-generated, not version controlled)
 docs/audit/
