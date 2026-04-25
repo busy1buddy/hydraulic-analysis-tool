@@ -300,6 +300,128 @@ class AddJunctionDialog(QDialog):
         layout.addRow(buttons)
 
 
+class AddReservoirDialog(QDialog):
+    """Dialog for adding a new reservoir (boundary with fixed head).
+
+    PR #4 of the cold-start UX roadmap. Mirrors AddJunctionDialog defaults
+    (m AHD elevation range, MGA94/GDA2020 coordinate ranges).
+    """
+
+    def __init__(self, default_id, x, y, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Reservoir")
+        self.setMinimumWidth(300)
+
+        layout = QFormLayout(self)
+
+        self.id_input = QLineEdit(default_id)
+        layout.addRow("ID:", self.id_input)
+
+        self.head_spin = QDoubleSpinBox()
+        self.head_spin.setRange(-100, 2500)
+        self.head_spin.setValue(50.0)
+        self.head_spin.setSuffix(" m AHD")
+        self.head_spin.setToolTip(
+            "Reservoir head — the fixed boundary water level (m AHD). "
+            "WNTR treats reservoirs as infinite supply at this head.")
+        layout.addRow("Head:", self.head_spin)
+
+        self.x_spin = QDoubleSpinBox()
+        self.x_spin.setRange(-9_999_999, 9_999_999)
+        self.x_spin.setDecimals(2)
+        self.x_spin.setValue(x)
+        self.x_spin.setToolTip("X coordinate (Easting) in map units")
+        layout.addRow("X (Easting):", self.x_spin)
+
+        self.y_spin = QDoubleSpinBox()
+        self.y_spin.setRange(-9_999_999, 9_999_999)
+        self.y_spin.setDecimals(2)
+        self.y_spin.setValue(y)
+        self.y_spin.setToolTip("Y coordinate (Northing) in map units")
+        layout.addRow("Y (Northing):", self.y_spin)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+
+class AddTankDialog(QDialog):
+    """Dialog for adding a new tank (finite storage with level dynamics).
+
+    PR #4 of the cold-start UX roadmap. Defaults match WSAA typical
+    storage tank dimensions (10 m diameter, 0.5–5 m operating level).
+    """
+
+    def __init__(self, default_id, x, y, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Tank")
+        self.setMinimumWidth(320)
+
+        layout = QFormLayout(self)
+
+        self.id_input = QLineEdit(default_id)
+        layout.addRow("ID:", self.id_input)
+
+        self.elev_spin = QDoubleSpinBox()
+        self.elev_spin.setRange(-100, 2500)
+        self.elev_spin.setValue(50.0)
+        self.elev_spin.setSuffix(" m AHD")
+        self.elev_spin.setToolTip(
+            "Tank base elevation (m AHD). Water level is measured "
+            "above this datum.")
+        layout.addRow("Base elevation:", self.elev_spin)
+
+        self.init_level_spin = QDoubleSpinBox()
+        self.init_level_spin.setRange(0.0, 50.0)
+        self.init_level_spin.setValue(3.0)
+        self.init_level_spin.setSuffix(" m")
+        self.init_level_spin.setToolTip("Starting water level above the tank base.")
+        layout.addRow("Initial level:", self.init_level_spin)
+
+        self.min_level_spin = QDoubleSpinBox()
+        self.min_level_spin.setRange(0.0, 50.0)
+        self.min_level_spin.setValue(0.5)
+        self.min_level_spin.setSuffix(" m")
+        self.min_level_spin.setToolTip("Tank empties below this level — solver alerts.")
+        layout.addRow("Min level:", self.min_level_spin)
+
+        self.max_level_spin = QDoubleSpinBox()
+        self.max_level_spin.setRange(0.5, 50.0)
+        self.max_level_spin.setValue(5.0)
+        self.max_level_spin.setSuffix(" m")
+        self.max_level_spin.setToolTip("Tank overflows above this level — solver alerts.")
+        layout.addRow("Max level:", self.max_level_spin)
+
+        self.diameter_spin = QDoubleSpinBox()
+        self.diameter_spin.setRange(0.5, 100.0)
+        self.diameter_spin.setValue(10.0)
+        self.diameter_spin.setSuffix(" m")
+        self.diameter_spin.setToolTip(
+            "Tank diameter (assumes a cylindrical tank). Larger diameter "
+            "= slower level dynamics.")
+        layout.addRow("Diameter:", self.diameter_spin)
+
+        self.x_spin = QDoubleSpinBox()
+        self.x_spin.setRange(-9_999_999, 9_999_999)
+        self.x_spin.setDecimals(2)
+        self.x_spin.setValue(x)
+        layout.addRow("X (Easting):", self.x_spin)
+
+        self.y_spin = QDoubleSpinBox()
+        self.y_spin.setRange(-9_999_999, 9_999_999)
+        self.y_spin.setDecimals(2)
+        self.y_spin.setValue(y)
+        layout.addRow("Y (Northing):", self.y_spin)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+
 class AddPipeDialog(QDialog):
     """Dialog for adding a new pipe between two nodes."""
 
@@ -495,12 +617,17 @@ class CanvasEditor:
     edit_mode_changed = None  # Will be set to a signal
     network_modified = None   # Will be set to a signal
 
+    ADD_MODE_JUNCTION = 'junction'
+    ADD_MODE_RESERVOIR = 'reservoir'
+    ADD_MODE_TANK = 'tank'
+
     def __init__(self, canvas, main_window):
         self.canvas = canvas
         self.mw = main_window
         self.api = main_window.api
         self._edit_mode = False
         self._pipe_start_node = None  # for two-click pipe creation
+        self._add_mode = self.ADD_MODE_JUNCTION  # which kind of node a click adds
         self.undo_stack = UndoStack()
         self.live_analysis_enabled = True  # N1: auto re-run on edit
 
@@ -526,10 +653,26 @@ class CanvasEditor:
         self._pipe_start_node = None
         if value:
             self.canvas.plot_widget.setCursor(QCursor(Qt.CursorShape.CrossCursor))
-            self.mw.status_bar.showMessage("Edit Mode: Click canvas to add junction, click two nodes to add pipe", 0)
+            self.mw.status_bar.showMessage(
+                f"Edit Mode (adding {self._add_mode}): Click canvas to add a "
+                f"{self._add_mode}, click two nodes to add a pipe", 0)
         else:
             self.canvas.plot_widget.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
             self.mw.status_bar.showMessage("View Mode", 3000)
+
+    @property
+    def add_mode(self):
+        return self._add_mode
+
+    @add_mode.setter
+    def add_mode(self, value):
+        if value not in (self.ADD_MODE_JUNCTION, self.ADD_MODE_RESERVOIR,
+                          self.ADD_MODE_TANK):
+            raise ValueError(f"unknown add_mode: {value!r}")
+        self._add_mode = value
+        if self._edit_mode:
+            self.mw.status_bar.showMessage(
+                f"Edit Mode: next canvas click adds a {value}.", 4000)
 
     def handle_canvas_click(self, mx, my):
         """Called when canvas is clicked in edit mode."""
@@ -546,8 +689,13 @@ class CanvasEditor:
         if hit_node:
             return self._handle_node_click_edit(hit_node)
 
-        # Click on empty space → add junction
-        self._add_junction_at(mx, my)
+        # Click on empty space → add the configured node type
+        if self._add_mode == self.ADD_MODE_RESERVOIR:
+            self._add_reservoir_at(mx, my)
+        elif self._add_mode == self.ADD_MODE_TANK:
+            self._add_tank_at(mx, my)
+        else:
+            self._add_junction_at(mx, my)
         return True
 
     def handle_right_click(self, mx, my):
@@ -609,6 +757,105 @@ class CanvasEditor:
         while f'J{i}' in existing:
             i += 1
         return f'J{i}'
+
+    # ----- Reservoir operations (PR #4) -----
+
+    def _add_reservoir_at(self, x, y):
+        rid = self._next_reservoir_id()
+        dialog = AddReservoirDialog(rid, round(x, 1), round(y, 1), self.mw)
+        if dialog.exec():
+            rid = dialog.id_input.text().strip()
+            head = dialog.head_spin.value()
+            cx = dialog.x_spin.value()
+            cy = dialog.y_spin.value()
+
+            try:
+                validate_elevation_m(head, f"Head for {rid}")
+            except UnitValidationError as exc:
+                QMessageBox.warning(self.mw, "Unit Validation Error", str(exc))
+                return
+
+            try:
+                self.api.add_reservoir(rid, head_m=head, coordinates=(cx, cy))
+            except Exception as exc:  # ID collision, etc.
+                QMessageBox.warning(self.mw, "Add Reservoir Failed", str(exc))
+                return
+
+            self.undo_stack.push(EditAction(
+                'add_reservoir', f'Add reservoir {rid}',
+                {'id': rid, 'head': head, 'coordinates': (cx, cy)}
+            ))
+            self._mark_modified()
+            self.canvas.render()
+            self.mw.status_bar.showMessage(
+                f"Added reservoir {rid} at head {head:.1f} m.", 4000)
+
+    def _next_reservoir_id(self):
+        existing = set(self.api.get_node_list('reservoir'))
+        i = 1
+        while f'R{i}' in existing:
+            i += 1
+        return f'R{i}'
+
+    # ----- Tank operations (PR #4) -----
+
+    def _add_tank_at(self, x, y):
+        tid = self._next_tank_id()
+        dialog = AddTankDialog(tid, round(x, 1), round(y, 1), self.mw)
+        if dialog.exec():
+            tid = dialog.id_input.text().strip()
+            elev = dialog.elev_spin.value()
+            init_level = dialog.init_level_spin.value()
+            min_level = dialog.min_level_spin.value()
+            max_level = dialog.max_level_spin.value()
+            diameter = dialog.diameter_spin.value()
+            cx = dialog.x_spin.value()
+            cy = dialog.y_spin.value()
+
+            # Sanity check: min < init < max, all non-negative diameter
+            if not (0 <= min_level <= init_level <= max_level):
+                QMessageBox.warning(
+                    self.mw, "Tank Levels Invalid",
+                    f"Levels must satisfy 0 <= min ({min_level}) <= init "
+                    f"({init_level}) <= max ({max_level}).")
+                return
+
+            try:
+                validate_elevation_m(elev, f"Base elevation for {tid}")
+            except UnitValidationError as exc:
+                QMessageBox.warning(self.mw, "Unit Validation Error", str(exc))
+                return
+
+            try:
+                self.api.add_tank(tid, elevation_m=elev,
+                                   init_level_m=init_level,
+                                   min_level_m=min_level,
+                                   max_level_m=max_level,
+                                   diameter_m=diameter,
+                                   coordinates=(cx, cy))
+            except Exception as exc:
+                QMessageBox.warning(self.mw, "Add Tank Failed", str(exc))
+                return
+
+            self.undo_stack.push(EditAction(
+                'add_tank', f'Add tank {tid}',
+                {'id': tid, 'elevation': elev,
+                 'init_level': init_level, 'min_level': min_level,
+                 'max_level': max_level, 'diameter': diameter,
+                 'coordinates': (cx, cy)}
+            ))
+            self._mark_modified()
+            self.canvas.render()
+            self.mw.status_bar.showMessage(
+                f"Added tank {tid} (elev {elev:.1f} m, init level "
+                f"{init_level:.1f} m, dia {diameter:.1f} m).", 4000)
+
+    def _next_tank_id(self):
+        existing = set(self.api.get_node_list('tank'))
+        i = 1
+        while f'T{i}' in existing:
+            i += 1
+        return f'T{i}'
 
     # ----- Pipe operations -----
 

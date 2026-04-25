@@ -558,6 +558,25 @@ class MainWindow(QMainWindow):
         # warning printed on every launch.
         toolbar_layout.addWidget(self.canvas.edit_btn)
 
+        # Add-mode dropdown — controls what the next canvas click adds
+        # while in Edit Mode. PR #4 of the cold-start UX roadmap.
+        from PyQt6.QtWidgets import QComboBox
+        self.canvas.add_mode_combo = QComboBox()
+        self.canvas.add_mode_combo.setFont(QFont("Consolas", 9))
+        self.canvas.add_mode_combo.setMinimumWidth(110)
+        self.canvas.add_mode_combo.addItem("Add: Junction", "junction")
+        self.canvas.add_mode_combo.addItem("Add: Reservoir", "reservoir")
+        self.canvas.add_mode_combo.addItem("Add: Tank", "tank")
+        self.canvas.add_mode_combo.setToolTip(
+            "Selects what kind of node the next canvas click adds while "
+            "Edit Mode is active. Pipes are still drawn by clicking two "
+            "existing nodes regardless of this setting.")
+        self.canvas.add_mode_combo.currentIndexChanged.connect(
+            lambda i: setattr(
+                self.editor, 'add_mode',
+                self.canvas.add_mode_combo.itemData(i)))
+        toolbar_layout.addWidget(self.canvas.add_mode_combo)
+
         # Values overlay toggle
         self.values_btn = QPushButton("Values")
         self.values_btn.setCheckable(True)
