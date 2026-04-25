@@ -80,6 +80,7 @@ from desktop.safety_case_dialog import SafetyCaseDialog
 from desktop.pump_energy_dialog import PumpEnergyDialog
 from desktop.compliance_dialog import ComplianceDialog
 from desktop.welcome_dialog import WelcomeDialog
+from desktop.new_project_wizard import NewProjectWizard
 from desktop.report_templates import ReportTemplateDialog
 from desktop.units import dn_display, lps_to_m3s, m_to_mm
 
@@ -887,17 +888,52 @@ class MainWindow(QMainWindow):
     # =====================================================================
 
     def _on_new(self):
+        """File > New — open the project wizard, bootstrap a fresh network on accept.
+
+        Dismissing the wizard preserves the existing network; the user has
+        not destroyed any work by clicking File > New and then Cancel.
+        """
+        wizard = NewProjectWizard(parent=self)
+        if not wizard.exec():
+            return  # cancelled — keep existing state intact
+
+        cfg = wizard.get_config()
+
+        # Reset state and create the new project
         self.api = HydraulicAPI()
-        self._current_file = None
+        result = self.api.bootstrap_project(
+            name=cfg['name'],
+            source_type=cfg['source_type'],
+            source_id=cfg['source_id'],
+            source_head_m=cfg['source_head_m'],
+            project_defaults=cfg['project_defaults'],
+        )
+        if 'error' in result:
+            QMessageBox.critical(self, "Project Setup Failed", result['error'])
+            return
+
+        # Refresh UI to reflect the new network
+        self._current_file = self.api._inp_file
         self._hap_file = None
+        self._last_results = None
         self.explorer_tree.clear()
         self.properties_table.setRowCount(0)
         self.node_results_table.setRowCount(0)
         self.pipe_results_table.setRowCount(0)
-        self.canvas.set_api(None)  # clear canvas
-        self.what_if_panel.set_api(self.api)
+        self._populate_explorer()
         self._update_status_bar()
-        self.setWindowTitle("Hydraulic Analysis Tool — v2.9.0")
+        self.canvas.set_api(self.api)
+        self.dashboard_widget.update_dashboard(self.api)
+        self.what_if_panel.set_api(self.api)
+        self.setWindowTitle(
+            f"Hydraulic Analysis Tool v2.9.0 — {cfg['name']} (new project)"
+        )
+        self.status_bar.showMessage(
+            f"New project '{cfg['name']}' created with source "
+            f"{cfg['source_id']} at {cfg['source_head_m']:.1f} m. "
+            f"Use Edit Mode on the canvas to add junctions and pipes.",
+            8000,
+        )
 
     def _on_open_inp(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -2709,7 +2745,9 @@ class MainWindow(QMainWindow):
         if dlg.exec() == dlg.DialogCode.Accepted:
             if dlg.skip_next_time():
                 set_pref('skip_welcome', True)
-            if dlg.choice == WelcomeDialog.DEMO:
+            if dlg.choice == WelcomeDialog.NEW_PROJECT:
+                self._on_new()
+            elif dlg.choice == WelcomeDialog.DEMO:
                 demo_path = os.path.join(
                     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                     'tutorials', 'demo_network', 'network.inp')

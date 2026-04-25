@@ -35,6 +35,80 @@ class CoreMixin:
         self.wn = wntr.network.WaterNetworkModel(abs_path)
         return self.get_network_summary()
 
+    def bootstrap_project(self, name='new_project', source_type='reservoir',
+                          source_id=None, source_head_m=50.0,
+                          project_defaults=None, duration_hrs=24):
+        """Create a fresh network with a single source node — UI entry point.
+
+        Replaces the bare ``WaterNetworkModel()`` constructor for users who
+        click *File > New / Create Project*. Lands the user in a runnable
+        state (one source, no junctions) ready for canvas Edit mode.
+
+        Parameters
+        ----------
+        name : str
+            Project name. Stored on ``self.wn.name`` and used for the
+            staged ``.inp`` filename in ``self.output_dir``.
+        source_type : {'reservoir', 'tank', 'junction'}
+            Kind of source to seed. Reservoirs hold an unlimited fixed
+            head. Tanks model finite storage. ``'junction'`` creates a
+            junction node at the given elevation with zero demand —
+            useful for "connection to existing main with fixed head"
+            scenarios where the upstream system is out of scope.
+        source_id : str, optional
+            ID of the source node. Defaults to ``R1`` / ``T1`` / ``J0``.
+        source_head_m : float
+            Reservoir head, tank elevation, or junction elevation in m.
+        project_defaults : dict, optional
+            Default pipe-design values for downstream dialogs to consult
+            (e.g. ``{'material': 'PVC PN12', 'roughness': 145, 'dn_mm': 100}``).
+            Stored on ``self.project_defaults``; never mutated by other
+            mixins.
+        duration_hrs : int
+            Simulation duration in hours. Single-step steady-state if 0.
+
+        Returns
+        -------
+        dict
+            Network summary on success. ``{'error': ...}`` on bad
+            ``source_type``.
+        """
+        if source_type not in ('reservoir', 'tank', 'junction'):
+            return {'error':
+                f"Unknown source_type {source_type!r}; "
+                f"use 'reservoir', 'tank', or 'junction'."}
+
+        self.wn = wntr.network.WaterNetworkModel()
+        self.wn.name = name
+        self.wn.options.time.duration = int(duration_hrs) * 3600
+        self.wn.options.time.hydraulic_timestep = 3600
+        self.wn.options.time.report_timestep = 3600
+
+        default_ids = {'reservoir': 'R1', 'tank': 'T1', 'junction': 'J0'}
+        sid = source_id or default_ids[source_type]
+
+        if source_type == 'reservoir':
+            self.wn.add_reservoir(sid, base_head=float(source_head_m),
+                                  coordinates=(0.0, 0.0))
+        elif source_type == 'tank':
+            self.wn.add_tank(sid, elevation=float(source_head_m),
+                             init_level=3.0, min_level=0.5, max_level=5.0,
+                             diameter=10.0, coordinates=(0.0, 0.0))
+        else:  # 'junction'
+            self.wn.add_junction(sid, elevation=float(source_head_m),
+                                 base_demand=0.0, coordinates=(0.0, 0.0))
+
+        # Stash project metadata + UI defaults for downstream dialogs to read
+        self.project_defaults = dict(project_defaults or {})
+        self.project_metadata = {'name': name, 'source_id': sid,
+                                  'source_type': source_type}
+
+        # Stage to disk so transient analyses and Save can find an .inp
+        self._inp_file = os.path.join(self.output_dir, f'{name}.inp')
+        wntr.network.write_inpfile(self.wn, self._inp_file)
+
+        return self.get_network_summary()
+
     def import_from_csv(self, nodes_csv, pipes_csv, name='imported_csv'):
         """Import a network from a pair of CSVs (nodes + pipes) and load it.
 

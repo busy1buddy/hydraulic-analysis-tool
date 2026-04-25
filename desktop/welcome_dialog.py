@@ -20,12 +20,13 @@ class WelcomeDialog(QDialog):
     DEMO = 'demo'
     OPEN = 'open'
     TUTORIALS = 'tutorials'
+    NEW_PROJECT = 'new_project'
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.choice = None
         self.setWindowTitle("Welcome")
-        self.setFixedSize(420, 250)
+        self.setFixedSize(420, 300)
         self._build_ui()
 
     def _build_ui(self):
@@ -47,6 +48,15 @@ class WelcomeDialog(QDialog):
         layout.addSpacing(8)
 
         # Buttons
+        new_btn = QPushButton("Create New Project...")
+        new_btn.setMinimumHeight(32)
+        new_btn.setToolTip(
+            "Set up a fresh hydraulic design with project metadata, a source "
+            "node, and pipe defaults. Then add junctions and pipes via Edit "
+            "Mode on the canvas.")
+        new_btn.clicked.connect(lambda: self._choose(self.NEW_PROJECT))
+        layout.addWidget(new_btn)
+
         demo_btn = QPushButton("Open Demo Network")
         demo_btn.setMinimumHeight(32)
         demo_btn.clicked.connect(lambda: self._choose(self.DEMO))

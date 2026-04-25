@@ -32,6 +32,14 @@ temp.*
 *.rpt
 results.obj
 
+# Test/runtime artefacts staged into output/ by ad-hoc smoke tests
+# (specific committed deliverables in output/ remain tracked)
+output/New Project.inp
+output/wizard_test.inp
+output/imported_csv.inp
+output/api_smoke.inp
+output/api_run.inp
+
 # Audit trail (auto-generated, not version controlled)
 docs/audit/
 
