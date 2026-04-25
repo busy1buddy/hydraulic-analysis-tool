@@ -27,7 +27,7 @@ The codebase has been refactored to a clean, package-based structure to improve 
 - **`scripts/`**: Utility and maintenance scripts.
     - `archive/`: Legacy/monolithic files (e.g., `epanet_api_monolith.py`).
 - **`docs/`**: Documentation (Theory, User Guide, Audit Reports).
-- **`tests/`**: Pytest suite (1000+ tests).
+- **`tests/`**: Pytest suite (~1,222 tests across 95 files).
 
 ## 3. Remediation Summary (Cycle 1 Audit)
 A comprehensive multi-pass audit was completed to ensure the tool is ready for professional use.

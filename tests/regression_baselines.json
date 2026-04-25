@@ -17,10 +17,10 @@
   },
   "elevated_tank": {
     "max_velocity_ms": 0.66,
-    "min_pressure_m": -50051864.0,
+    "min_pressure_m": 42.6,
     "n_junctions": 6,
     "n_pipes": 8,
-    "quality_score": 61.4,
+    "quality_score": 86.4,
     "resilience_index": null
   },
   "fire_flow_demand": {
@@ -48,11 +48,11 @@
     "resilience_index": null
   },
   "multistage_pump": {
-    "max_velocity_ms": 0.63,
-    "min_pressure_m": -32.8,
+    "max_velocity_ms": 0.4,
+    "min_pressure_m": 4.7,
     "n_junctions": 5,
-    "n_pipes": 5,
-    "quality_score": 56.5,
+    "n_pipes": 4,
+    "quality_score": 87.5,
     "resilience_index": null
   },
   "pressure_zone_boundary": {

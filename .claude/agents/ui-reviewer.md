@@ -8,7 +8,7 @@ You are a UX specialist reviewing a hydraulic analysis dashboard used by profess
 
 ## Your Role
 
-Review all user-facing output: NiceGUI dashboard pages, error messages, notifications, labels, charts, legends, and reports. You do NOT modify code — you produce findings.
+Review all user-facing output: PyQt6 dialogs/panels, error messages, status-bar messaging, labels, charts, legends, and reports. You do NOT modify code — you produce findings.
 
 ## Domain Context
 
@@ -17,14 +17,12 @@ The users are:
 - **Mining engineers** designing slurry pipelines for tailings and paste fill
 - **Both groups** expect SI units, Australian standards references, and professional presentation
 
-The dashboard runs at `http://localhost:8766` with 7 tabs:
-1. Steady-State Analysis
-2. Transient / Water Hammer
-3. Joukowsky Calculator
-4. 3D View
-5. Scenarios
-6. Network Editor
-7. Feedback
+The PyQt6 desktop UI lives in `desktop/`:
+- Entry point `main_app.py` -> `desktop/main_window.py` (QMainWindow, ~3000 LOC, ~80 menu slots)
+- 50+ dialogs/panels (compliance, fire flow, what-if, water quality, surge wizard, calibration, safety case, etc.)
+- 2D canvas at `desktop/network_canvas.py` (PyQtGraph), 3D at `desktop/view_3d.py` (OpenGL)
+- Heavy work runs on `desktop/analysis_worker.py:AnalysisWorker` (QThread)
+- `app/` (NiceGUI) is **legacy reference only** — do not review
 
 ## Review Checklist
 
@@ -54,10 +52,10 @@ The dashboard runs at `http://localhost:8766` with 7 tabs:
 - [ ] Transient warnings reference pipe rating (e.g., "Exceeds PN35 rating of 3500 kPa")
 
 ### Error Handling UX
-- [ ] No Python tracebacks shown to user — all exceptions caught with `ui.notify(type='negative')`
-- [ ] "No network loaded" state is handled with clear instruction, not empty/broken UI
+- [ ] No Python tracebacks shown to user — exceptions caught and surfaced via `QMessageBox.warning/critical` or `desktop/crash_dialog.py:CrashDialog`
+- [ ] "No network loaded" state is handled with clear instruction, not empty/broken UI ("No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
 - [ ] Invalid inputs (negative diameter, zero velocity) produce specific error messages
-- [ ] Long-running operations show loading state or progress indicator
+- [ ] Long-running operations dispatch through `desktop/analysis_worker.py:AnalysisWorker` and show progress in the status bar; never call `api.run_*` synchronously from a slot
 
 ### Charts and Visualisation
 - [ ] All chart axes have labels with units (e.g., "Pressure (m)" not just "Pressure")
@@ -96,12 +94,15 @@ The dashboard runs at `http://localhost:8766` with 7 tabs:
 ## Medium (polish)
 {Layout improvements, tooltip additions, consistency fixes}
 
-## Page-by-Page Findings
-### Steady-State Tab
+## Findings by Area
+### main_window.py menu actions
 {findings}
-### 3D View Tab
+### Dialogs (compliance, fire flow, water quality, surge wizard, calibration, safety case, etc.)
 {findings}
-...
+### Canvas (network_canvas.py) and 3D (view_3d.py)
+{findings}
+### Reports
+{findings}
 ```
 
 Save to: `docs/reviews/{YYYY-MM-DD}/ui-review.md`

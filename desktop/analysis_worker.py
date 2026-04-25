@@ -64,8 +64,8 @@ class AnalysisWorker(QThread):
                 results = self.api.run_steady_state(save_plot=False)
                 self.progress.emit(60)
 
-                # Add slurry analysis for each pipe
-                from epanet_api.slurry_solver import bingham_plastic_headloss
+                # Add slurry analysis for each pipe (via API — no direct
+                # import of epanet_api.slurry_solver per Layer-4 purity rule)
                 slurry_results = {}
                 slurry_params = self.params.get('slurry', {})
                 tau_y = slurry_params.get('yield_stress', 10.0)
@@ -80,7 +80,7 @@ class AnalysisWorker(QThread):
                     Q_m3s = abs(avg_lps) / 1000
 
                     if Q_m3s > 0 and pipe.diameter > 0:
-                        slurry = bingham_plastic_headloss(
+                        slurry = self.api.compute_slurry_headloss(
                             flow_m3s=Q_m3s,
                             diameter_m=pipe.diameter,
                             length_m=pipe.length,
@@ -93,6 +93,57 @@ class AnalysisWorker(QThread):
 
                 results['slurry'] = slurry_results
                 self.progress.emit(90)
+
+            elif self.analysis_type == 'quality':
+                # Water quality EPS (e.g. 48 h age or chlorine decay) — can be
+                # 5-30s on a real network, so it must run off-thread.
+                self.progress.emit(30)
+                results = self.api.run_water_quality_analysis()
+                self.progress.emit(90)
+
+            elif self.analysis_type == 'scenarios_batch':
+                # Run a list of scenarios in sequence, each through the API,
+                # so the GUI thread stays responsive.
+                inp_file = self.params.get('inp_file')
+                scenarios = self.params.get('scenarios', [])
+                results_list = []
+                for i, spec in enumerate(scenarios):
+                    self.progress.emit(int(10 + 80 * i / max(1, len(scenarios))))
+                    try:
+                        if inp_file:
+                            self.api.load_network_from_path(inp_file)
+
+                        # Apply demand multiplier through API
+                        mult = spec.get('demand_multiplier', 1.0)
+                        if mult != 1.0:
+                            for jname in self.api.get_node_list('junction'):
+                                junc = self.api.get_node(jname)
+                                if junc.demand_timeseries_list:
+                                    junc.demand_timeseries_list[0].base_value *= mult
+
+                        if spec.get('metal_age', 0) > 0 or spec.get('plastic_age', 0) > 0:
+                            self.api.apply_scenario_aging(
+                                spec.get('metal_age', 0),
+                                spec.get('plastic_age', 0),
+                            )
+
+                        if spec.get('modifications'):
+                            self.api.apply_scenario_modifications(spec['modifications'])
+
+                        sc_res = self.api.run_steady_state(save_plot=False)
+                    except Exception as e:
+                        sc_res = {'error': str(e), 'pressures': {}, 'flows': {}, 'compliance': []}
+                    results_list.append({'id': spec.get('id'), 'results': sc_res})
+
+                # Restore original network state for the GUI thread
+                if inp_file:
+                    try:
+                        self.api.load_network_from_path(inp_file)
+                    except Exception:
+                        pass
+
+                results = {'scenarios': results_list}
+                self.progress.emit(95)
 
             else:
                 self.error.emit(f"Unknown analysis type: {self.analysis_type}")

@@ -131,3 +131,46 @@ class SlurryMixin:
                 'safe': len(pipe_analysis) - n_below_critical - n_at_risk,
             },
         }
+
+    # =========================================================================
+    # SLURRY HEADLOSS (UI-safe wrapper for desktop/analysis_worker.py)
+    # =========================================================================
+
+    def compute_slurry_headloss(self, flow_m3s, diameter_m, length_m,
+                                density, tau_y, mu_p, roughness_mm=0.1):
+        """Compute Bingham-plastic headloss for a single pipe.
+
+        Thin wrapper over ``slurry_solver.bingham_plastic_headloss`` so UI
+        code can avoid the direct ``from epanet_api.slurry_solver import ...``
+        layer violation.
+
+        Parameters
+        ----------
+        flow_m3s : float
+            Flow rate in m³/s.
+        diameter_m : float
+            Pipe internal diameter in m.
+        length_m : float
+            Pipe length in m.
+        density : float
+            Slurry density in kg/m³.
+        tau_y : float
+            Yield stress in Pa.
+        mu_p : float
+            Plastic viscosity in Pa·s.
+        roughness_mm : float
+            Absolute pipe roughness in mm.
+
+        Returns dict from slurry_solver (headloss_m, friction_factor,
+        Reynolds, regime, etc.).
+        """
+        from .slurry_solver import bingham_plastic_headloss
+        return bingham_plastic_headloss(
+            flow_m3s=flow_m3s,
+            diameter_m=diameter_m,
+            length_m=length_m,
+            density=density,
+            tau_y=tau_y,
+            mu_p=mu_p,
+            roughness_mm=roughness_mm,
+        )

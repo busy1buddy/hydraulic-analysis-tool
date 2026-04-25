@@ -18,9 +18,14 @@ class TerrainMixin:
         self._default_depth_of_cover = 0.75 # m (WSAA standard typical)
 
     def import_terrain_from_csv(self, path):
-        """Import XYZ terrain points from CSV."""
+        """Import XYZ terrain points from CSV.
+
+        ``ndmin=2`` keeps the array two-dimensional even when the CSV holds
+        only one data row, so the downstream nearest-neighbour query in
+        ``get_ground_elevation`` keeps working at the trivial-input edge.
+        """
         try:
-            data = np.loadtxt(path, delimiter=',', skiprows=1)
+            data = np.loadtxt(path, delimiter=',', skiprows=1, ndmin=2)
             # Assuming Easting, Northing, Elevation
             self._terrain_data = data
             logger.info(f"Imported {len(data)} terrain points.")

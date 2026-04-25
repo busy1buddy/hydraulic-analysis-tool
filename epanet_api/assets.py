@@ -912,3 +912,37 @@ class AssetsMixin:
                 'top_priorities': replacements[:5]
             }
         }
+
+    # =========================================================================
+    # PIPE STRESS (UI-safe wrapper for desktop/pipe_stress_panel.py)
+    # =========================================================================
+
+    def compute_pipe_stress(self, pressure_kPa, diameter_mm, wall_thickness_mm,
+                            material='ductile_iron', transient_factor=1.0):
+        """Compute hoop / radial / axial / Von Mises stress and safety factor.
+
+        Thin wrapper over ``pipe_stress.analyze_pipe_stress`` so UI code can
+        avoid the direct ``from epanet_api.pipe_stress import ...`` layer
+        violation.
+
+        Parameters mirror ``analyze_pipe_stress`` in ``pipe_stress.py``.
+        Returns the same dict; the UI panel maps it onto a table row.
+        """
+        from .pipe_stress import analyze_pipe_stress
+        return analyze_pipe_stress(
+            pressure_kPa=pressure_kPa,
+            diameter_mm=diameter_mm,
+            wall_thickness_mm=wall_thickness_mm,
+            material=material,
+            transient_factor=transient_factor,
+        )
+
+    @staticmethod
+    def material_strength_table():
+        """Return the materials/yield-strength dict from ``pipe_stress.py``.
+
+        Used by ``desktop/pipe_stress_panel.py`` to populate dropdowns
+        without importing the domain module directly.
+        """
+        from .pipe_stress import MATERIAL_STRENGTH
+        return dict(MATERIAL_STRENGTH)

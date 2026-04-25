@@ -15,8 +15,8 @@ Professional hydraulic analysis desktop tool for Australian water supply and min
 
 ```
 Layer 1 — Solvers:  wntr, tsnet (never import directly from UI or reports)
-Layer 2 — API:      epanet_api.py (single orchestration point for all analysis)
-Layer 3 — Domain:   slurry_solver.py, pipe_stress.py, data/
+Layer 2 — API:      epanet_api/ (package: 15 mixins composed into HydraulicAPI in epanet_api/__init__.py)
+Layer 3 — Domain:   epanet_api/slurry_solver.py, epanet_api/pipe_stress.py, data/
 Layer 4 — UI:       desktop/ (PyQt6 — imports API only, never solvers directly)
 Layer 5 — Output:   reports/ (reads from API result dicts, never solver objects)
 Layer 6 — Import:   importers/ (produce .inp files, never run simulations)
@@ -25,7 +25,7 @@ Layer 6 — Import:   importers/ (produce .inp files, never run simulations)
 **Rules:**
 - No layer may import from a layer above it.
 - The UI layer (`desktop/`) may never import `wntr` or `tsnet` directly.
-- All network mutations must go through `HydraulicAPI` methods — never mutate `api.wn` directly from outside `epanet_api.py`.
+- All network mutations must go through `HydraulicAPI` methods — never mutate `api.wn` directly from outside `epanet_api/`.
 - Report generators receive plain dicts, never raw WNTR result objects.
 - Importers produce `.inp` files only — they never run simulations.
 
@@ -126,8 +126,8 @@ After completing any phase, feature, or significant fix:
 | `feedback-synthesizer` | sonnet | read-only | After any review cycle completes |
 
 **Routing logic:**
-- Editing `epanet_api.py` -> triggers `code-reviewer` + `hydraulic-tester`
-- Editing `slurry_solver.py` or `pipe_stress.py` -> triggers `code-reviewer` + `hydraulic-tester`
+- Editing any file in `epanet_api/` -> triggers `code-reviewer` + `hydraulic-tester`
+- Editing `epanet_api/slurry_solver.py` or `epanet_api/pipe_stress.py` -> triggers `code-reviewer` + `hydraulic-tester`
 - Editing `desktop/**/*.py` -> triggers `ui-reviewer`
 - Editing `data/*.py` -> triggers `data-validator`
 - Adding/removing/moving files -> triggers `architect`
@@ -148,7 +148,7 @@ architect
 **Never parallelize:**
 - Any two tasks that write to the same file
 - `au_pipes.py` schema changes with any other task
-- `epanet_api.py` edits while any agent is reading `epanet_api.py`
+- Edits to any file in `epanet_api/` while any agent is reading the same file
 
 **Review output location:** `docs/reviews/{YYYY-MM-DD}/`
 
@@ -190,11 +190,10 @@ Write to `docs/decisions/{YYYY-MM-DD}.md`:
 
 - TSNet pump transient tests are xfail — known solver limitation, not a bug
 - `server.py` (FastAPI) is legacy — review shallowly, do not refactor
-- `epanet_api.py` size (~1200 lines) is an accepted tradeoff — flag only if a new responsibility is added, not for its current size
-- `pipe_stress.py` is implemented but wired to UI in Phase 5
-- EPyT is in requirements but unused — legacy dependency
+- `epanet_api/` mixin facade (15 mixins) is an accepted tradeoff — composition migration tracked separately; flag only if a new responsibility is added, not for the current shape
 - WNTR 1.4.0 `base_demand` is read-only — use `demand_timeseries_list[0].base_value`
 - `app/` (NiceGUI) is legacy reference — superseded by `desktop/` (PyQt6)
+- `desktop/main_window.py` size (~3000 lines) — decomposition design tracked in `docs/decisions/`; do not flag the line count alone
 
 ## 8. File and Path Conventions
 
@@ -202,9 +201,9 @@ Write to `docs/decisions/{YYYY-MM-DD}.md`:
 |------|---------|
 | `desktop/` | PyQt6 application (new UI layer) |
 | `app/` | NiceGUI dashboard (legacy reference) |
-| `epanet_api.py` | Core API |
-| `slurry_solver.py` | Slurry rheology solver |
-| `pipe_stress.py` | Pipe stress calculations |
+| `epanet_api/` | Core API package (HydraulicAPI facade + 15 mixins) |
+| `epanet_api/slurry_solver.py` | Slurry rheology solver |
+| `epanet_api/pipe_stress.py` | Pipe stress calculations |
 | `data/` | Australian pipe and pump databases |
 | `reports/` | DOCX and PDF report generators |
 | `importers/` | CSV, DXF, shapefile importers |

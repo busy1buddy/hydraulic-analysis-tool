@@ -1284,3 +1284,54 @@ class AnalysisMixin:
         if os.path.exists(self.model_dir):
             return [f for f in os.listdir(self.model_dir) if f.endswith('.inp')]
         return []
+
+    # =========================================================================
+    # SOLVER METADATA (UI-safe — no wntr/tsnet imports outside epanet_api/)
+    # =========================================================================
+
+    def solver_versions(self):
+        """Return installed solver version strings.
+
+        Used by the desktop audit-trail and crash-report code so it does not
+        need to import wntr/tsnet directly (Layer-4 purity rule).
+        """
+        versions = {'wntr': 'unknown', 'tsnet': 'unknown'}
+        try:
+            versions['wntr'] = getattr(wntr, '__version__', 'unknown')
+        except Exception:
+            pass
+        try:
+            versions['tsnet'] = getattr(tsnet, '__version__', 'unknown')
+        except Exception:
+            pass
+        return versions
+
+    def health_check(self):
+        """Lightweight smoke test that the EPANET solver is functional.
+
+        Returns dict with status (bool) and report (multi-line string).
+        UI code calls this instead of constructing wntr objects directly.
+        """
+        report_lines = []
+        ok = True
+
+        # WNTR / EPANET round-trip
+        try:
+            wn_test = wntr.network.WaterNetworkModel()
+            wntr.sim.EpanetSimulator(wn_test)
+            report_lines.append(
+                f"WNTR: {getattr(wntr, '__version__', 'unknown')} - OK")
+            report_lines.append("EPANET Solver: Integrated - OK")
+        except Exception as e:
+            report_lines.append(f"WNTR/EPANET Error: {e}")
+            ok = False
+
+        # TSNet
+        try:
+            report_lines.append(
+                f"TSNet: {getattr(tsnet, '__version__', 'unknown')} - OK")
+        except Exception as e:
+            report_lines.append(f"TSNet Error: {e}")
+            ok = False
+
+        return {'ok': ok, 'report': '\n'.join(report_lines)}

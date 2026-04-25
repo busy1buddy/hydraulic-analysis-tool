@@ -1410,6 +1410,7 @@ class MainWindow(QMainWindow):
                 {'analysis_type': analysis_type.lower()},
                 results,
                 analysis_type=analysis_type.lower(),
+                api=self.api,
             )
         except (OSError, ValueError) as e:
             logger.warning("Audit trail write failed: %s", e)
@@ -1616,43 +1617,64 @@ class MainWindow(QMainWindow):
         if self.api.wn is None:
             QMessageBox.warning(self, "No Network", "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
-            
+
         if not getattr(self.api, '_inp_file', None) or not os.path.exists(self.api._inp_file):
             QMessageBox.warning(self, "No Network", "Cannot run scenarios: no network file path is known for reloads.")
             return
 
+        # Build worker specs (one per scenario), keep references to ScenarioData
+        # by index so we can write results back when the worker finishes.
+        scenario_objs = list(self.scenario_panel.scenarios)
+        specs = []
+        for idx, sc in enumerate(scenario_objs):
+            specs.append({
+                'id': idx,
+                'demand_multiplier': getattr(sc, 'demand_multiplier', 1.0),
+                'metal_age': getattr(sc, 'metal_age', 0),
+                'plastic_age': getattr(sc, 'plastic_age', 0),
+                'modifications': getattr(sc, 'modifications', None),
+            })
+
+        self._scenarios_pending = scenario_objs
         self.status_bar.showMessage("Running all scenarios...")
         self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
 
-        for i, sc in enumerate(self.scenario_panel.scenarios):
-            self.progress_bar.setValue(int((i / len(self.scenario_panel.scenarios)) * 100))
-
-            # Reset and apply scenario parameters
-            try:
-                self.api.load_network_from_path(self.api._inp_file)
-                self._apply_scenario_to_network(sc)
-                sc.results = self.api.run_steady_state(save_plot=False)
-            except Exception as e:
-                sc.results = {'error': str(e), 'pressures': {}, 'flows': {}, 'compliance': []}
-
-        # Restore original via API
-        self.api.load_network_from_path(self.api._inp_file)
-
-        self.progress_bar.setVisible(False)
-        self.scenario_panel.update_comparison()
-
-        # Show base scenario results on canvas
-        base = self.scenario_panel.scenarios[0]
-        if base.results and 'error' not in base.results:
-            self.canvas.set_results(base.results)
-            self._last_results = base.results
-            self._update_status_bar()
-            self._populate_node_results(base.results)
-            self._populate_pipe_results(base.results)
-
-        self.status_bar.showMessage(
-            f"All {len(self.scenario_panel.scenarios)} scenarios complete.", 5000
+        self._scenarios_worker = AnalysisWorker(
+            self.api,
+            analysis_type='scenarios_batch',
+            params={'inp_file': self.api._inp_file, 'scenarios': specs},
         )
+        self._scenarios_worker.progress.connect(self.progress_bar.setValue)
+        self._scenarios_worker.finished.connect(self._on_scenarios_batch_done)
+        self._scenarios_worker.error.connect(self._on_analysis_error)
+        self._scenarios_worker.start()
+
+    def _on_scenarios_batch_done(self, batch_results):
+        """Worker finished running all scenarios — assign back and refresh UI."""
+        try:
+            for entry in batch_results.get('scenarios', []):
+                idx = entry.get('id')
+                if idx is None or idx >= len(self._scenarios_pending):
+                    continue
+                self._scenarios_pending[idx].results = entry.get('results', {})
+        finally:
+            self.progress_bar.setVisible(False)
+            self.scenario_panel.update_comparison()
+
+            # Show base scenario results on canvas
+            if self._scenarios_pending:
+                base = self._scenarios_pending[0]
+                if base.results and 'error' not in base.results:
+                    self.canvas.set_results(base.results)
+                    self._last_results = base.results
+                    self._update_status_bar()
+                    self._populate_node_results(base.results)
+                    self._populate_pipe_results(base.results)
+
+            self.status_bar.showMessage(
+                f"All {len(self._scenarios_pending)} scenarios complete.", 5000
+            )
 
     def _on_scenario_selected(self, name):
         """
@@ -2129,10 +2151,12 @@ class MainWindow(QMainWindow):
         duration_hrs = dialog.get_duration_hours()
         timestep_s = dialog.get_timestep_seconds()
 
-        # Configure WNTR model
-        self.api.wn.options.time.duration = duration_hrs * 3600
-        self.api.wn.options.time.hydraulic_timestep = timestep_s
-        self.api.wn.options.time.pattern_timestep = timestep_s
+        # Configure WNTR model via API (Layer-4 purity rule — no api.wn.options mutation)
+        self.api.set_simulation_options(
+            duration_hrs=duration_hrs,
+            hydraulic_timestep_s=timestep_s,
+            pattern_timestep_s=timestep_s,
+        )
 
         self.status_bar.showMessage(f"Running EPS ({duration_hrs}h, {timestep_s}s step)...")
 
@@ -2320,14 +2344,23 @@ class MainWindow(QMainWindow):
                     logger.warning("Demo load fallback failed: %s", e)
 
         def _step2():
+            # Dispatch through AnalysisWorker so the demo network solve
+            # does not block the GUI thread (Layer-4 threading rule).
             self.statusBar().showMessage(
                 "Demo step 2/4: Running steady-state analysis...")
-            try:
-                self._demo_results = self.api.run_steady_state(save_plot=False)
-            except Exception as e:
-                self.statusBar().showMessage(
-                    f"Demo analysis failed: {e}")
-                return
+            self._demo_worker = AnalysisWorker(
+                self.api, analysis_type='steady', params={})
+
+            def _on_demo_solve_done(results):
+                self._demo_results = results
+
+            def _on_demo_solve_error(msg):
+                self.statusBar().showMessage(f"Demo analysis failed: {msg}")
+                self._demo_results = {'compliance': []}
+
+            self._demo_worker.finished.connect(_on_demo_solve_done)
+            self._demo_worker.error.connect(_on_demo_solve_error)
+            self._demo_worker.start()
 
         def _step3():
             if not hasattr(self, '_demo_results'):
@@ -2803,46 +2836,51 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Water quality configuration updated.", 3000)
 
     def _on_run_quality(self):
-        """Run Water Quality Analysis (EPS)."""
+        """Run Water Quality Analysis (EPS) — dispatched through AnalysisWorker
+        so the 48 h EPS solve does not freeze the GUI."""
         if self.api.wn is None:
             QMessageBox.warning(self, "No Network",
                 "No network loaded. Use File > Open (Ctrl+O) to load an .inp file.")
             return
-            
+
         # Default to AGE if no mode is set
         if self.api.wn.options.quality.parameter == 'NONE':
             self.api.set_water_quality_mode('AGE')
             self.statusBar().showMessage("Defaulting to Water Age analysis (no mode set).")
 
         self.statusBar().showMessage("Running Water Quality Analysis (48h EPS)...")
-        results = self.api.run_water_quality_analysis()
-        
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+
+        self._quality_worker = AnalysisWorker(
+            self.api, analysis_type='quality', params={})
+        self._quality_worker.progress.connect(self.progress_bar.setValue)
+        self._quality_worker.finished.connect(self._on_quality_done)
+        self._quality_worker.error.connect(self._on_analysis_error)
+        self._quality_worker.start()
+
+    def _on_quality_done(self, results):
+        """Water quality analysis finished — render results on the canvas."""
+        self.progress_bar.setVisible(False)
+
         if 'error' in results:
             self.statusBar().showMessage(f"Quality Analysis failed: {results['error']}")
             return
-            
-        # Store results for heatmapping
-        # We store the final concentration/age as the primary value for map display
-        mapped_results = {
-            'nodes': {},
-            'links': {}
-        }
-        
+
         mode = results['mode']
         unit = "h" if mode == "AGE" else "mg/L"
-        
-        for name, data in results['quality'].items():
-            mapped_results['nodes'][name] = data['final']
-            
-        # Update canvas
+        node_values = {name: data['final']
+                       for name, data in results.get('quality', {}).items()}
+
         self.canvas.results = {
             'mode': 'quality',
             'parameter': mode,
             'unit': unit,
-            'node_values': mapped_results['nodes']
+            'node_values': node_values,
         }
         self.canvas.update_visuals()
-        self.statusBar().showMessage(f"Quality Analysis ({mode}) complete. Showing final {unit}.", 5000)
+        self.statusBar().showMessage(
+            f"Quality Analysis ({mode}) complete. Showing final {unit}.", 5000)
 
     def _on_run_lcc(self):
         """Run Lifecycle Cost (LCC) Analysis."""
@@ -2943,7 +2981,7 @@ class MainWindow(QMainWindow):
     def _on_health_check(self):
         """Run dependency health check."""
         from desktop.health_check import run_health_check
-        ok, report = run_health_check()
+        ok, report = run_health_check(api=self.api)
         icon = QMessageBox.Icon.Information if ok else QMessageBox.Icon.Critical
         QMessageBox(icon, "System Health Check", report, QMessageBox.StandardButton.Ok, self).exec()
 

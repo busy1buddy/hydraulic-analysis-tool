@@ -1405,3 +1405,56 @@ class CoreMixin:
             'elevation': elevation,
             'labels': labels
         }
+
+    # =========================================================================
+    # SIMULATION OPTIONS (UI-safe wrapper for api.wn.options.time.*)
+    # =========================================================================
+
+    def set_simulation_options(self, duration_hrs=None,
+                               hydraulic_timestep_s=None,
+                               pattern_timestep_s=None,
+                               quality_timestep_s=None,
+                               report_timestep_s=None):
+        """
+        Set EPANET simulation timing options through the API.
+
+        UI code must use this instead of mutating ``api.wn.options.time.*``
+        directly (Layer-4 purity rule).
+
+        Parameters
+        ----------
+        duration_hrs : float, optional
+            Total simulation duration in hours (0 = single steady-state).
+        hydraulic_timestep_s : int, optional
+            Hydraulic solver step (seconds).
+        pattern_timestep_s : int, optional
+            Demand-pattern step (seconds). Should match hydraulic step.
+        quality_timestep_s : int, optional
+            Water-quality step (seconds).
+        report_timestep_s : int, optional
+            Result reporting step (seconds).
+
+        Returns dict with the new effective values (or 'error' if no network).
+        """
+        if self.wn is None:
+            return {'error': 'No network loaded.'}
+
+        opts = self.wn.options.time
+        if duration_hrs is not None:
+            opts.duration = float(duration_hrs) * 3600
+        if hydraulic_timestep_s is not None:
+            opts.hydraulic_timestep = int(hydraulic_timestep_s)
+        if pattern_timestep_s is not None:
+            opts.pattern_timestep = int(pattern_timestep_s)
+        if quality_timestep_s is not None:
+            opts.quality_timestep = int(quality_timestep_s)
+        if report_timestep_s is not None:
+            opts.report_timestep = int(report_timestep_s)
+
+        return {
+            'duration_hrs': opts.duration / 3600,
+            'hydraulic_timestep_s': int(opts.hydraulic_timestep),
+            'pattern_timestep_s': int(opts.pattern_timestep),
+            'quality_timestep_s': int(opts.quality_timestep),
+            'report_timestep_s': int(opts.report_timestep),
+        }

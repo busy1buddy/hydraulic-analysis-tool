@@ -14,7 +14,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QFont, QColor
 
-from epanet_api.pipe_stress import analyze_pipe_stress, MATERIAL_STRENGTH
+# Note: domain solver is reached through HydraulicAPI methods
+# (api.compute_pipe_stress, api.material_strength_table) per Layer-4 purity rule.
 
 
 # Material detection by roughness (Hazen-Williams C-factor)
@@ -116,7 +117,7 @@ class PipeStressPanel(QWidget):
             wall_mm = _estimate_wall_thickness(dn_mm, material_key)
 
             try:
-                stress = analyze_pipe_stress(
+                stress = api.compute_pipe_stress(
                     pressure_kPa=pressure_kPa,
                     diameter_mm=dn_mm,
                     wall_thickness_mm=wall_mm,

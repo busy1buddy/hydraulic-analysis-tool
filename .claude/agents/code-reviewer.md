@@ -22,14 +22,21 @@ This toolkit implements:
 
 ## Critical Files to Review
 
+`epanet_api/` is a 19-file package. The biggest mixins by responsibility:
+
 | File | What to check |
 |------|---------------|
-| `epanet_api.py` | Unit conversions, compliance thresholds, result extraction |
-| `slurry_solver.py` | Rheological formulas, Reynolds number definitions, friction factors |
-| `pipe_stress.py` | Stress formulas, safety factor logic, material yield strengths |
+| `epanet_api/__init__.py` | DEFAULTS dict, mixin composition order, settings load |
+| `epanet_api/core.py` | Network creation, mutation methods, file I/O |
+| `epanet_api/analysis.py` | Steady-state/EPS/transient pipelines, gauge-vs-total pressure, water-age units, abs(flow).max() |
+| `epanet_api/compliance.py` | WSAA threshold checks (20/50 m, 2.0 m/s), fire flow |
+| `epanet_api/slurry.py` + `epanet_api/slurry_solver.py` | Rheological formulas, Reynolds definitions, Darcy 64/Re_B floor |
+| `epanet_api/surge.py` | Joukowsky with actual fluid density, MOC orchestration, transient gauge pressure |
+| `epanet_api/water_quality.py` | Quality options, EPS duration logic |
+| `epanet_api/pipe_stress.py` | Hoop / von Mises / Barlow formulas, PE100 yield 20-22 MPa |
+| `epanet_api/scenario_manager.py` | Modification application, comparison logic |
 | `data/au_pipes.py` | Pipe properties match AS/NZS standards |
 | `data/pump_curves.py` | Pump curve interpolation, affinity law implementation |
-| `scenario_manager.py` | Modification application, comparison logic |
 
 ## Review Checklist
 

@@ -12,17 +12,18 @@ Review module structure, data flow, separation of concerns, and architectural de
 
 ## Architecture Context
 
-The system has 5 layers with strict boundaries:
+The system has 6 layers with strict boundaries:
 
 1. **Solvers** (WNTR, TSNet) — external hydraulic simulation engines
-2. **Core API** (`epanet_api.py`) — single orchestration point, HydraulicAPI class
-3. **Domain modules** (`slurry_solver.py`, `pipe_stress.py`, `data/*.py`) — standalone physics and data
-4. **UI** (`app/`) — NiceGUI dashboard with 7 tabs, Three.js 3D visualization
+2. **Core API** (`epanet_api/`) — package: HydraulicAPI facade composed of 15 mixins (CoreMixin, AnalysisMixin, SlurryMixin, ComplianceMixin, AssetsMixin, AdvancedMixin, TopologyMixin, ResilienceMixin, CalibrationMixin, ForecastingMixin, SurgeMixin, ComparisonMixin, TerrainMixin, PumpingMixin, WaterQualityMixin) in `epanet_api/__init__.py`
+3. **Domain modules** (`epanet_api/slurry_solver.py`, `epanet_api/pipe_stress.py`, `data/*.py`) — physics and data
+4. **UI** (`desktop/`) — PyQt6 desktop application; `app/` is legacy NiceGUI reference only
 5. **Reports/Export** (`reports/`) — DOCX/PDF generation from result dicts
+6. **Importers** (`importers/`) — produce `.inp` files only
 
 **Layer rules (violations are blockers):**
-- UI code must never import WNTR, TSNet, or solver modules directly
-- Solvers are standalone — they accept WNTR objects but don't depend on `epanet_api.py`
+- UI code must never import WNTR, TSNet, `epanet_api.slurry_solver`, or `epanet_api.pipe_stress` directly — only `from epanet_api import HydraulicAPI`
+- Domain modules accept WNTR objects but don't reach back to the facade
 - Data files contain only data and lookup functions — no solver logic
 - Reports receive result dicts — they never run simulations
 - Importers produce `.inp` files — they never run simulations
@@ -32,27 +33,27 @@ The system has 5 layers with strict boundaries:
 For each item, report: PASS, WARN, or FAIL with file:line references.
 
 ### Module Boundaries
-- [ ] UI pages (`app/pages/*.py`) access data only through `HydraulicAPI` or its returned dicts
+- [ ] UI dialogs/panels (`desktop/*.py`) access data only through `HydraulicAPI` or its returned dicts
 - [ ] No circular imports between any modules
-- [ ] `slurry_solver.py` and `pipe_stress.py` are independently importable (no `epanet_api` dependency)
+- [ ] `epanet_api/slurry_solver.py` and `epanet_api/pipe_stress.py` are pure physics — no facade dependency
 - [ ] `data/au_pipes.py` and `data/pump_curves.py` contain no simulation logic
 - [ ] `reports/*.py` receive dicts, never call simulation methods
 - [ ] `importers/*.py` produce `.inp` files, never call simulation methods
 
 ### Data Flow
 - [ ] All analysis results flow: solver → HydraulicAPI method → return dict → consumer
-- [ ] No result data is stored in global state or module-level variables (except `api.wn` and `api.steady_results`)
-- [ ] File I/O is confined to the API layer and reports — UI pages don't write files directly
+- [ ] No result data is stored in global state or module-level variables (except `api.wn`, `api.steady_results`, `api.transient_results`)
+- [ ] File I/O is confined to the API layer and reports — UI dialogs don't write `.inp` directly
 
 ### Coupling Assessment
-- [ ] Count the direct imports of `wntr` outside of `epanet_api.py` and `slurry_solver.py` — flag any in UI/reports
-- [ ] Check if `app/components/scene_3d.py` accesses `wn` object directly or through the API
-- [ ] Check if any page directly mutates `api.wn` (bypassing HydraulicAPI methods)
+- [ ] Count the direct imports of `wntr` / `tsnet` / `epanet_api.slurry_solver` / `epanet_api.pipe_stress` outside `epanet_api/` — flag any in `desktop/` or `reports/`
+- [ ] Check if any UI dialog or panel mutates `api.wn` or `api.wn.options.*` (bypassing HydraulicAPI methods)
+- [ ] Check if any UI path calls solvers (`api.run_steady_state`, `api.run_transient`, `api.run_water_quality_analysis`) on the GUI thread instead of via `desktop/analysis_worker.py:AnalysisWorker`
 
 ### Scalability Readiness
-- [ ] Could `epanet_api.py` be split without breaking consumers? Identify natural split points.
+- [ ] Identify natural split points across the 15 mixins (e.g. compose vs inherit)
 - [ ] Are there features that would break if the API were run in a separate process (for cloud deployment)?
-- [ ] Is the state management (api.wn, api.steady_results) safe for concurrent requests?
+- [ ] Is the state management (`api.wn`, `api.steady_results`) safe for concurrent requests?
 
 ### File Organisation
 - [ ] Are there files in the project root that belong in a subdirectory?

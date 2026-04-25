@@ -20,7 +20,7 @@ class AuditTrail:
             'docs', 'audit'
         )
 
-    def log_run(self, inp_file, parameters, results, analysis_type='steady'):
+    def log_run(self, inp_file, parameters, results, analysis_type='steady', api=None):
         """Log an analysis run to the audit trail.
 
         Parameters
@@ -33,6 +33,10 @@ class AuditTrail:
             Full results dictionary from HydraulicAPI.
         analysis_type : str
             'steady', 'transient', or 'slurry'.
+        api : HydraulicAPI, optional
+            When provided, ``api.solver_versions()`` is called for solver
+            metadata; this avoids importing wntr/tsnet in the desktop layer
+            (Layer-4 purity rule).
 
         Returns
         -------
@@ -53,7 +57,7 @@ class AuditTrail:
             'analysis_type': analysis_type,
             'parameters': parameters,
             'inp_file': inp_file or '',
-            'solver_versions': _get_solver_versions(),
+            'solver_versions': _get_solver_versions(api),
         }
         with open(os.path.join(run_dir, 'metadata.json'), 'w') as f:
             json.dump(meta, f, indent=2, default=str)
@@ -122,20 +126,19 @@ class AuditTrail:
         return None
 
 
-def _get_solver_versions():
-    """Get installed solver versions."""
-    versions = {}
-    try:
-        import wntr
-        versions['wntr'] = getattr(wntr, '__version__', 'unknown')
-    except ImportError:
-        pass
-    try:
-        import tsnet
-        versions['tsnet'] = getattr(tsnet, '__version__', 'unknown')
-    except ImportError:
-        pass
-    return versions
+def _get_solver_versions(api=None):
+    """Get installed solver versions through the API (Layer-4 purity rule).
+
+    If `api` is provided, delegates to ``api.solver_versions()``. Otherwise
+    returns placeholders — the desktop layer must not import wntr/tsnet
+    directly.
+    """
+    if api is not None:
+        try:
+            return dict(api.solver_versions())
+        except Exception:
+            pass
+    return {'wntr': 'unknown', 'tsnet': 'unknown'}
 
 
 def _make_json_safe(obj):

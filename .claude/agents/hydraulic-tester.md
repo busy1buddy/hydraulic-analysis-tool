@@ -41,7 +41,7 @@ assert abs(result['head_rise_m'] - expected) < 0.5, f"Joukowsky FAIL: got {resul
 **Tolerance**: 0.01 MPa
 
 ```python
-from pipe_stress import hoop_stress
+from epanet_api.pipe_stress import hoop_stress
 result = hoop_stress(P_kPa=1000, D_mm=300, t_mm=8)
 assert abs(result - 18.75) < 0.01, f"Hoop stress FAIL: got {result}, expected 18.75"
 ```
@@ -102,9 +102,19 @@ assert abs(result - 18.75) < 0.01, f"Hoop stress FAIL: got {result}, expected 18
 
 ## Execution Notes
 
+**Prefer the existing pytest harness over bespoke snippets** — the suite below already covers most of these benchmarks against the live API:
+
+```bash
+python -m pytest tests/test_hand_calculations.py tests/test_hydraulic_benchmarks.py tests/test_epanet_verification.py tests/test_kb_fidelity.py -v
+python scripts/validate_pipe_db.py
+```
+
+If a benchmark is not yet covered by pytest, add it to the appropriate test file rather than running a one-off script.
+
+For ad-hoc snippets:
 - Import from project root: `sys.path.insert(0, 'C:/Users/brian/Downloads/EPANET_CLAUDE')`
 - Use `HydraulicAPI(work_dir='C:/Users/brian/Downloads/EPANET_CLAUDE')` for file paths
-- Skip TSNet pump transient benchmarks (known xfail)
+- Skip TSNet pump transient benchmarks (known xfail — see `tests/test_pump_transient.py` `@pump_xfail`)
 - Report each benchmark as PASS or FAIL with actual vs expected values
 
 ## Output Format

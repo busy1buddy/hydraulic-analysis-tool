@@ -4,7 +4,7 @@ Professional hydraulic analysis desktop application for Australian water supply 
 
 Built to rival PumpSim ($15K), AFT Fathom ($10K), and WaterGEMS ($15K) — at zero cost.
 
-**1012 automated tests | 11 tutorial networks | Australian standards built-in**
+**1,222 automated tests | 11 tutorial networks | Australian standards built-in**
 
 ## What's New in v2.5-v2.6
 
@@ -120,24 +120,24 @@ For technical depth and maintenance instructions, see the following:
 
 ```
 desktop/           PyQt6 application (main UI layer)
-epanet_api.py      Core API — single orchestration point
-slurry_solver.py   Non-Newtonian rheology solver
-pipe_stress.py     Pipe stress calculations (AS 2280)
+epanet_api/        Core API package (HydraulicAPI facade + 15 mixins)
+epanet_api/slurry_solver.py   Non-Newtonian rheology solver
+epanet_api/pipe_stress.py     Pipe stress calculations (AS 2280)
 data/              Australian pipe DB, pump curves, demand patterns
 reports/           DOCX and PDF report generators
 importers/         CSV, DXF, Shapefile importers
 models/            Example .inp network files
-tutorials/         10 tutorial networks with documentation
-tests/             833 automated tests
-rest_api.py        HTTP API server
+tutorials/         11 tutorial networks with documentation
+tests/             1,222 automated tests
+app/               REST API + legacy NiceGUI (reference only)
 docs/              Validation, progress, user testing
 ```
 
 ## Testing
 
 ```bash
-python -m pytest tests/ -v                     # Full suite (833 tests)
-python -m pytest tests/ -k "not transient"     # Exclude TSNet (794 tests)
+python -m pytest tests/ -v                     # Full suite (~1,222 tests)
+python -m pytest tests/ -k "not transient"     # Exclude TSNet
 python -m pytest tests/test_slurry_solver.py   # Slurry tests only
 python scripts/validate_pipe_db.py             # Pipe database validation
 ```
@@ -191,5 +191,5 @@ When referencing this tool in engineering reports:
 | Network intelligence | Yes | No | No | Limited |
 | REST API | Yes | No | No | No |
 | Python scripting | Yes | No | No | No |
-| Automated tests | 833 | 0 | 0 | 0 |
+| Automated tests | 1,222 | 0 | 0 | 0 |
 | Cost | **Free** | $5-15K/yr | $5-15K/yr | $5-15K/yr |
