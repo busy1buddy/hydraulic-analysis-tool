@@ -9,9 +9,9 @@
 | # | Recommendation | Status | Commit |
 |---|---|---|---|
 | 1 | `File > Import from CSV...` | **DONE** | `8757042` |
-| 2 | New Project wizard | **DONE** | (this commit) |
-| 3 | `Edit > Bulk Edit Junctions...` | Next | — |
-| 4 | `AddReservoirDialog` / `AddTankDialog` in canvas editor | After #3 | — |
+| 2 | New Project wizard | **DONE** | `beac5b1` |
+| 3 | `Edit > Bulk Edit Junctions...` | **DONE** | (this commit) |
+| 4 | `AddReservoirDialog` / `AddTankDialog` in canvas editor | Next | — |
 | 5 | Menu cleanup (deduplicate Settings + Pipe Profile, regroup Analysis) | Last | — |
 
 The order is **not** the original priority order from the walkthrough — it's been resequenced so each PR builds on the previous, and so the lowest-risk mechanical work lands last (when the cognitive load of reviewing it is highest).

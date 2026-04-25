@@ -216,6 +216,13 @@ class MainWindow(QMainWindow):
         bulk_pipe_act.triggered.connect(lambda: self.editor.bulk_edit_pipes())
         edit_menu.addAction(bulk_pipe_act)
 
+        bulk_junction_act = QAction("Bulk Edit &Junctions...", self)
+        bulk_junction_act.setToolTip(
+            "Set elevation, base demand, demand factor, or pattern across "
+            "all junctions in the network.")
+        bulk_junction_act.triggered.connect(lambda: self.editor.bulk_edit_junctions())
+        edit_menu.addAction(bulk_junction_act)
+
         # --- Analysis ---
         analysis_menu = menubar.addMenu("&Analysis")
 

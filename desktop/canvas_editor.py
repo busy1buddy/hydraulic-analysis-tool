@@ -14,7 +14,7 @@ from typing import Optional, List
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QDialog, QFormLayout,
-    QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
+    QLineEdit, QDoubleSpinBox, QComboBox, QPushButton, QCheckBox,
     QDialogButtonBox, QMessageBox, QMenu, QLabel,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QPointF, QTimer
@@ -144,6 +144,112 @@ class BulkPipeEditDialog(QDialog):
             'dn_mm': int(self.dn_combo.currentText()) if self.dn_combo.currentText() else 100,
             'roughness': self.roughness_spin.value()
         }
+
+
+class BulkJunctionEditDialog(QDialog):
+    """Bulk-edit elevation, base demand, and demand pattern across many junctions.
+
+    PR #3 of the cold-start UX roadmap. Mirrors ``BulkPipeEditDialog`` for
+    junctions. Each field has an "Apply" checkbox so the user can edit
+    only the values they care about — un-checked fields are left
+    unchanged for every junction in the selection.
+
+    The "Apply percentage" option multiplies each junction's *existing*
+    base demand by the given factor — useful for global growth / shrinkage
+    scenarios without flattening every junction to the same value.
+    """
+
+    def __init__(self, parent=None, junction_ids=None, available_patterns=None):
+        super().__init__(parent)
+        self.junction_ids = list(junction_ids or [])
+        self.setWindowTitle(f"Bulk Edit {len(self.junction_ids)} Junction(s)")
+        self.setMinimumWidth(400)
+
+        layout = QVBoxLayout(self)
+
+        intro = QLabel(
+            "Apply only the fields you tick below. Untouched fields stay "
+            "as-is for every selected junction."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form = QFormLayout()
+
+        # --- Elevation ---
+        self.apply_elev_cb = QCheckBox("Set elevation:")
+        self.elev_spin = QDoubleSpinBox()
+        self.elev_spin.setRange(-100, 2500)  # AHD range as per AddJunctionDialog
+        self.elev_spin.setValue(0.0)
+        self.elev_spin.setSuffix(" m AHD")
+        self.elev_spin.setEnabled(False)
+        self.apply_elev_cb.toggled.connect(self.elev_spin.setEnabled)
+        form.addRow(self.apply_elev_cb, self.elev_spin)
+
+        # --- Base demand (absolute) ---
+        self.apply_demand_cb = QCheckBox("Set base demand to:")
+        self.demand_spin = QDoubleSpinBox()
+        self.demand_spin.setRange(0, 50000)
+        self.demand_spin.setValue(0.0)
+        self.demand_spin.setSuffix(" LPS")
+        self.demand_spin.setEnabled(False)
+        self.apply_demand_cb.toggled.connect(self.demand_spin.setEnabled)
+        # Mutually exclusive with percentage scaling
+        self.apply_demand_cb.toggled.connect(self._on_absolute_demand_toggled)
+        form.addRow(self.apply_demand_cb, self.demand_spin)
+
+        # --- Base demand (percentage of current) ---
+        self.apply_demand_pct_cb = QCheckBox("Multiply current demand by:")
+        self.demand_pct_spin = QDoubleSpinBox()
+        self.demand_pct_spin.setRange(1, 1000)
+        self.demand_pct_spin.setValue(100.0)
+        self.demand_pct_spin.setSuffix(" %")
+        self.demand_pct_spin.setEnabled(False)
+        self.apply_demand_pct_cb.toggled.connect(self.demand_pct_spin.setEnabled)
+        self.apply_demand_pct_cb.toggled.connect(self._on_pct_demand_toggled)
+        form.addRow(self.apply_demand_pct_cb, self.demand_pct_spin)
+
+        # --- Pattern ---
+        self.apply_pattern_cb = QCheckBox("Set demand pattern:")
+        self.pattern_combo = QComboBox()
+        self.pattern_combo.addItem("(none)", "")
+        for p in (available_patterns or []):
+            self.pattern_combo.addItem(p, p)
+        self.pattern_combo.setEnabled(False)
+        self.apply_pattern_cb.toggled.connect(self.pattern_combo.setEnabled)
+        form.addRow(self.apply_pattern_cb, self.pattern_combo)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_absolute_demand_toggled(self, on):
+        """Absolute and percentage demand changes are mutually exclusive."""
+        if on and self.apply_demand_pct_cb.isChecked():
+            self.apply_demand_pct_cb.setChecked(False)
+
+    def _on_pct_demand_toggled(self, on):
+        if on and self.apply_demand_cb.isChecked():
+            self.apply_demand_cb.setChecked(False)
+
+    def get_values(self):
+        """Return only the fields the user actually ticked."""
+        out = {}
+        if self.apply_elev_cb.isChecked():
+            out['elevation_m'] = float(self.elev_spin.value())
+        if self.apply_demand_cb.isChecked():
+            out['base_demand_lps'] = float(self.demand_spin.value())
+        if self.apply_demand_pct_cb.isChecked():
+            out['demand_factor'] = float(self.demand_pct_spin.value()) / 100.0
+        if self.apply_pattern_cb.isChecked():
+            out['pattern'] = self.pattern_combo.currentData() or None
+        return out
 
 
 class AddJunctionDialog(QDialog):
@@ -707,6 +813,94 @@ class CanvasEditor:
             if link.start_node_name == node_id or link.end_node_name == node_id:
                 connected.append(lid)
         return connected
+
+    def bulk_edit_junctions(self, junction_ids=None):
+        """Show bulk edit dialog for junctions.
+
+        Default selection is *all* junctions in the network — the most
+        common cold-start use case (set a uniform per-lot demand on a
+        new subdivision design). Pass a subset to limit scope.
+        """
+        if not self.api or not self.api.wn:
+            return
+
+        ids = junction_ids or list(self.api.wn.junction_name_list)
+        if not ids:
+            QMessageBox.information(
+                self.mw, "Bulk Edit Junctions",
+                "No junctions in the network. Add junctions in Edit Mode first.")
+            return
+
+        # Available demand patterns from the network
+        try:
+            patterns = list(self.api.wn.pattern_name_list)
+        except Exception:
+            patterns = []
+
+        dialog = BulkJunctionEditDialog(self.mw, ids, available_patterns=patterns)
+        if dialog.exec():
+            vals = dialog.get_values()
+            if not vals:
+                self.mw.status_bar.showMessage(
+                    "Bulk Edit Junctions: nothing applied (no fields ticked).",
+                    3000)
+                return
+
+            # Snapshot before-values for undo
+            before = []
+            for jid in ids:
+                node = self.api.wn.get_node(jid)
+                base_lps = 0.0
+                if node.demand_timeseries_list:
+                    base_lps = float(
+                        node.demand_timeseries_list[0].base_value) * 1000.0
+                before.append({
+                    'id': jid,
+                    'elevation': float(node.elevation),
+                    'base_demand_lps': base_lps,
+                })
+
+            # Apply the requested changes
+            for jid in ids:
+                node = self.api.wn.get_node(jid)
+                kwargs = {}
+                if 'elevation_m' in vals:
+                    kwargs['elevation'] = vals['elevation_m']
+                if 'base_demand_lps' in vals:
+                    # API takes m³/s; convert from LPS
+                    kwargs['base_demand'] = vals['base_demand_lps'] / 1000.0
+                elif 'demand_factor' in vals and node.demand_timeseries_list:
+                    current = float(node.demand_timeseries_list[0].base_value)
+                    kwargs['base_demand'] = current * vals['demand_factor']
+
+                if kwargs:
+                    self.api.update_junction(jid, **kwargs)
+
+                # Pattern is set directly on the timeseries (no API setter for now)
+                if 'pattern' in vals and node.demand_timeseries_list:
+                    p = vals['pattern']
+                    node.demand_timeseries_list[0].pattern_name = p or None
+
+            self.undo_stack.push(EditAction(
+                'bulk_edit_junctions',
+                f'Bulk edit {len(ids)} junctions',
+                {'ids': ids, 'before': before, 'after': dict(vals)},
+            ))
+            self._mark_modified()
+            self.canvas.render()
+
+            # Compose a status-bar summary
+            parts = []
+            if 'elevation_m' in vals:
+                parts.append(f"elev={vals['elevation_m']:.1f} m")
+            if 'base_demand_lps' in vals:
+                parts.append(f"demand={vals['base_demand_lps']:.3f} LPS")
+            if 'demand_factor' in vals:
+                parts.append(f"demand×{vals['demand_factor']:.2f}")
+            if 'pattern' in vals:
+                parts.append(f"pattern={vals['pattern'] or '(none)'}")
+            self.mw.status_bar.showMessage(
+                f"Applied {', '.join(parts)} to {len(ids)} junctions.", 5000)
 
     def bulk_edit_pipes(self, pipe_ids=None):
         """Show bulk edit dialog for pipes."""
